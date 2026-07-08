@@ -60,6 +60,8 @@ plots.fig11_train_test_dist(du.rebuild_series(train, du.GHI_COL), ghi, "GHI", ou
 
 ## 注意
 
+- 运行依赖见仓库根 `requirements.txt`（pandas/numpy/matplotlib/pyarrow/scipy/openpyxl），
+  环境缺包先 `pip install -r requirements.txt`。
 - 代码尚未在真实数据上跑过：首跑遇到列名/dtype 出入，改 CONFIG 或小修后
   **把修正提交回本目录**，让下次会话直接可用。
 - 中文字体在无 CJK 字体的环境会变方块——数值都在 stats.json 里，不影响分析。
