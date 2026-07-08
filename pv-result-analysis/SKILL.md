@@ -55,6 +55,13 @@ description: 光伏功率预测（PV power forecasting）结果评估与分析�
 
 `predicted` 按模型名记成字典（后面的命令序列直接循环它）；用户只给了部分模型就只填有的。
 
+**环境准备（本次会话第一次跑 Python 前执行一次）**：确认依赖齐全，缺则装（requirements.txt 在本技能目录的上一级，即仓库根）：
+
+```bash
+python3 -c "import pandas, numpy, matplotlib, pyarrow, scipy, openpyxl" 2>/dev/null \
+  || pip install -r "/Users/tqa946816/Documents/华为/光伏预测/结果分析skill/requirements.txt"
+```
+
 再做数据质检，这一步先于一切指标计算——坏 label 会污染所有下游结论。质检代码已固化在 `scripts/data_utils.py`，**用 Bash 照下面跑，不要现写 pandas**（`SKILL` 为本技能目录，即本文件所在目录）：
 
 ```bash
