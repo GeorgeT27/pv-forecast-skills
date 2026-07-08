@@ -35,6 +35,20 @@ MODEL_COLORS = {                     # 全部图固定配色，跨图可比
 # ---------------------------------------------------------------- 读取与对齐
 def load_table(path: str, timestamp_col: str = TIMESTAMP_COL) -> pd.DataFrame:
     df = pd.read_parquet(path)
+    if timestamp_col not in df.columns:
+        # 常见坑：predicted.parquet 往往把 timestamp 存成 index 而不是普通列
+        idx = df.index
+        looks_time = idx.name == timestamp_col or isinstance(idx, pd.DatetimeIndex)
+        if not looks_time and idx.dtype == object:
+            try:
+                pd.to_datetime(idx[:5])
+                looks_time = True
+            except (ValueError, TypeError):
+                pass
+        if not looks_time:
+            raise KeyError(f"'{timestamp_col}' 不在列中，index 也不是时间戳；"
+                           f"实际列: {list(df.columns)}, index: {idx.dtype}/{idx.name}")
+        df = df.rename_axis(timestamp_col).reset_index()
     df[timestamp_col] = pd.to_datetime(df[timestamp_col])
     return df.sort_values(timestamp_col).reset_index(drop=True)
 
