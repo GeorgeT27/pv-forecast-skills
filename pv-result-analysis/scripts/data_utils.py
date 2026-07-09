@@ -14,8 +14,10 @@ import pandas as pd
 
 # ---------------------------------------------------------------- CONFIG
 TIMESTAMP_COL = "timestamp"
-LABEL_COL = "observe_power_future"   # 未来 192 点真实功率（label）
-GHI_COL = "GHI-solargis"
+# true_label.parquet 常沿用完整训练 schema（带 observe_power/GHI/SSRD_pos/t2m_pos… 一堆特征列）；
+# 评估只用 observe_power_future 这一列，其余对本技能无关。取 label 一律走 LABEL_COL，勿混入其他列。
+LABEL_COL = "observe_power_future"   # 未来 192 点真实功率（label）—— true_label 里唯一有用的列
+GHI_COL = "GHI-solargis"             # 气象/漂移分析用；来源应是训练集 parquet，不是 true_label
 FREQ = pd.Timedelta("15min")
 POINTS_PER_DAY = 96
 HORIZON = 192                        # 预测时域 48h

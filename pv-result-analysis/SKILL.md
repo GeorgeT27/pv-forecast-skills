@@ -26,6 +26,7 @@ description: 光伏功率预测（PV power forecasting）结果评估与分析�
   - `GHI-solargis`、`temp solargis`：各 672+192 个点；未来 192 段是气象预报，作特征。
   - `SSRD_pos_1`~`SSRD_pos_9`、`t2m_pos_1`~`t2m_pos_9`：9 个网格点位的数值天气预报（辐照与 2 米气温）。
 - **本技能的输入不是模型**，而是两份已生成的结果文件：`predicted.parquet`（对未来 192 点的预测）与 `true_label.parquet`（对应真实功率）。
+- **⚠️ true_label.parquet 常沿用完整训练 schema（带上面所有特征列）——指标计算只用 `observe_power_future` 这一列（=真值 label），其余列（observe_power/GHI-solargis/temp/SSRD_pos/t2m_pos…）对评估无关，不要拿它们算指标或下结论。** 之所以强调：schema 侦察会把这些训练列一并打印出来，容易误当作评估输入；scripts 取 label 一律走 `data_utils.LABEL_COL`，别手写 pandas 时顺手把气象列也算进去。跨站漂移诊断（图#11/#12）确实要气象/功率特征——train 侧来自训练集 parquet，**test 侧（雅砻江）若要用 true_label 里的气象列，先跟用户确认这些列是雅砻江的真实值还是训练遗留的占位**，拿不准就别用、只报 label 指标。
 
 ## 执行流程：四个阶段
 
@@ -81,7 +82,7 @@ python3 -c "import pandas, numpy, matplotlib, pyarrow, scipy, openpyxl" 2>/dev/n
 python3 "/Users/tqa946816/Documents/华为/光伏预测/结果分析skill/pv-result-analysis/scripts/run_quality_check.py"
 ```
 
-它做：schema 侦察（列名与 `data_utils.py` 顶部 CONFIG 对不上时**只改 CONFIG，不改逻辑**；predicted 常把 timestamp 存成 index，schema 看不到属正常）、基础完整性（重复戳/15min 网格缺口/常值段）、滚动窗口一致性抽查（不一致则取点口径全不可信，停下报告用户）、重建序列扫可疑日 → `suspect_days.csv`、载训练集抽查。
+它做：schema 侦察（列名与 `data_utils.py` 顶部 CONFIG 对不上时**只改 CONFIG，不改逻辑**；predicted 常把 timestamp 存成 index，schema 看不到属正常；**true_label 的 schema 里那一堆训练特征列是 schema 沿用、与评估无关，只认 `observe_power_future`**）、基础完整性（重复戳/15min 网格缺口/常值段）、滚动窗口一致性抽查（不一致则取点口径全不可信，停下报告用户）、重建序列扫可疑日 → `suspect_days.csv`、载训练集抽查。
 
 **可疑日的二分处理**：区分"错误"（录入/传感器故障 → 从统计剔除并记录）与"事件"（限电/停机/极端天气 → 保留数据、进 `references/event-log.md`、归因时显式考虑）。两者处理相反，不可一律当异常"修掉"——修掉真实事件等于把最有信息量的样本扔了。
 
