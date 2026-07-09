@@ -196,39 +196,59 @@ def detect_capacity_expansion(power: pd.Series,
 
 
 # ---------------------------------------------------------------- 天气分型
-def daily_weather_class(ghi: pd.Series, kt_hi: float = 0.65, kt_lo: float = 0.35,
-                        jump: float = 0.30, sigma_q: float = 0.70) -> pd.DataFrame:
-    """日级天气分型（输入为 rebuild_series 后的连续 GHI 序列）。
-    kt = 当日 GHI 总量 / 晴天包络（当月各时刻 95 分位曲线）总量；
-    sigma = 白天段 GHI 一阶差分标准差 / 包络峰值（归一化波动性）。
-    五类（低波动日按 kt 分三档，高波动/突变另立）：
-      - 晴稳：kt >= kt_hi，明亮平稳；
-      - 多云平稳：kt_lo <= kt < kt_hi（默认档），中等云量、日内平稳；
-      - 阴稳：kt < kt_lo，真正的阴天（持续厚云）、日内平稳；
-      - 多云波动：sigma > sigma_q 分位，日内辐照剧烈起伏（覆盖上面 kt 分档）；
-      - 突变日：|kt - 前一日 kt| > jump，相对昨日天气型骤变（优先级最高，覆盖全部）。
-    结果供图#8 与分布漂移诊断复用，落盘 weather_class.csv。"""
+def clear_sky_envelope(ghi: pd.Series) -> pd.Series:
+    """晴天包络代理：当月每个时刻(tod) GHI 的 95 分位曲线，index=(month, tod)。
+    供 daily_weather_class 复用；跨年漂移诊断应把某一年（如训练年 2024）的包络当共享
+    基准传给两年，否则各年自归一化会掩盖整体变暗/变亮。"""
     f = ghi.to_frame("ghi")
     f["month"], f["tod"] = f.index.month, f.index.time
-    env = f.groupby(["month", "tod"])["ghi"].quantile(0.95).rename("env")
+    return f.groupby(["month", "tod"])["ghi"].quantile(0.95).rename("env")
+
+
+def daily_kt_sigma(ghi: pd.Series, envelope: pd.Series | None = None) -> pd.DataFrame:
+    """按天算 kt 与 sigma（不分类）。index=date，列 [kt, sigma]。
+    kt = 当日 GHI 总量 / 晴天包络总量；sigma = 白天段 GHI 一阶差分标准差 / 包络峰值。
+    envelope=None 时用 ghi 自身算包络；跨年漂移诊断传入统一基准。"""
+    env = clear_sky_envelope(ghi) if envelope is None else envelope
+    f = ghi.to_frame("ghi")
+    f["month"], f["tod"] = f.index.month, f.index.time
     f = f.join(env, on=["month", "tod"])
     rows = []
     for date, day in f.groupby(f.index.date):
         env_sum, env_peak = day["env"].sum(), day["env"].max()
-        if env_sum <= 0:
+        if not (env_sum and env_sum > 0):
             continue
         kt = day["ghi"].sum() / env_sum
         daytime = day[day["env"] > 0.05 * env_peak]["ghi"]
         sigma = daytime.diff().std() / env_peak if env_peak > 0 else np.nan
         rows.append((date, kt, sigma))
-    out = pd.DataFrame(rows, columns=["date", "kt", "sigma"]).set_index("date")
-    sig_hi = out["sigma"].quantile(sigma_q)
+    return pd.DataFrame(rows, columns=["date", "kt", "sigma"]).set_index("date")
+
+
+def daily_weather_class(ghi: pd.Series, kt_hi: float = 0.65, kt_lo: float = 0.35,
+                        jump: float = 0.30, sigma_q: float = 0.70,
+                        envelope: pd.Series | None = None,
+                        sig_hi: float | None = None) -> pd.DataFrame:
+    """日级天气分型（输入为 rebuild_series 后的连续 GHI 序列）。
+    五类（低波动日按 kt 分三档，高波动/突变另立）：
+      - 晴稳：kt >= kt_hi，明亮平稳；
+      - 多云平稳：kt_lo <= kt < kt_hi（默认档），中等云量、日内平稳；
+      - 阴稳：kt < kt_lo，真正的阴天（持续厚云）、日内平稳；
+      - 多云波动：sigma > sig_hi（默认取当期 sigma 的 sigma_q 分位），日内剧烈起伏（覆盖 kt 分档）；
+      - 突变日：|kt - 前一日 kt| > jump，相对昨日天气型骤变（优先级最高，覆盖全部）。
+    envelope / sig_hi：默认 None 时从输入自算；**跨年漂移诊断须传入统一基准**（用 2024 的
+    包络与 sigma 阈值分类 2025），否则各年自归一化会把"整体变暗/更多波动天"抹平——见
+    weather_class_drift。结果供图#8 与分布漂移诊断复用，落盘 weather_class.csv。"""
+    out = daily_kt_sigma(ghi, envelope)
+    if sig_hi is None:
+        sig_hi = out["sigma"].quantile(sigma_q)
     cls = pd.Series("多云平稳", index=out.index)        # 中等 kt、低波动 = 默认档
     cls[out["kt"] >= kt_hi] = "晴稳"
     cls[out["kt"] < kt_lo] = "阴稳"                      # 真正的阴天（低 kt）
     cls[out["sigma"] > sig_hi] = "多云波动"              # 高波动覆盖 kt 分档
     cls[(out["kt"] - out["kt"].shift(1)).abs() > jump] = "突变日"
     out["wclass"] = cls
+    out.attrs["sig_hi"] = float(sig_hi)                  # 便于跨年复用同一阈值
     return out
 
 
@@ -241,6 +261,75 @@ def psi(expected: np.ndarray, actual: np.ndarray, bins: int = 10) -> float:
     a = np.histogram(actual, qs)[0] / max(len(actual), 1)
     e, a = np.clip(e, 1e-6, None), np.clip(a, 1e-6, None)
     return float(((a - e) * np.log(a / e)).sum())
+
+
+# ---------------------------------------------------------------- 分布漂移诊断（train 2024 vs test 2025）
+def drift_table(train_df: pd.DataFrame, test_df: pd.DataFrame, cols,
+                bins: int = 10) -> pd.DataFrame:
+    """特征漂移 / 标签漂移的数值总表：对每个变量列先 rebuild_series 重建物理连续序列，
+    再 2024 vs 2025 **同月对比** PSI + KS。cols 传原始气象列做特征漂移、功率标签列做
+    标签漂移，口径一致。返回长表：[var, month, psi, ks_p, median_train, median_test,
+    n_train, n_test, drift]（drift：PSI>0.25 显著 / 0.1-0.25 轻微 / 否则 稳定）。
+    先跑本表定位"哪个变量哪个月漂了"，再用 fig11 把该变量画出来看形态。"""
+    try:
+        from scipy.stats import ks_2samp
+    except ImportError:
+        ks_2samp = None
+    rows = []
+    for col in cols:
+        s_tr, s_te = rebuild_series(train_df, col), rebuild_series(test_df, col)
+        for m in range(1, 13):
+            a = s_tr[s_tr.index.month == m].dropna().to_numpy()
+            b = s_te[s_te.index.month == m].dropna().to_numpy()
+            if len(a) < 10 or len(b) < 10:
+                continue
+            p = psi(a, b)
+            rows.append({
+                "var": col, "month": m, "psi": round(p, 3),
+                "ks_p": round(float(ks_2samp(a, b).pvalue), 4) if ks_2samp else None,
+                "median_train": round(float(np.median(a)), 2),
+                "median_test": round(float(np.median(b)), 2),
+                "n_train": len(a), "n_test": len(b),
+                "drift": "显著" if p > 0.25 else "轻微" if p > 0.1 else "稳定"})
+    return pd.DataFrame(rows)
+
+
+def weather_class_drift(ghi_train: pd.Series, ghi_test: pd.Series,
+                        **kw) -> dict:
+    """天气型漂移：用**训练年（2024）的晴天包络与 sigma 阈值作共享基准**分类两年，
+    这样"2025 整体变暗 / 多波动天变多"才显现（各年自归一化会抹平）。ghi_* 为
+    rebuild_series 后的连续 GHI。返回：
+      - share：各天气型逐年占比表（DataFrame，行=天气型，列=[2024, 2025, 占比差]）；
+      - kt / sigma：两年日级 kt、sigma 的 PSI + KS（回答"晴空指数分布右移否"）；
+      - counts：各型天数（披露样本量用）。
+    kw 透传 daily_weather_class 的阈值（kt_hi/kt_lo/jump/sigma_q）。"""
+    env_ref = clear_sky_envelope(ghi_train)                     # 2024 作基准包络
+    wc_tr = daily_weather_class(ghi_train, envelope=env_ref, **kw)
+    sig_ref = wc_tr.attrs["sig_hi"]                             # 2024 的 sigma 阈值
+    wc_te = daily_weather_class(ghi_test, envelope=env_ref, sig_hi=sig_ref, **kw)
+    order = ["晴稳", "多云平稳", "阴稳", "多云波动", "突变日"]
+    def _share(wc):
+        c = wc["wclass"].value_counts()
+        return (c / c.sum()).reindex(order).fillna(0.0)
+    share = pd.DataFrame({"2024": _share(wc_tr), "2025": _share(wc_te)})
+    share["占比差"] = (share["2025"] - share["2024"]).round(3)
+    share = share.round(3)
+    counts = pd.DataFrame({
+        "2024": wc_tr["wclass"].value_counts().reindex(order).fillna(0).astype(int),
+        "2025": wc_te["wclass"].value_counts().reindex(order).fillna(0).astype(int)})
+    try:
+        from scipy.stats import ks_2samp
+        ksf = lambda a, b: round(float(ks_2samp(a, b).pvalue), 4)
+    except ImportError:
+        ksf = lambda a, b: None
+    drift = {}
+    for v in ["kt", "sigma"]:
+        a, b = wc_tr[v].dropna().to_numpy(), wc_te[v].dropna().to_numpy()
+        drift[v] = {"psi": round(psi(a, b), 3), "ks_p": ksf(a, b),
+                    "median_2024": round(float(np.median(a)), 3),
+                    "median_2025": round(float(np.median(b)), 3)}
+    return {"share": share, "counts": counts, "kt": drift["kt"],
+            "sigma": drift["sigma"]}
 
 
 def robustness_check(rmse_a: pd.Series, rmse_b: pd.Series, trim: int = 3) -> dict:

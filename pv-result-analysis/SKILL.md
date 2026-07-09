@@ -115,6 +115,11 @@ bad = du.check_window_consistency(label, du.LABEL_COL)       # 滚动窗口一�
 assert bad == 0, f"窗口不一致 {bad} 处——停下报告用户，取点口径全部不可信"
 power = du.rebuild_series(label, du.LABEL_COL)               # 重建物理连续序列
 du.scan_suspect_days(power).to_csv("suspect_days.csv")       # 可疑日 → 交用户核对
+
+# 训练集（2024）：不参与指标计算，是分布漂移诊断的基准，Step 1 一并载入并抽查
+train = du.load_table(cfg["train_set"])                      # 与 test 同构（同样的滚动窗口表）
+print("train:", du.basic_quality_checks(train))
+assert du.check_window_consistency(train, du.LABEL_COL) == 0, "训练集窗口不一致"
 EOF
 ```
 
@@ -400,6 +405,53 @@ models.md 由用户口述整理，可能与代码有出入：用户给出模型�
 产出两张图：
 - **图#11 同月分布对比图**：关键变量 × 月份网格，2024 vs 2025 分布并排，标注 KS p 值或 PSI；
 - **图#12 功率-辐照映射对比图**：两年分箱曲线叠画，差异区间标注。
+
+**标准命令序列**（代码已固化在 `scripts/`，照下面跑，不要现写 pandas）：
+
+```bash
+python3 - <<'EOF'
+import sys, json, os
+SKILL = "/Users/tqa946816/Documents/华为/光伏预测/结果分析skill/pv-result-analysis"
+sys.path.insert(0, f"{SKILL}/scripts")
+import data_utils as du, plots
+
+cfg = json.load(open("analysis_config.json"))
+train = du.load_table(cfg["train_set"])          # 2024
+test  = du.load_table(cfg["true_label"])         # 2025
+out = f"figures/{cfg['station']}/drift"; os.makedirs(out, exist_ok=True)
+
+# 1) 特征漂移 + 标签漂移数值总表（先定位"哪个变量哪个月漂了"，再看图）
+#    气象列（特征漂移）+ 功率标签列（标签漂移），口径一致；SSRD/t2m 列名按 schema 补全
+cols = [du.GHI_COL, du.LABEL_COL]                 # 例：也可加 "temp solargis"、SSRD_pos_* 等
+dt = du.drift_table(train, test, cols)
+dt.to_csv(f"{out}/drift_table.csv", index=False)
+print(dt[dt.drift != "稳定"].to_string(index=False))   # 只看漂了的
+
+# 2) 天气型漂移（kt/σΔ 分布 + 五类占比），用 2024 作共享基准——关键，否则整体变暗被抹平
+wd = du.weather_class_drift(du.rebuild_series(train, du.GHI_COL),
+                            du.rebuild_series(test,  du.GHI_COL))
+print("五类占比 2024 vs 2025：\n", wd["share"])
+print("kt 漂移：", wd["kt"], "\nσΔ 漂移：", wd["sigma"])
+
+# 3) 图#11 逐变量同月分布对比（violin + PSI/KS）、图#12 功率-辐照映射
+for col in cols:
+    plots.fig11_train_test_dist(du.rebuild_series(train, col),
+                                du.rebuild_series(test, col), col,
+                                f"{out}/11_dist_{col}.png")
+plots.fig12_power_ghi_mapping(du.rebuild_series(train, du.LABEL_COL),
+                              du.rebuild_series(train, du.GHI_COL),
+                              du.rebuild_series(test,  du.LABEL_COL),
+                              du.rebuild_series(test,  du.GHI_COL),
+                              f"{out}/12_power_ghi_mapping.png")
+EOF
+```
+
+- **三类漂移分别对号**：`drift_table` 里气象列 = 特征漂移、功率列 = 标签漂移（看台阶式突变 →
+  查扩容/限电）；`fig12` = 映射漂移（曲线整体位移 → 组件衰减/扩容/限电改物理映射，全模型同害）。
+- **共享基准是天气型漂移的命门**：`weather_class_drift` 用 2024 的包络与 σΔ 阈值分类 2025，
+  否则各年自归一化会把"整体变暗、更多波动天"抹平（`daily_weather_class` 默认 None=自算，
+  只适合单期分析；跨年对比必须走 `weather_class_drift`）。
+- **结果先落 `drift_table.csv`**，PSI>0.25 的变量-月份才进 fig11 细看；结论进 Playbook A 第 5 步。
 
 结论句式："2025-06 的 σΔ 分布显著右移（PSI 0.31），多云波动天占比从 2024-06 的 23% 升至 41%——模型面对的是训练年未充分覆盖的天气模式。"
 
