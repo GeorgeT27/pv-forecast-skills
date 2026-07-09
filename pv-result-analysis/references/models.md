@@ -8,6 +8,7 @@
 
 ## M1 【用户口述 2026-07-07】
 
+- **代码类名**：`FourierMobaTransformer`（2026-07-09 用户提供；pv-model-verify 据此在代码库中定位）
 - **模型类型/架构**：Fourier + MoBA + Transformer（在 M4 的 PatchTST 骨架上换掉 tokenizer 与 embedding 层，另加 DoY 嵌入与 VICReg 正则）。管线：
   1. **3 个输入通道**（比 M4 少 2 个）：general_ghi、general_temp、observe_power，各为 历史‖未来预测 拼接 672+192=864（同 M4，功率未来段同样来自 Chronos）。注意此处 general_ghi 的定义与 M4 不同——**GHI_solargis 也并入均值**：SSRD_pos_1~9 + GHI_solargis 十路等权平均（未来预测段同样并入），general_temp 同理十路含 temp_solargis；即 solargis 不再是独立通道；
   2. 切 patch（同 M4：patch=96=一天、不重叠，9 patch/通道）；
@@ -35,6 +36,7 @@
 
 ## M2 【用户口述 2026-07-08】
 
+- **代码类名**：`PatchRegForcast`（2026-07-09 用户提供，原文拼写为 "Forcast" 且用 "Reg" 而非 M3/M4 的 "PvForecaster"，命名不一致——pv-model-verify 定位时以代码实际类名为准，可用前缀 `PatchReg` 容错搜索）
 - **模型类型/架构**：纯"气象→功率"映射的 MLP 模型——历史功率序列不进网络，只贡献 RevIN 统计量。流水线：
   1. **历史功率 → RevIN 只取 mean/var**：observe_power 整个 672 历史段（2026-07-08 确认）只用于计算 RevIN 的均值与方差，功率序列本身随后不再进入网络（用户原话 "historical power is useless"）。<!-- 待确认：历史功率的 mean/var 用在哪——输出反归一化？还是也经 stat_embd 拼入特征？（气象自身的统计量已确认走 stat_embd，见第 3 步） -->
   2. **输入 = 三个 category 的未来 192 段预报值**：temp_solargis、SSRD（SSRD_pos_1~9）、GHI_solargis，每个算一个 category；**历史 672 段完全不用**（2026-07-08 确认）；**t2m_pos_1~9 完全不用**（2026-07-08 确认）——温度只吃 solargis 一路。
@@ -71,6 +73,7 @@
 
 ## M3 【用户口述 2026-07-07】
 
+- **代码类名**：`MoiraiPvForecaster`（2026-07-09 用户提供；pv-model-verify 据此在代码库中定位）
 - **模型类型/架构**：**预训练 Moirai 1.0 encoder 全量微调** + 线性预测头——与 M1/M4"自训小模型 + Chronos 先验作输入"不同，M3 是把预训练时序大模型本体拿来在场站数据上微调。管线：
   1. 输入 (B, 864, 3)，864 = 672+192 历史‖未来预测拼接（同 M1/M4）；**3 通道 = observe_power、GHI_solargis、temp_solargis**（2026-07-07 确认）——**完全不用 SSRD_pos/t2m_pos 九点位 NWP**，气象只吃 solargis 一路；功率未来段同 M1/M4 来自 Chronos（2026-07-07 确认）；
   2. **切 patch：patch=64 点（=16 小时，不与自然日对齐）**，864/64=13.5 → 每通道 14 个 patch，**仅最后一个 patch 补 32 点 padding** 凑满 64；各通道 patch 摊平进 token 维 → (B, 3×14=42, 64)；
@@ -105,6 +108,7 @@
 
 ## M4 【用户口述 2026-07-07】
 
+- **代码类名**：`PatchTSTPvForecaster`（2026-07-09 用户提供；pv-model-verify 据此在代码库中定位）
 - **模型类型/架构**：PatchTST 类深度模型，本质是对 Chronos（预训练时序大模型，用户写作 chronas）功率初步预测的"精调/修正"。管线（各环节 2026-07-07 已确认）：
   1. 5 个输入通道各自为 历史段 concat 未来预测段（未来段来自外部预测，非 M4 任务），每通道总长 672+192=864；
   2. RevIN 实例归一化；

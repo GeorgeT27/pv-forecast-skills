@@ -23,17 +23,30 @@ models.md 是结果分析归因的依据——模型看得见/看不见什么，
 
 用户给的是大仓库，模型在代码里未必叫 M1-M4。按序尝试：
 
-1. **先找路标**：训练入口、配置文件、实验名（`find <repo> -maxdepth 3 -name "*.yaml" -o -name "train*.py"`、README）常写着模型注册名与产线配置。
-2. **架构签名搜索**——models.md 里的结构本身就是搜索词：
+1. **先按代码类名直接定位（首选，2026-07-09 用户提供）**——每个模型在代码里的类名已知，
+   `grep -rn` 类名即可直达定义文件，比架构关键词可靠得多：
+
+   | 模型 | 代码类名（grep 首选） | 容错前缀 |
+   |------|------|------|
+   | M1 | `FourierMobaTransformer` | `FourierMoba` |
+   | M2 | `PatchRegForcast` | `PatchReg` |
+   | M3 | `MoiraiPvForecaster` | `MoiraiPv` |
+   | M4 | `PatchTSTPvForecaster` | `PatchTSTPv` |
+
+   注意 M2 类名用户原文拼作 `PatchRegForcast`（"Forcast" 少个 e、用 "Reg" 而非 "PvForecaster"），
+   与 M3/M4 命名不一致——若精确串搜不到，用容错前缀 `PatchReg` 再搜，以代码里实际类名为准。
+2. **找路标**：训练入口、配置文件、实验名（`find <repo> -maxdepth 3 -name "*.yaml" -o -name "train*.py"`、README）常写着模型注册名与产线配置，确认类名到 M1-M4 的映射。
+3. **架构签名兜底**——类名搜不到（改过名/多副本）时，用 models.md 的结构当搜索词：
 
    | 模型 | Grep 关键词（任一命中即候选） |
    |------|------|
    | M4 | `PatchTST` / `RevIN` / `TSTencoder` / `pinball` / `quantile` |
    | M1 | `MoBA` / `vicreg` / `ortho` / `fourier` / `customTSTiEncoder` |
    | M3 | `moirai` / `MultiInSizeLinear` / `loss_auxi` / `rfft` |
+   | M2 | `stat_embd` / `GHIembedding` / `Patch1d` / `weather_source_names` |
    | 共用 | `chronos` / `observe_power_predicted` |
 
-3. **多版本歧义不要自行裁决**：同一签名命中多个文件（实验副本、旧版本）时，列出候选（路径 + 关键差异点）请用户确认哪个对应产线 M1-M4。对错版本核验，整个结果作废。
+4. **多版本歧义不要自行裁决**：同一类名/签名命中多个文件（实验副本、旧版本）时，列出候选（路径 + 关键差异点）请用户确认哪个对应产线 M1-M4。对错版本核验，整个结果作废。
 4. **找不到就明说**：某模型定位不到 → 报告"未找到"，该模型档案保持原状；不要拿相似代码硬套。
 
 ## Step 3：逐条核验
