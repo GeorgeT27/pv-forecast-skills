@@ -5,49 +5,33 @@
 
 每个画图函数产出两个文件：`xxx.png`（人看 + 模型 Read 回看）和 `xxx.stats.json`
 （相关系数、R²、PSI、KS p 值等分析数值）——**模型直接读 stats.json 拿数字，
-结合 references/ 背景写结论**，不必从图上目测。
+结合 references/ 背景写结论**，不必从图上目测。**走势图的 stats.json 现在存整条曲线**：
+`fig05` 全 192 步、`fig06` 全时段、`fig04/07/09` 逐日、`fig01` 按功率分箱，每条曲线附形状描述符
+`trend`/`monotonic`/`max_jump_idx`/`max_jump`/`roughness`/`argmax`（由 `_curve_stats` 产出）——
+先读整条曲线判走势（别只看单点），再对号 `references/figure-diagnostics.md` 的形态。
 
-## 典型流程
+## 典型流程：优先用固化脚本（不要现写 pandas）
 
-```python
-import sys; sys.path.insert(0, "<skill>/scripts")
-import data_utils as du, plots
+三个入口脚本读工作目录下的 `analysis_config.json`，一行跑通：
 
-# 1. 读取 + 质检
-label = du.load_table(cfg["true_label"])
-assert du.check_window_consistency(label, du.LABEL_COL) == 0   # 窗口一致性
-power = du.rebuild_series(label, du.LABEL_COL)                 # 物理连续序列
-du.scan_suspect_days(power).to_csv("suspect_days.csv")         # 可疑日 → 用户核对
-
-# 2. 各模型误差矩阵
-errs, rmses = {}, {}
-for name, path in pred_paths.items():                          # M1..M4, ensemble
-    ts, P, Y = du.align(du.load_table(path), label, pred_col)
-    errs[name], rmses[name] = du.error_matrices(P, Y, ts)
-
-# 3. 天气分型（图#8 与漂移诊断共用）
-ghi = du.rebuild_series(label, du.GHI_COL)
-wc = du.daily_weather_class(ghi); wc.to_csv("weather_class.csv")
-
-# 4. 图谱（输出到 figures/<电站>/<范围>/，见 SKILL.md）
-plots.fig02_error_corr({k: v.groupby(v.index.date).mean() for k, v in
-                        {n: pd.Series(e.mean(1), rmses[n].index)
-                         for n, e in errs.items()}.items()}, out, by_month=True)
-plots.fig04_sample_rmse_ts(rmses, out, month="2025-06")
-plots.fig08_weather_conditional(rmses, wc, out)
-
-# 5. 模型对比结论前必过稳健性门槛
-du.robustness_check(rmses["M1"], rmses["M2"])   # passed=True 才能写"谁比谁好"
-
-# 6. 分布漂移（需训练集）
-train = du.load_table(cfg["train_set"])
-plots.fig11_train_test_dist(du.rebuild_series(train, du.GHI_COL), ghi, "GHI", out)
+```bash
+python <skill>/scripts/run_quality_check.py                              # Step 1 质检
+python <skill>/scripts/run_analysis.py  --range 2025-06 --figs 1,2,4,8   # Step 3 可视化
+python <skill>/scripts/run_drift.py     --cols "GHI-solargis,observe_power_future"  # 分布漂移
 ```
+
+`run_analysis.py` 的预测列名优先取 config 的 `pred_col`，缺省则自动侦测（唯一 192 宽的非 label 列）。
+需要自定义流程时再直接调底层函数（见下方函数索引）；**注意 `fig02` 的逐日输入要保留 DatetimeIndex**
+（`s.groupby(s.index.normalize()).mean()`，别用 `.index.date`，否则 `to_period` 报错）。
 
 ## 函数索引
 
 | 文件 | 函数 | 对应 |
 |------|------|------|
+| **run_quality_check.py** | Step 1 质检入口（读 config，取代旧 heredoc） | `python run_quality_check.py` |
+| **run_analysis.py** | Step 3 可视化入口（`--range` `--figs`，pred_col 自动侦测） | `python run_analysis.py --range 2025-06 --figs 1,2,4,8` |
+| **run_drift.py** | 分布漂移诊断入口（`--cols`） | `python run_drift.py --cols "GHI-solargis,observe_power_future"` |
+| plots | _curve_stats | 曲线序列化 + 形状描述符（走势图 stats.json 用） |
 | data_utils | load_table / to_matrix / align / error_matrices | 数据准备 |
 | data_utils | rebuild_series | 滚动窗口→物理序列（分布统计前必做） |
 | data_utils | basic_quality_checks / longest_constant_run | Step 1 质检（重复戳/缺口/常值段） |

@@ -43,8 +43,9 @@ description: 光伏功率预测结果分析的续跑入口——此前已用 pv-
 结论必须引用 `references/hypotheses.md` 的假设 ID、分组样本量披露；Stage 3→4 的
 强制停顿点（把现象清单报用户、由用户点名深挖项）同样不跳。
 
-**必须重算的**：逐样本误差矩阵（errs/rmses）不落盘，每次会话进入分析前都要按主技能
-Step 3 的"标准命令序列"重算一遍（几秒钟的事）；命令序列中的质检行可以省略。
+**必须重算的**：逐样本误差矩阵（errs/rmses）不落盘，每次会话进入分析前都要跑一遍主技能
+Step 3 的 `python <skill>/scripts/run_analysis.py --range <范围> --figs <图号>`（几秒钟的事），
+质检可省略。
 
 ## Step 2：进入分析
 
@@ -52,9 +53,9 @@ Step 3 的"标准命令序列"重算一遍（几秒钟的事）；命令序列�
 
 ### 路径 A：从可视化/事实提取续跑（Stage 2–3）
 
-按主技能 SKILL.md 的 **Step 3** 执行：标准命令序列、按问题选图（月度诊断必画
-#1/#2/#4/#8）、每图 stats.json → PNG 回看 → 结论、沉淀到
-`figures/<电站>/<范围>/ANALYSIS.md` 与 `FINDINGS.md`。到 Stage 3 结束停下报现象清单。
+按主技能 SKILL.md 的 **Step 3** 执行：跑 `run_analysis.py`、按问题选图（月度诊断必画
+#1/#2/#4/#8）、每图先读 stats.json 整条曲线 → Read PNG 回看 → 对号 `references/figure-diagnostics.md`
+形态 → 结论、沉淀到 `figures/<电站>/<范围>/ANALYSIS.md` 与 `FINDINGS.md`。到 Stage 3 结束停下报现象清单。
 
 ### 路径 B：现象已看完，直达 Stage 4 深归因
 
@@ -75,26 +76,26 @@ Step 3 的"标准命令序列"重算一遍（几秒钟的事）；命令序列�
 **进入前提（无论现象来自哪一级都要满足）**：现象引用的图的 PNG + `.stats.json` 仍在
 `figures/` 下可读——Stage 4 要复核这些证据数字与形态，不是另起炉灶凭空编故事。
 
-**直达 Stage 4 读什么、做什么**（对应主技能"诊断 Playbook"一节）：
+**直达 Stage 4 读什么、做什么**（Playbook 全文见 `references/playbooks.md`）：
 1. 按上面优先级拿到现象清单；**本次归因直接依据的那几张图，Read PNG 看一遍**
    （本会话没画过这些图，只读 stats.json 数字会漏掉散点弯曲、坏天聚集等形状证据），
    其余图读 stats.json 即可——**这些图已在，通常无需重画**。
 2. `ls references/` 扫全，读齐 `models.md`（模型架构/特征差异）、`station.md`、
    `seasonality.md`（该站该月气候机制）、`event-log.md`（跨月归因前必查）、
    `hypotheses.md`（认领对应 H-* 假设 ID）。
-3. 按现象类型走对应 Playbook：月度变差→Playbook A，模型间强弱→Playbook B。
-4. 结论落 `FINDINGS.md` 前**必过反驳门七条 + 稳健性门槛**（见主技能输出规范），
+3. 按现象类型走对应 Playbook（`references/playbooks.md`）：月度变差→Playbook A，模型间强弱→Playbook B。
+4. 结论落 `FINDINGS.md` 前**必过反驳门七条 + 稳健性门槛**（`references/analysis-discipline.md`），
    把现象条目状态从"现象"升级为"假设/已证实"，并在 ANALYSIS.md 留反驳门记录。
-5. 写 `CONCLUSION.md`（面向主管，见主技能"面向主管的结论汇报"一节），
+5. 写 `CONCLUSION.md`（面向主管，写法见 `references/playbooks.md`），
    再把图 + 数字 + 结论展示给用户。
 
 **只要主管总结（不重做归因）**：用户说"给主管写个总结/汇报""写 executive summary"、
 而 `FINDINGS.md`（或 ANALYSIS.md）里已有站得住的结论时——直接综合已成立结论写
-`CONCLUSION.md`，不必重跑 Playbook。写法严格按主技能"面向主管的结论汇报"一节：叙述优先、
+`CONCLUSION.md`，不必重跑 Playbook。写法严格按 `references/playbooks.md`：叙述优先、
 表格最多一张、方法论机器不进正文、结尾给建议。
 
 **Stage 4 何时仍需重算**：某条 Playbook 步骤要用一张 Stage 3 没画过的图（如现象只登记了
-#8，但归因需要 #5 分时效对比）——这时按主技能 Step 3 标准命令序列**重算误差矩阵**
+#8，但归因需要 #5 分时效对比）——这时跑 `run_analysis.py` **重算误差矩阵**
 （errs/rmses 不落盘）补画那一张，质检行可省略。已有的图不重画。
 
 ### 通用

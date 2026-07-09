@@ -44,6 +44,38 @@ def _color(name):
     return MODEL_COLORS.get(name, "gray")
 
 
+def _curve_stats(y, index=None, round_to=3):
+    """把一条曲线序列化 + 附形状描述符，供模型直接读 json 判形态（无需肉眼看 PNG）。
+
+    - curve：完整曲线 {index: 值}（走势全保留，不再压成单点）；
+    - trend/monotonic：单调上升 vs 平坦（对上 figure-diagnostics #5 形态 A/B）；
+    - max_jump_idx/max_jump：最大相邻跳变的位置与幅度（对上"开头台阶/结尾暴涨"）；
+    - roughness：相邻差的标准差 = 毛刺度（对上"M2 高频毛刺"，越大越毛）；
+    - argmax/argmin：峰谷位置。
+    """
+    v = np.asarray(y, float)
+    n = len(v)
+    idx = list(index) if index is not None else list(range(n))
+    finite = v[np.isfinite(v)]
+    if n < 2 or finite.size < 2:
+        return {"curve": {str(k): (round(float(val), round_to) if np.isfinite(val) else None)
+                          for k, val in zip(idx, v)},
+                "trend": "平", "monotonic": True, "max_jump_idx": str(idx[0]) if idx else None,
+                "max_jump": 0.0, "roughness": 0.0,
+                "argmax": None, "argmin": None}
+    diff = np.diff(v)
+    j = int(np.nanargmax(np.abs(diff)))
+    return {
+        "curve": {str(k): (round(float(val), round_to) if np.isfinite(val) else None)
+                  for k, val in zip(idx, v)},
+        "trend": "上升" if v[-1] > v[0] else ("下降" if v[-1] < v[0] else "平"),
+        "monotonic": bool(np.all(diff >= 0) or np.all(diff <= 0)),
+        "max_jump_idx": str(idx[j]), "max_jump": round(float(diff[j]), round_to),
+        "roughness": round(float(np.nanstd(diff)), round_to),
+        "argmax": str(idx[int(np.nanargmax(v))]), "argmin": str(idx[int(np.nanargmin(v))]),
+    }
+
+
 # ---------------------------------------------------------------- #1 真值-预测归因散点
 def fig01_true_vs_pred(P: np.ndarray, Y: np.ndarray, model: str, out_png,
                        pick: str = "all"):
@@ -69,9 +101,19 @@ def fig01_true_vs_pred(P: np.ndarray, Y: np.ndarray, model: str, out_png,
             bbox=dict(fc="white", alpha=0.85))
     ax.set_xlabel("真实功率"), ax.set_ylabel("预测功率")
     ax.set_title(f"#1 True vs Pred — {model} ({pick})"), ax.legend(loc="lower right")
+    # 按真值分位分箱看 slope 沿功率段的形状（是否只有高功率段被压低，还是全段等比例偏）
+    try:
+        dfb = pd.DataFrame({"y": y, "p": p})
+        dfb["bin"] = pd.qcut(dfb["y"], 10, duplicates="drop")
+        g = dfb.groupby("bin", observed=True).agg(y=("y", "mean"), p=("p", "mean"))
+        pred_by_true_bin = {f"{r.y:.1f}": round(float(r.p), 2) for r in g.itertuples()}
+    except (ValueError, IndexError):
+        pred_by_true_bin = {}
     return _save(fig, out_png, {"fig": 1, "model": model, "pick": pick,
                                 "r2": r2, "slope": float(slope),
-                                "note": "slope<1 → 大功率段被系统性压低"})
+                                "pred_by_true_bin": pred_by_true_bin,
+                                "note": "slope<1 → 大功率段被系统性压低；"
+                                        "pred_by_true_bin 看压低集中在高段还是全段"})
 
 
 # ---------------------------------------------------------------- #2 模型间误差相关热力图
@@ -120,13 +162,14 @@ def fig02_error_corr(sample_rmse_or_err: dict[str, pd.Series], out_png,
 def fig04_sample_rmse_ts(sample_rmse: dict[str, pd.Series], out_png,
                          month: str | None = None, top_bad: int = 5):
     fig, ax = plt.subplots(figsize=(14, 4))
-    worst = {}
+    worst, daily_all = {}, {}
     for name, s in sample_rmse.items():
         if month:
             s = s[s.index.to_period("M") == month]
         ax.plot(s.index, s.values, lw=0.8, color=_color(name), label=name)
         daily = s.groupby(s.index.date).mean()
-        worst[name] = daily.nlargest(top_bad).round(3).to_dict()
+        worst[name] = {str(d): round(float(v), 3) for d, v in daily.nlargest(top_bad).items()}
+        daily_all[name] = {str(d): round(float(v), 3) for d, v in daily.items()}
     ref = list(sample_rmse)[0]
     for d in list(worst[ref])[:top_bad]:      # 标注第一个模型的坏天日期
         ax.axvline(pd.Timestamp(d), color="gray", ls=":", lw=0.8)
@@ -134,13 +177,15 @@ def fig04_sample_rmse_ts(sample_rmse: dict[str, pd.Series], out_png,
                 rotation=90, va="top", fontsize=7, color="gray")
     ax.set_title(f"#4 逐样本RMSE时间序列 {month or '全周期'}")
     ax.set_ylabel("RMSE (行内192点)"), ax.legend(ncol=len(sample_rmse))
-    return _save(fig, out_png, {"fig": 4, "month": month, "worst_days": worst})
+    return _save(fig, out_png, {"fig": 4, "month": month, "worst_days": worst,
+                                "daily_rmse": daily_all})
 
 
 # ---------------------------------------------------------------- #5 按预报时效误差曲线
 def fig05_horizon_error(over_error: dict[str, np.ndarray], out_png):
     fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
-    stats = {"fig": 5, "rmse_at_ultra_idx": {}, "rmse_short_window": {}}
+    stats = {"fig": 5, "rmse_at_ultra_idx": {}, "rmse_short_window": {},
+             "rmse_by_step": {}, "bias_by_step": {}}
     for name, e in over_error.items():
         rmse_h = np.sqrt(np.nanmean(e ** 2, axis=0))
         bias_h = np.nanmean(e, axis=0)
@@ -149,6 +194,9 @@ def fig05_horizon_error(over_error: dict[str, np.ndarray], out_png):
         stats["rmse_at_ultra_idx"][name] = float(rmse_h[ULTRA_SHORT_IDX])
         stats["rmse_short_window"][name] = float(
             np.sqrt(np.nanmean(e[:, SHORT_SLICE] ** 2)))
+        # 完整 192 步走势 + 形状描述符（roughness 判 M2 毛刺、max_jump 判开头/结尾台阶）
+        stats["rmse_by_step"][name] = _curve_stats(rmse_h)
+        stats["bias_by_step"][name] = _curve_stats(bias_h)
     for ax in axes:
         ax.axvline(ULTRA_SHORT_IDX, color="k", ls="--", lw=0.8)
         ax.axvspan(SHORT_SLICE.start, SHORT_SLICE.stop, alpha=0.12, color="orange")
@@ -165,7 +213,8 @@ def fig06_intraday_profile(over_error: dict[str, np.ndarray],
                            timestamps: pd.Series, out_png):
     """按目标物理时刻聚合（行起点 + 步序 → 目标时刻的 time-of-day）。"""
     fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
-    stats = {"fig": 6, "worst_hour_rmse": {}, "bias_asymmetry": {}}
+    stats = {"fig": 6, "worst_hour_rmse": {}, "bias_asymmetry": {},
+             "rmse_by_tod": {}, "bias_by_tod": {}}
     base = pd.DatetimeIndex(timestamps)
     for name, e in over_error.items():
         rec = []
@@ -179,6 +228,9 @@ def fig06_intraday_profile(over_error: dict[str, np.ndarray],
         h = rmse.index / 60
         axes[0].plot(h, rmse.values, color=_color(name), label=name)
         axes[1].plot(h, bias.values, color=_color(name))
+        hkey = [round(float(x), 2) for x in h]                # 目标时刻（小时）
+        stats["rmse_by_tod"][name] = _curve_stats(rmse.values, index=hkey)
+        stats["bias_by_tod"][name] = _curve_stats(bias.values, index=hkey)
         stats["worst_hour_rmse"][name] = float(rmse.idxmax() / 60)
         neg = allr[allr["err"] < 0]["err"]
         stats["bias_asymmetry"][name] = {
@@ -202,7 +254,10 @@ def fig07_daily_rmse(sample_rmse: pd.Series, model: str, out_png, top: int = 15)
     ax.tick_params(axis="x", rotation=75, labelsize=7)
     ax.set_title(f"#7 最差{top}天 — {model}"), ax.set_ylabel("日均RMSE")
     return _save(fig, out_png, {"fig": 7, "model": model,
-                                "worst_days": head.round(3).to_dict()})
+                                "worst_days": {str(d): round(float(v), 3)
+                                               for d, v in head.items()},
+                                "daily_rmse": {str(d): round(float(v), 3)
+                                               for d, v in daily.items()}})
 
 
 # ---------------------------------------------------------------- #8 天气分型条件对比
@@ -259,6 +314,8 @@ def fig09_oracle_gap(sample_rmse: dict[str, pd.Series], out_png,
         "ensemble_minus_oracle": gap,
         "oracle_pick_share": daily[singles].idxmin(axis=1).value_counts(
             normalize=True).round(3).to_dict(),
+        "daily_rmse": {col: {str(d): round(float(v), 3) for d, v in daily[col].items()}
+                       for col in daily.columns},   # 各模型 + oracle 逐日走势
         "note": "差距大 → 动态选模型有改进空间；pick_share 看谁最常是当日最优"})
 
 
@@ -289,7 +346,11 @@ def fig11_train_test_dist(train_series: pd.Series, test_series: pd.Series,
                 color="red" if p > 0.25 else "black")
         stats["by_month"][m] = {"psi": round(p, 3), "ks_p": ks_p,
                                 "median_2024": float(np.median(a)),
-                                "median_2025": float(np.median(b))}
+                                "median_2025": float(np.median(b)),
+                                "p10_2024": round(float(np.percentile(a, 10)), 2),
+                                "p90_2024": round(float(np.percentile(a, 90)), 2),
+                                "p10_2025": round(float(np.percentile(b, 10)), 2),
+                                "p90_2025": round(float(np.percentile(b, 90)), 2)}
     fig.suptitle(f"#11 {varname} 分布 2024 vs 2025（PSI>0.25 显著漂移）")
     return _save(fig, out_png, stats)
 
