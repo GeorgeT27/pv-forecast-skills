@@ -19,8 +19,10 @@ description: 光伏功率预测结果分析的续跑入口——此前已用 pv-
    数据换了版本的话质检不能跳（旧质检结论对新数据无效）。
 3. 盘点既有产物并把清单报给用户：`suspect_days.csv`、`weather_class.csv`、
    `figures/<电站>/**`（PNG + stats.json + ANALYSIS.md）、`FINDINGS.md`、metric 指标 Excel。
-4. **先读 `FINDINGS.md`（如存在）**：本次要回答的问题若已有结论，直接引用并问用户是否需要
-   更新，而不是重做一遍——这是续跑的最大价值。
+4. **先读既有结论**：`FINDINGS.md`（如存在）+ `figures/**/ANALYSIS.md`。本次要回答的
+   问题若已有结论，直接引用并问用户是否需要更新，而不是重做一遍——这是续跑的最大价值。
+   注意 `FINDINGS.md` 是模型手写的软产物、可能缺失，此时结论仍在各图的 `ANALYSIS.md` 里
+   （见 Step 2 路径 B 的现象重建优先级）。
 
 ## Step 1：跳过规则
 
@@ -58,15 +60,25 @@ Step 3 的"标准命令序列"重算一遍（几秒钟的事）；命令序列�
 
 用户说"现象/事实已经看过了""结合电站和模型解释为什么""深入归因某个现象"时走这条。
 
-**进入前提（必须核对，不满足则退回路径 A 先补 Stage 3）**：
-- `FINDINGS.md` 里确有状态="现象"的条目，且每条带**具体数字 + 图链接**（Stage 4 是给
-  这些现象找原因，没有登记在案的现象就无从归因，也容易变成凭空编故事）。
-- 现象引用的图（如 #2/#4/#8）的 PNG + `.stats.json` 仍在 `figures/` 下可读——
-  Stage 4 要复核这些证据数字，不是另起炉灶。
+**现象清单从哪来（`FINDINGS.md` 不是唯一来源）**：`FINDINGS.md` 是模型手写的软产物，
+不是脚本自动生成的——上一次跑（尤其在别的机器上）很可能只写了每张图旁的 `ANALYSIS.md`
+和 `stats.json`，没落 `FINDINGS.md`。所以进 Stage 4 的现象清单**按下面优先级重建**：
+
+1. 有 `FINDINGS.md` 且含状态="现象"的条目 → 直接用。
+2. 没有 FINDINGS，但 `figures/<电站>/<范围>/ANALYSIS.md` 存在 → **从 ANALYSIS.md
+   （每图的文字结论）+ 同目录 `.stats.json`（精确数字）汇总出现象清单**，并把这份清单
+   **回填进 `FINDINGS.md`**（状态标"现象"、带数字与图链接），让后续会话稳定可续。
+3. 连 ANALYSIS.md 都没有，只有 PNG + `.stats.json` → 逐张 Read PNG + 读 stats.json，
+   由本会话现读现总结出现象清单，同样回填 FINDINGS.md。
+4. 图和 stats.json 都没有 → 无既有事实可归因，**退回路径 A 先跑 Stage 2–3**。
+
+**进入前提（无论现象来自哪一级都要满足）**：现象引用的图的 PNG + `.stats.json` 仍在
+`figures/` 下可读——Stage 4 要复核这些证据数字与形态，不是另起炉灶凭空编故事。
 
 **直达 Stage 4 读什么、做什么**（对应主技能"诊断 Playbook"一节）：
-1. 先读 `FINDINGS.md` 现象条目 + 它们引用的图的 `.stats.json`（拿精确数字），
-   必要时 Read PNG 复核形态——**这些图已在，通常无需重画**。
+1. 按上面优先级拿到现象清单；**本次归因直接依据的那几张图，Read PNG 看一遍**
+   （本会话没画过这些图，只读 stats.json 数字会漏掉散点弯曲、坏天聚集等形状证据），
+   其余图读 stats.json 即可——**这些图已在，通常无需重画**。
 2. `ls references/` 扫全，读齐 `models.md`（模型架构/特征差异）、`station.md`、
    `seasonality.md`（该站该月气候机制）、`event-log.md`（跨月归因前必查）、
    `hypotheses.md`（认领对应 H-* 假设 ID）。
