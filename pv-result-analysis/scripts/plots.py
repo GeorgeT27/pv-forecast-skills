@@ -1,10 +1,11 @@
 """光伏预测结果分析 —— 图谱库（对应 SKILL.md 图谱目录 #1-#12）。
 
 设计原则（见 SKILL.md 输出与结论规范）：
-- 图为双读者设计（人 + 模型）：关键数值直接标注在图上；
-- 每个函数除 PNG 外同时落盘同名 .stats.json —— 相关系数、KS/PSI、R² 等
-  分析数值，供大模型直接读取，再结合 references/ 背景写结论；
-- 模型配色固定用 data_utils.MODEL_COLORS，跨图可比。
+- **PNG 只给人看；分析模型一律读 .stats.json，不 Read 图**（读图费上下文，小上下文模型会爆）。
+  因此每个函数的 .stats.json 必须自足——把图上一切可判读的数字都写进去：相关矩阵、
+  R²/slope/intercept、完整走势曲线 + 形状描述符、逐日序列、分布分位数摘要等，
+  使"读 json 判形态"与"看图"等价。补图时若新增了图上信息，同步补进 stats.json。
+- 模型配色固定用 data_utils.MODEL_COLORS，跨图可比（供人看图时一致）。
 
 用法示例见 scripts/README.md。所有函数输入均为 data_utils 的标准产物。
 """
@@ -111,8 +112,13 @@ def fig01_true_vs_pred(P: np.ndarray, Y: np.ndarray, model: str, out_png,
         pred_by_true_bin = {}
     return _save(fig, out_png, {"fig": 1, "model": model, "pick": pick,
                                 "r2": r2, "slope": float(slope),
+                                "intercept": float(intercept), "n": int(mask.sum()),
+                                "true_max": round(float(y.max()), 2),
+                                "pred_max": round(float(p.max()), 2),
                                 "pred_by_true_bin": pred_by_true_bin,
-                                "note": "slope<1 → 大功率段被系统性压低；"
+                                "note": "回归线 = slope*真值+intercept；散点密度的可读内容全在 "
+                                        "pred_by_true_bin（每功率段真值均值→预测均值），无需看图。"
+                                        "slope<1 → 大功率段被系统性压低；"
                                         "pred_by_true_bin 看压低集中在高段还是全段"})
 
 
@@ -345,13 +351,18 @@ def fig11_train_test_dist(train_series: pd.Series, test_series: pd.Series,
         ax.text(0.5, 0.92, f"PSI={p:.2f}{flag}", transform=ax.transAxes,
                 fontsize=7, ha="center",
                 color="red" if p > 0.25 else "black")
+        # 每个 violin 的分布形状用离散分位数摘要完整承载，读 json 即可判形态，无需看图
+        def _q(arr, side):
+            return {f"n_{side}": int(arr.size),
+                    f"mean_{side}": round(float(np.mean(arr)), 2),
+                    f"std_{side}": round(float(np.std(arr)), 2),
+                    f"p10_{side}": round(float(np.percentile(arr, 10)), 2),
+                    f"p25_{side}": round(float(np.percentile(arr, 25)), 2),
+                    f"median_{side}": round(float(np.median(arr)), 2),
+                    f"p75_{side}": round(float(np.percentile(arr, 75)), 2),
+                    f"p90_{side}": round(float(np.percentile(arr, 90)), 2)}
         stats["by_month"][m] = {"psi": round(p, 3), "ks_p": ks_p,
-                                "median_train": float(np.median(a)),
-                                "median_test": float(np.median(b)),
-                                "p10_train": round(float(np.percentile(a, 10)), 2),
-                                "p90_train": round(float(np.percentile(a, 90)), 2),
-                                "p10_test": round(float(np.percentile(b, 10)), 2),
-                                "p90_test": round(float(np.percentile(b, 90)), 2)}
+                                **_q(a, "train"), **_q(b, "test")}
     fig.suptitle(f"#11 {varname} 分布 train vs test（PSI>0.25 显著漂移）")
     return _save(fig, out_png, stats)
 

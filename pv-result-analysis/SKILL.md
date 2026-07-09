@@ -129,7 +129,7 @@ python3 "<SKILL>/scripts/run_drift.py" --cols "GHI-solargis,observe_power_future
 
 （`<SKILL>` = `/Users/tqa946816/Documents/华为/光伏预测/结果分析skill/pv-result-analysis`。）
 
-**每张图落盘 PNG + 同名 `.stats.json`**。stats.json 现在**含完整曲线 + 形状描述符**（走势图如 #5/#6 存全 192 步/全时段曲线，加 `trend`/`max_jump_idx`/`roughness` 等描述符；#4/#7/#9 存逐日序列）——**先读 stats.json 的整条曲线判走势**（不要只看单点），**再 Read PNG 确认形态，对号 `references/figure-diagnostics.md` 的形态判读，结合 references/ 背景写结论**。列名不符只改 `data_utils.py` 顶部 CONFIG；首跑修正提交回 scripts/。
+**每张图落盘 PNG + 同名 `.stats.json`；PNG 只给人看，分析一律读 stats.json，不要 Read 图。** stats.json 已做到**自足**——把图上一切可判读的数字都写进去了：#5/#6 存全 192 步/全时段完整曲线 + `trend`/`max_jump_idx`/`roughness` 形状描述符，#4/#7/#9 存逐日序列，#1 存 slope/intercept/`pred_by_true_bin`，#11 存逐月分位数摘要，#2/#8/#12 存完整矩阵/曲线。所以判读流程 = **读 stats.json 的完整曲线/数字判走势（不要只看单点）→ 对号 `references/figure-diagnostics.md` 的形态判读 → 结合 references/ 背景写结论**，全程无需读图（读图费上下文，小上下文模型会爆）。若发现某图上有信息 stats.json 没给，那是 `plots.py` 的 bug，去补 stats.json，而不是改成读图。列名不符只改 `data_utils.py` 顶部 CONFIG；首跑修正提交回 scripts/。
 
 ### 图谱目录（判读见 `references/figure-diagnostics.md`，调用见 `scripts/README.md`）
 
@@ -148,7 +148,7 @@ python3 "<SKILL>/scripts/run_drift.py" --cols "GHI-solargis,observe_power_future
 
 ### 输出与结论规范
 
-图有两类读者：人 + 后续分析的模型。所以图要"可被视觉阅读"（关键数值标注在图上、固定配色、信息密度不过载），生成后必须 Read 回看形成闭环：读图 → 写结论（这张图说明什么、支持/否定哪个假设）→ 图读不清就重画 → 图与结论一起沉淀到 `figures/<电站>/<范围>/ANALYSIS.md`。只发图不给结论等于没分析。图输出目录 `figures/yalongjiang/<范围>/`（测试站固定雅砻江），命名 `<图号>_<内容>_<范围>.png`。
+**PNG 是给人看的交付物，分析闭环走 stats.json，不 Read 图。** 闭环 = 读 stats.json（完整曲线/矩阵/分位数）→ 写结论（这张图说明什么、支持/否定哪个假设）→ 数字异常或缺失就查 `plots.py`/补 stats.json/重画 → 结论沉淀到 `figures/<电站>/<范围>/ANALYSIS.md`。只出图不给结论等于没分析。图仍要"可被人视觉阅读"（关键数值标注在图上、固定配色）供人复核，但**模型不靠读图下结论**。图输出目录 `figures/yalongjiang/<范围>/`（测试站固定雅砻江），命名 `<图号>_<内容>_<范围>.png`。
 
 **结论三道门**（下结论、尤其标"已证实"前必过——完整细则见 `references/analysis-discipline.md`）：
 

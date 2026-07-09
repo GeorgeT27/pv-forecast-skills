@@ -3,12 +3,13 @@
 数据格式固定（滚动窗口 parquet，见 SKILL.md 项目背景），所以这些代码一次写好反复用。
 **不要每次现写 pandas**：优先调这里的函数；列名不符时只改 `data_utils.py` 顶部 CONFIG，不改逻辑。
 
-每个画图函数产出两个文件：`xxx.png`（人看 + 模型 Read 回看）和 `xxx.stats.json`
-（相关系数、R²、PSI、KS p 值等分析数值）——**模型直接读 stats.json 拿数字，
-结合 references/ 背景写结论**，不必从图上目测。**走势图的 stats.json 现在存整条曲线**：
-`fig05` 全 192 步、`fig06` 全时段、`fig04/07/09` 逐日、`fig01` 按功率分箱，每条曲线附形状描述符
-`trend`/`monotonic`/`max_jump_idx`/`max_jump`/`roughness`/`argmax`（由 `_curve_stats` 产出）——
-先读整条曲线判走势（别只看单点），再对号 `references/figure-diagnostics.md` 的形态。
+每个画图函数产出两个文件：`xxx.png`（**只给人看**）和 `xxx.stats.json`（图上一切可判读的数字）
+——**模型一律读 stats.json，不 Read 图**（读图费上下文、小上下文模型会爆，且中文可能变方块）。
+stats.json 做到**自足**：`fig05` 全 192 步曲线、`fig06` 全时段、`fig04/07/09` 逐日、`fig01`
+slope/intercept + 按功率分箱、`fig11` 逐月分位数摘要、`fig02/08/12` 完整矩阵/曲线，走势图每条
+曲线附形状描述符 `trend`/`monotonic`/`max_jump_idx`/`max_jump`/`roughness`/`argmax`（`_curve_stats`
+产出）——读整条曲线判走势（别只看单点），再对号 `references/figure-diagnostics.md` 的形态。
+**补新图时：图上加了什么信息，就同步加进 stats.json**，保持"读 json ≡ 看图"。
 
 ## 典型流程：优先用固化脚本（不要现写 pandas）
 
