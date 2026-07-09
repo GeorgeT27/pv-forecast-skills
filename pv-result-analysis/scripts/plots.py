@@ -209,7 +209,7 @@ def fig07_daily_rmse(sample_rmse: pd.Series, model: str, out_png, top: int = 15)
 def fig08_weather_conditional(sample_rmse: dict[str, pd.Series],
                               wclass: pd.DataFrame, out_png):
     """wclass: data_utils.daily_weather_class 的输出（index=date, 列含 wclass）。"""
-    order = ["晴稳", "阴稳", "多云波动", "突变日"]
+    order = ["晴稳", "多云平稳", "阴稳", "多云波动", "突变日"]
     fig, axes = plt.subplots(1, 2, figsize=(13, 4.2),
                              gridspec_kw={"width_ratios": [3, 2]})
     stats = {"fig": 8, "rmse_by_class": {}, "class_share_by_month": {}}

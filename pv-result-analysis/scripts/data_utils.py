@@ -201,7 +201,12 @@ def daily_weather_class(ghi: pd.Series, kt_hi: float = 0.65, kt_lo: float = 0.35
     """日级天气分型（输入为 rebuild_series 后的连续 GHI 序列）。
     kt = 当日 GHI 总量 / 晴天包络（当月各时刻 95 分位曲线）总量；
     sigma = 白天段 GHI 一阶差分标准差 / 包络峰值（归一化波动性）。
-    四类：晴稳 / 阴稳 / 多云波动 / 突变日（|kt - 前一日 kt| > jump，优先级最高）。
+    五类（低波动日按 kt 分三档，高波动/突变另立）：
+      - 晴稳：kt >= kt_hi，明亮平稳；
+      - 多云平稳：kt_lo <= kt < kt_hi（默认档），中等云量、日内平稳；
+      - 阴稳：kt < kt_lo，真正的阴天（持续厚云）、日内平稳；
+      - 多云波动：sigma > sigma_q 分位，日内辐照剧烈起伏（覆盖上面 kt 分档）；
+      - 突变日：|kt - 前一日 kt| > jump，相对昨日天气型骤变（优先级最高，覆盖全部）。
     结果供图#8 与分布漂移诊断复用，落盘 weather_class.csv。"""
     f = ghi.to_frame("ghi")
     f["month"], f["tod"] = f.index.month, f.index.time
@@ -218,9 +223,10 @@ def daily_weather_class(ghi: pd.Series, kt_hi: float = 0.65, kt_lo: float = 0.35
         rows.append((date, kt, sigma))
     out = pd.DataFrame(rows, columns=["date", "kt", "sigma"]).set_index("date")
     sig_hi = out["sigma"].quantile(sigma_q)
-    cls = pd.Series("阴稳", index=out.index)
+    cls = pd.Series("多云平稳", index=out.index)        # 中等 kt、低波动 = 默认档
     cls[out["kt"] >= kt_hi] = "晴稳"
-    cls[out["sigma"] > sig_hi] = "多云波动"
+    cls[out["kt"] < kt_lo] = "阴稳"                      # 真正的阴天（低 kt）
+    cls[out["sigma"] > sig_hi] = "多云波动"              # 高波动覆盖 kt 分档
     cls[(out["kt"] - out["kt"].shift(1)).abs() > jump] = "突变日"
     out["wclass"] = cls
     return out

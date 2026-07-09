@@ -52,7 +52,7 @@ plots.fig11_train_test_dist(du.rebuild_series(train, du.GHI_COL), ghi, "GHI", ou
 | data_utils | rebuild_series | 滚动窗口→物理序列（分布统计前必做） |
 | data_utils | basic_quality_checks / longest_constant_run | Step 1 质检（重复戳/缺口/常值段） |
 | data_utils | check_window_consistency / scan_suspect_days | Step 1 质检 |
-| data_utils | daily_weather_class | 天气分型（kt+σΔ→四类） |
+| data_utils | daily_weather_class | 天气分型（kt+σΔ→五类：晴稳/多云平稳/阴稳/多云波动/突变日） |
 | data_utils | psi / robustness_check | 漂移量化 / 结论稳健性门槛 |
 | plots | fig01…fig09 | 图谱 #1-#9（#3 用 metric.py Excel，无需脚本） |
 | plots | fig11 / fig12 | 分布漂移诊断 |
