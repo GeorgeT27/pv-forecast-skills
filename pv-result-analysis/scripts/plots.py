@@ -322,7 +322,8 @@ def fig09_oracle_gap(sample_rmse: dict[str, pd.Series], out_png,
 # ---------------------------------------------------------------- #11 训练/测试同月分布对比
 def fig11_train_test_dist(train_series: pd.Series, test_series: pd.Series,
                           varname: str, out_png):
-    """输入为重建后的物理连续序列（train=2024, test=2025）。逐月对比 + KS/PSI。"""
+    """输入为重建后的物理连续序列（train vs test，跨站/跨期通用；跨站设定下
+    train=5 训练站 pooled、test=雅砻江）。逐月对比 + KS/PSI。"""
     try:
         from scipy.stats import ks_2samp
     except ImportError:
@@ -337,7 +338,7 @@ def fig11_train_test_dist(train_series: pd.Series, test_series: pd.Series,
             ax.set_visible(False)
             continue
         ax.violinplot([a, b], showmedians=True)
-        ax.set_xticks([1, 2], ["2024", "2025"]), ax.set_title(f"{m}月", fontsize=9)
+        ax.set_xticks([1, 2], ["train", "test"]), ax.set_title(f"{m}月", fontsize=9)
         p = psi(a, b)
         ks_p = float(ks_2samp(a, b).pvalue) if ks_2samp else None
         flag = "!" if p > 0.25 else ""
@@ -345,24 +346,25 @@ def fig11_train_test_dist(train_series: pd.Series, test_series: pd.Series,
                 fontsize=7, ha="center",
                 color="red" if p > 0.25 else "black")
         stats["by_month"][m] = {"psi": round(p, 3), "ks_p": ks_p,
-                                "median_2024": float(np.median(a)),
-                                "median_2025": float(np.median(b)),
-                                "p10_2024": round(float(np.percentile(a, 10)), 2),
-                                "p90_2024": round(float(np.percentile(a, 90)), 2),
-                                "p10_2025": round(float(np.percentile(b, 10)), 2),
-                                "p90_2025": round(float(np.percentile(b, 90)), 2)}
-    fig.suptitle(f"#11 {varname} 分布 2024 vs 2025（PSI>0.25 显著漂移）")
+                                "median_train": float(np.median(a)),
+                                "median_test": float(np.median(b)),
+                                "p10_train": round(float(np.percentile(a, 10)), 2),
+                                "p90_train": round(float(np.percentile(a, 90)), 2),
+                                "p10_test": round(float(np.percentile(b, 10)), 2),
+                                "p90_test": round(float(np.percentile(b, 90)), 2)}
+    fig.suptitle(f"#11 {varname} 分布 train vs test（PSI>0.25 显著漂移）")
     return _save(fig, out_png, stats)
 
 
 # ---------------------------------------------------------------- #12 功率-辐照映射对比
 def fig12_power_ghi_mapping(power_train, ghi_train, power_test, ghi_test,
                             out_png, bins: int = 20):
-    """输入均为物理连续序列；按 GHI 分位分箱画两年的功率均值曲线。"""
+    """输入均为物理连续序列；按 GHI 分位分箱画 train/test 的功率均值曲线
+    （跨站设定下 train=训练站、test=雅砻江）。"""
     fig, ax = plt.subplots(figsize=(7, 5))
     stats = {"fig": 12, "curve": {}}
-    for label, p, g, color in [("2024", power_train, ghi_train, "steelblue"),
-                               ("2025", power_test, ghi_test, "firebrick")]:
+    for label, p, g, color in [("train", power_train, ghi_train, "steelblue"),
+                               ("test", power_test, ghi_test, "firebrick")]:
         df = pd.concat([p.rename("power"), g.rename("ghi")], axis=1).dropna()
         df = df[df["ghi"] > 0]
         df["bin"] = pd.qcut(df["ghi"], bins, duplicates="drop")
@@ -372,6 +374,6 @@ def fig12_power_ghi_mapping(power_train, ghi_train, power_test, ghi_test,
         stats["curve"][label] = {f"{r.ghi:.0f}": round(r.power, 2)
                                  for r in c.itertuples()}
     ax.set_xlabel("GHI"), ax.set_ylabel("平均功率")
-    ax.set_title("#12 功率-辐照映射 2024 vs 2025"), ax.legend()
+    ax.set_title("#12 功率-辐照映射 train vs test"), ax.legend()
     stats["note"] = "曲线整体位移 → 组件衰减/扩容/限电改变物理映射，所有模型同时受害"
     return _save(fig, out_png, stats)

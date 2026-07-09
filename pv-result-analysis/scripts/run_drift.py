@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """分布漂移诊断（固化脚本，取代 SKILL.md 里的 heredoc）。
 
+跨站设定（2026-07-09）：train_set = 5 站 2025 pooled，true_label = 留出测试站雅砻江。
+漂移是**跨站**的——回答"雅砻江是不是落在训练站没覆盖的分布里、最像哪个训练站"。
+
 用法（在有 analysis_config.json 的工作目录）：
     python <skill>/scripts/run_drift.py --cols GHI-solargis,observe_power_future
     # --cols  逗号分隔要查的列：气象列=特征漂移、功率标签列=标签漂移；
     #         SSRD_pos_* / t2m_pos_* / temp solargis 等按 schema 真实列名补。
+    # 逐站对比：config 里给 "train_stations": {站名: 路径}，脚本对每个训练站单独 vs 雅砻江，
+    #          输出逐站 PSI 便于排"最像→最不像"，找迁移锚与盲区。
 
-回答第三类"为什么"：模型是不是遇到了训练年（2024）没见过的分布。三类漂移分开看，
-含义完全不同——特征漂移（气象）/ 标签漂移（功率，看台阶）/ 映射漂移（功率-辐照曲线位移）。
-天气型跨年对比**必须用 2024 作共享基准**（weather_class_drift 已内置），否则各年自归一化
-会把"整体变暗 / 更多波动天"抹平。详见 references/drift-and-nwp.md。
+三类漂移分开看，含义完全不同——特征漂移（气象）/ 标签漂移（功率，看尺度台阶）/ 映射漂移
+（功率-辐照曲线位移）。天气型跨站对比**必须用训练站作共享基准**（weather_class_drift 已内置），
+否则各自归一化会把"雅砻江整体更亮/更少波动"抹平。详见 references/drift-and-nwp.md。
 """
 import argparse
 import json
@@ -30,8 +34,8 @@ def main():
     cols = [c.strip() for c in args.cols.split(",") if c.strip()]
 
     cfg = json.load(open(args.config))
-    train = du.load_table(cfg["train_set"])    # 2024
-    test = du.load_table(cfg["true_label"])    # 2025
+    train = du.load_table(cfg["train_set"])    # 5 站 pooled 2025
+    test = du.load_table(cfg["true_label"])    # 雅砻江（留出测试站）2025
     out = f"figures/{cfg['station']}/drift"
     os.makedirs(out, exist_ok=True)
 
@@ -41,12 +45,25 @@ def main():
     print("=== 漂移总表（只列非稳定项）===")
     print(dt[dt.drift != "稳定"].to_string(index=False))
 
-    # 2) 天气型漂移（kt/σΔ 分布 + 五类占比），2024 共享基准
+    # 2) 天气型漂移（kt/σΔ 分布 + 五类占比），训练站作共享基准
     wd = du.weather_class_drift(du.rebuild_series(train, du.GHI_COL),
                                 du.rebuild_series(test, du.GHI_COL))
-    print("\n=== 五类天气占比 2024 vs 2025 ===")
+    print("\n=== 五类天气占比：训练站(pooled) vs 雅砻江 ===")
     print(wd["share"])
     print("kt 漂移:", wd["kt"], "\nσΔ 漂移:", wd["sigma"])
+
+    # 2b) 逐站对比（可选）：找雅砻江最像哪个训练站——按 GHI 的 PSI 排序
+    if cfg.get("train_stations"):
+        print("\n=== 逐站漂移：雅砻江 vs 各训练站（GHI PSI，小=最像）===")
+        rows = []
+        for name, path in cfg["train_stations"].items():
+            st = du.load_table(path)
+            p = du.psi(du.rebuild_series(st, du.GHI_COL).dropna().to_numpy(),
+                       du.rebuild_series(test, du.GHI_COL).dropna().to_numpy())
+            rows.append((name, round(float(p), 3)))
+        for name, p in sorted(rows, key=lambda x: x[1]):
+            print(f"  {name:20s} GHI_PSI={p}")
+        print("  → 最小=迁移锚（雅砻江最像的训练站），最大=盲区")
 
     # 3) 图#11 逐变量同月分布对比、图#12 功率-辐照映射
     for col in cols:

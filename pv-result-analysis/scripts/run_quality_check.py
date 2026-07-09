@@ -45,7 +45,7 @@ def main(config_path="analysis_config.json"):
     suspect.to_csv("suspect_days.csv")
     print(f"\n可疑日 {len(suspect)} 天 → suspect_days.csv（交用户核对：限电/停机 vs 传感器故障）")
 
-    # 训练集（2024）：不参与指标计算，是分布漂移诊断的基准，一并载入并抽查
+    # 训练集（5 站 2025 pooled）：不参与指标计算，是跨站漂移诊断的基准，一并载入并抽查
     train = du.load_table(cfg["train_set"])
     print("\n=== 训练集抽查 ===")
     print("train:", du.basic_quality_checks(train))
