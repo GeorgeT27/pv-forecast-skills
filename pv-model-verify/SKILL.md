@@ -29,12 +29,12 @@ models.md 是结果分析归因的依据——模型看得见/看不见什么，
    | 模型 | 代码类名（grep 首选） | 容错前缀 |
    |------|------|------|
    | M1 | `FourierMobaTransformer` | `FourierMoba` |
-   | M2 | `PatchRegForcast` | `PatchReg` |
+   | M2 | `PatchRegForecast` | `PatchReg` |
    | M3 | `MoiraiPvForecaster` | `MoiraiPv` |
    | M4 | `PatchTSTPvForecaster` | `PatchTSTPv` |
 
-   注意 M2 类名用户原文拼作 `PatchRegForcast`（"Forcast" 少个 e、用 "Reg" 而非 "PvForecaster"），
-   与 M3/M4 命名不一致——若精确串搜不到，用容错前缀 `PatchReg` 再搜，以代码里实际类名为准。
+   注意 M2 类名用 "Reg" 而非 M3/M4 的 "PvForecaster"，命名风格不同（拼写 `PatchRegForecast`
+   已确认）——若精确串搜不到，用容错前缀 `PatchReg` 再搜。
 2. **找路标**：训练入口、配置文件、实验名（`find <repo> -maxdepth 3 -name "*.yaml" -o -name "train*.py"`、README）常写着模型注册名与产线配置，确认类名到 M1-M4 的映射。
 3. **架构签名兜底**——类名搜不到（改过名/多副本）时，用 models.md 的结构当搜索词：
 

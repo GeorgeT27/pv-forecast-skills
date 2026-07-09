@@ -36,7 +36,7 @@
 
 ## M2 【用户口述 2026-07-08】
 
-- **代码类名**：`PatchRegForcast`（2026-07-09 用户提供，原文拼写为 "Forcast" 且用 "Reg" 而非 M3/M4 的 "PvForecaster"，命名不一致——pv-model-verify 定位时以代码实际类名为准，可用前缀 `PatchReg` 容错搜索）
+- **代码类名**：`PatchRegForecast`（2026-07-09 用户提供并确认拼写；用 "Reg" 而非 M3/M4 的 "PvForecaster"，命名风格不同但已核对无误）
 - **模型类型/架构**：纯"气象→功率"映射的 MLP 模型——历史功率序列不进网络，只贡献 RevIN 统计量。流水线：
   1. **历史功率 → RevIN 只取 mean/var**：observe_power 整个 672 历史段（2026-07-08 确认）只用于计算 RevIN 的均值与方差，功率序列本身随后不再进入网络（用户原话 "historical power is useless"）。<!-- 待确认：历史功率的 mean/var 用在哪——输出反归一化？还是也经 stat_embd 拼入特征？（气象自身的统计量已确认走 stat_embd，见第 3 步） -->
   2. **输入 = 三个 category 的未来 192 段预报值**：temp_solargis、SSRD（SSRD_pos_1~9）、GHI_solargis，每个算一个 category；**历史 672 段完全不用**（2026-07-08 确认）；**t2m_pos_1~9 完全不用**（2026-07-08 确认）——温度只吃 solargis 一路。
