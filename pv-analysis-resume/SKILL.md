@@ -32,8 +32,14 @@ description: 光伏功率预测结果分析的续跑入口——此前已用 pv-
 | `weather_class.csv` | 天气分型重算 | 直接 `pd.read_csv` 复用 |
 | `figures/**/*.stats.json` + `ANALYSIS.md` | 对应图的重画 | 先 Read 旧图与旧结论，够用就引用 |
 
+主技能现在按**四个阶段**推进（见主技能"执行流程：四个阶段"一节）。续跑先按既有产物
+判定已完成到哪个阶段，**从第一个未完成的阶段进入**：指标 Excel 在 → Stage 1 已完成；
+`02_error_corr.png` 在 → Stage 2 已完成；FINDINGS.md 有"现象"条目 → Stage 3 已完成，
+可直接进 Stage 4 深归因。跳过规则与阶段一一对应，上表就是判定依据。
+
 **不可跳过的（结论纪律，不是计算步骤）**：稳健性门槛（Wilcoxon + 剔坏天）、反驳门、
-结论必须引用 `references/hypotheses.md` 的假设 ID、分组样本量披露。
+结论必须引用 `references/hypotheses.md` 的假设 ID、分组样本量披露；Stage 3→4 的
+强制停顿点（把现象清单报用户、由用户点名深挖项）同样不跳。
 
 **必须重算的**：逐样本误差矩阵（errs/rmses）不落盘，每次会话进入分析前都要按主技能
 Step 3 的"标准命令序列"重算一遍（几秒钟的事）；命令序列中的质检行可以省略。

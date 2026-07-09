@@ -80,11 +80,15 @@ def fig02_error_corr(sample_rmse_or_err: dict[str, pd.Series], out_png,
     """输入 {模型名: 逐样本日均 over_error 或逐样本 RMSE 序列}（各模型须同 index）。
     by_month=True 时逐月分面。"""
     df = pd.DataFrame(sample_rmse_or_err)
-    def _corr_ax(ax, sub, title):
+    # 长模型名（fourierMoBA、PatchTST…）直接当刻度会互相压叠：>4 字符的改用编号，
+    # 编号→全名的映射放图底一行图例；stats.json 的 corr 键保持全名不受影响
+    labels = [n if len(n) <= 4 else str(i + 1) for i, n in enumerate(df.columns)]
+    legend = {lab: n for lab, n in zip(labels, df.columns) if lab != n}
+    def _corr_ax(ax, sub, title, show_ylabels=True):
         c = sub.corr()
-        im = ax.imshow(c, vmin=0, vmax=1, cmap="RdYlGn_r")
-        ax.set_xticks(range(len(c)), c.columns, rotation=45)
-        ax.set_yticks(range(len(c)), c.columns)
+        ax.imshow(c, vmin=0, vmax=1, cmap="RdYlGn_r")
+        ax.set_xticks(range(len(c)), labels)
+        ax.set_yticks(range(len(c)), labels if show_ylabels else [""] * len(c))
         for i in range(len(c)):
             for j in range(len(c)):
                 ax.text(j, i, f"{c.iloc[i, j]:.2f}", ha="center", va="center",
@@ -96,13 +100,18 @@ def fig02_error_corr(sample_rmse_or_err: dict[str, pd.Series], out_png,
         months = sorted(df.index.to_period("M").unique())
         n = len(months)
         fig, axes = plt.subplots(1, n, figsize=(3.2 * n, 3.4))
-        for ax, m in zip(np.atleast_1d(axes), months):
-            c = _corr_ax(ax, df[df.index.to_period("M") == m], str(m))
+        for k, (ax, m) in enumerate(zip(np.atleast_1d(axes), months)):
+            c = _corr_ax(ax, df[df.index.to_period("M") == m], str(m),
+                         show_ylabels=(k == 0))
             stats["corr"][str(m)] = c.round(3).to_dict()
     else:
         fig, ax = plt.subplots(figsize=(4.5, 4))
         c = _corr_ax(ax, df, "#2 over_error 模型间相关（全周期）")
         stats["corr"]["all"] = c.round(3).to_dict()
+    if legend:
+        fig.text(0.5, 0.005, "   ".join(f"{k}={v}" for k, v in legend.items()),
+                 ha="center", fontsize=9)
+        stats["labels"] = legend
     stats["note"] = "相关>0.95 → 高度同质化，ensemble 组合增益有限"
     return _save(fig, out_png, stats)
 
