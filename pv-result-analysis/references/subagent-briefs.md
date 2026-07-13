@@ -76,3 +76,16 @@
 
 **主 agent 收到后**：据摘要更新 `analysis_state.json`(Stage 1 done) + `PROGRESS.md`，向用户报指标摘要，继续 Stage 2。
 Stage 1 收益主要在算指标（不占图像上下文），单跑一个 subagent 即可；无强并行需求。
+
+## Brief: 模型参考——定位或生成（Stage 4 / Playbook B 前置）
+
+触发：分析进入机制层（Stage 4 / Playbook B）需要"模型看得见/看不见什么"这类事实时。
+
+1. 读固定 pointer：`references/model-ref.pointer`。
+   - 存在且 `path` 指向的 `.modelmap/models.md` 在盘上 → 直接读它作为模型参考。
+     - 额外：`git -C <pointer.repo> rev-parse HEAD` 与 `pointer.commit` 不一致 → 提示"模型档案可能
+       已过时，建议重跑 pv-model-analysis"，但先用现有档案继续（不阻塞分析）。
+   - pointer 不存在，或 `path` 不在盘上 → 向用户要模型代码目录路径，派子代理执行
+     **pv-model-analysis** 技能于该目录；产出 `.modelmap/` + pointer 后再读 models.md。
+2. 消费纪律：只引用带 ✅/📊/📐 且前提清晰的字段；⚠️/待确认/缺失一律按未知，不编造。
+3. 桥接假设里的 H-ID 直接对应 `references/hypotheses.md`；落 FINDINGS 前照常过 H-ID 门。
