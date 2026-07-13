@@ -13,13 +13,25 @@ slope/intercept + 按功率分箱、`fig11` 逐月分位数摘要、`fig02/08/12
 
 ## 典型流程：优先用固化脚本（不要现写 pandas）
 
-三个入口脚本读工作目录下的 `analysis_config.json`，一行跑通：
+四个入口脚本读工作目录下的 `analysis_config.json`，一行跑通：
 
 ```bash
+python <skill>/scripts/run_orient.py                                     # Step 0 定位阶段 + 前置检查
 python <skill>/scripts/run_quality_check.py                              # Step 1 质检
 python <skill>/scripts/run_analysis.py  --range 2025-06 --figs 1,2,4,8   # Step 3 可视化
 python <skill>/scripts/run_drift.py     --cols "GHI-solargis,observe_power_future"  # 分布漂移
 ```
+
+**每次进入技能先跑 `run_orient.py`**：它对照 figures/ 等真实产物核验 `analysis_state.json`，
+报当前阶段（=第一个未完成阶段）与进入目标阶段的前置 ✓/✗；`--goto N` 校验能否直达 Stage N。
+它维护两个工作目录下的日志文件（真相仍以产物为准，日志只是快速索引 + 人读叙事）：
+
+- `analysis_state.json`：机器可读的每阶段状态 + 产物清单快照。
+- `PROGRESS.md`：人/模型可读叙事日志，每行一动作。
+
+**Stage 2–3 的画图+事实提取按 `references/subagent-briefs.md` 外包给并行 subagent**：每个 subagent
+只跑 `run_analysis.py` 画自己 range 的图、读 stats.json、写**自己 range 目录**的 `ANALYSIS.md`、
+只回传现象清单——主 agent 不读图。`analysis_state.json` 与 `PROGRESS.md` 只由主 agent 写（防并发冲突）。
 
 `run_analysis.py` 的预测列名优先取 config 的 `pred_col`，缺省则自动侦测（唯一 192 宽的非 label 列）。
 需要自定义流程时再直接调底层函数（见下方函数索引）；**注意 `fig02` 的逐日输入要保留 DatetimeIndex**
@@ -29,6 +41,7 @@ python <skill>/scripts/run_drift.py     --cols "GHI-solargis,observe_power_futur
 
 | 文件 | 函数 | 对应 |
 |------|------|------|
+| **run_orient.py** | Step 0 定位阶段 + 前置检查 + 维护 state/PROGRESS 日志（`--goto N` 直达校验） | `python run_orient.py` / `--goto 4` |
 | **run_quality_check.py** | Step 1 质检入口（读 config，取代旧 heredoc） | `python run_quality_check.py` |
 | **run_analysis.py** | Step 3 可视化入口（`--range` `--figs`，pred_col 自动侦测） | `python run_analysis.py --range 2025-06 --figs 1,2,4,8` |
 | **run_drift.py** | 分布漂移诊断入口（`--cols`） | `python run_drift.py --cols "GHI-solargis,observe_power_future"` |

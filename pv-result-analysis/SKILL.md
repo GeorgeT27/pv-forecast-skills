@@ -1,6 +1,6 @@
 ---
 name: pv-result-analysis
-description: 光伏功率预测（PV power forecasting）结果评估与分析。当用户需要评估模型预测结果、对比 predicted.parquet 与 true_label.parquet、运行 metric.py 计算准确率指标（ods_ultra_short / ultra_short / ods_short / short / 48hours 五种口径）、生成 M1-M4 及 ensemble 的月度指标 Excel，或诊断准确率变化（如"为什么6月预测准确率比5月下降"）时，务必使用本技能。凡是涉及光伏预测结果评估、指标计算、误差归因、月度/时段对比分析的任务，即使用户没有明确说"结果分析"，也应使用本技能。
+description: 光伏功率预测（PV power forecasting）结果评估与分析。当用户需要评估模型预测结果、对比 predicted.parquet 与 true_label.parquet、运行 metric.py 计算准确率指标（ods_ultra_short / ultra_short / ods_short / short / 48hours 五种口径）、生成 M1-M4 及 ensemble 的月度指标 Excel，或诊断准确率变化（如"为什么6月预测准确率比5月下降"）时，务必使用本技能。凡是涉及光伏预测结果评估、指标计算、误差归因、月度/时段对比分析的任务，即使用户没有明确说"结果分析"，也应使用本技能。**本技能自带续跑能力**：每次进入先跑 run_orient.py 自动定位阶段、跳过已完成步骤、支持 --goto 直达某阶段——所以"指标已经算过了/接着上次分析/直接画图做相关性/现象已经看过了/做深度分析结合电站和模型解释为什么/深入归因某个现象/进 Stage 4/给主管写个总结写 executive summary/结论报告"等续跑或直达场景也都用本技能（不再需要单独的续跑技能）。
 ---
 
 # 光伏功率预测结果分析
@@ -28,6 +28,44 @@ description: 光伏功率预测（PV power forecasting）结果评估与分析�
 - **本技能的输入不是模型**，而是两份已生成的结果文件：`predicted.parquet`（对未来 192 点的预测）与 `true_label.parquet`（对应真实功率）。
 - **⚠️ true_label.parquet 常沿用完整训练 schema（带上面所有特征列）——指标计算只用 `observe_power_future` 这一列（=真值 label），其余列（observe_power/GHI-solargis/temp/SSRD_pos/t2m_pos…）对评估无关，不要拿它们算指标或下结论。** 之所以强调：schema 侦察会把这些训练列一并打印出来，容易误当作评估输入；scripts 取 label 一律走 `data_utils.LABEL_COL`，别手写 pandas 时顺手把气象列也算进去。跨站漂移诊断（图#11/#12）确实要气象/功率特征——train 侧来自训练集 parquet，**test 侧（雅砻江）若要用 true_label 里的气象列，先跟用户确认这些列是雅砻江的真实值还是训练遗留的占位**，拿不准就别用、只报 label 指标。
 
+## Step 0：Orient —— 每次进入先定位阶段（含续跑与直达）
+
+**任何一次进入本技能，第一件事是跑 orient**，不要凭记忆猜进度：
+
+```bash
+python3 "<SKILL>/scripts/run_orient.py"            # 报当前阶段 + 各阶段前置 ✓/✗
+python3 "<SKILL>/scripts/run_orient.py" --goto 4   # 想直达 Stage X：校验前置，缺则报正确入口
+```
+
+（`<SKILL>` = `/Users/tqa946816/Documents/华为/光伏预测/结果分析skill/pv-result-analysis`。）
+
+orient 读工作目录的 `analysis_config.json` 与 `analysis_state.json`，**对照 figures/ 等真实产物核验**后
+告诉你：当前在第几阶段（=第一个未完成阶段）、进入目标阶段的前置齐不齐。据它决定从哪开工：
+
+- **没有 config** → 此前没跑过，从 Stage 1 / Step 1 收集路径开始。
+- **有产物** → 从第一个未完成阶段接续（这就是"续跑"：不必重跑已完成的阶段）。
+- **想直达某阶段**（用户说"直接做相关性/直达 Stage 4/只要主管总结"）→ `--goto N` 校验；
+  前置齐就跳过去，不齐就按它报的正确入口补齐再走。
+
+这一步吸收了旧"续跑技能"的全部职责——**续跑不是另一个技能，是本技能每次进入的默认动作**。
+
+## 编排模型：主 agent 调度，画图与事实提取外包 subagent
+
+主 agent 只做**编排与跨结果归因**，把最耗上下文的"画图 + 逐图事实提取"外包给 subagent，
+**图像和逐图 stats.json 都不进主上下文**（最大的 token 收益），且多个 subagent 可并行。
+派发模板固化在 `references/subagent-briefs.md`，照抄进 Agent 调用 prompt 即可（用通用 subagent）。
+
+| 阶段 | 谁来做 | 并行度 |
+|------|--------|--------|
+| **Stage 1** 质检+metric | 1 个 metric subagent（Brief B）或主 agent 顺序跑 | 不并行（产出 Excel、不占图像上下文，收益有限） |
+| **Stage 2–3** 画图+事实提取 | N 个 figure+fact subagent（Brief A），**一个 range/图组一个，并行派发** | **主要并行点**：每个只读 stats.json、写自己 range 的 ANALYSIS.md、只回传现象清单 |
+| **Stage 3→4 停顿点** | **只主 agent**：汇总现象报用户、由用户点名 | —（subagent 不能问用户） |
+| **Stage 4** 深归因 | **全程主 agent**：Playbook + 反驳门 + CONCLUSION（跨结果综合） | —（归因留最后统一做） |
+
+并发写文件的纪律：subagent 各写各 range 的 `ANALYSIS.md`（互不覆盖）；**`analysis_state.json` 与
+`PROGRESS.md` 只由主 agent 在 subagent 返回后写**。主 agent 每个阶段收尾都要更新这两个日志文件
+（state = 机器可读的产物清单快照，PROGRESS.md = 人读叙事日志），供下次 orient 核验与续跑。
+
 ## 执行流程：四个阶段
 
 一次完整分析产出很长，一口气全生成既拖慢反馈也容易在最贵的归因环节浪费在用户不关心的现象上。因此按四个阶段推进——**1→2→3 连续执行**，每个边界只向用户报一段摘要；**阶段 3→4 之间是唯一的强制停顿点**：把现象清单报给用户，由用户点名哪几条值得深挖，再进入阶段 4。
@@ -42,7 +80,7 @@ description: 光伏功率预测（PV power forecasting）结果评估与分析�
 阶段纪律：
 
 - **Stage 3 只写"看到了什么"**：现象 + 数字 + 稳健性检验结果，**禁止机制语言**（不写"因为 PatchTST 的 RevIN…"）。**Stage 4 才允许"为什么"**：必须引用 models.md/station.md/seasonality.md 已填字段 + hypotheses.md 假设 ID，并过反驳门。把"事实"与"故事"物理隔开，既防事后编故事，也让最贵的步骤只花在用户点名的现象上。
-- **阶段进度靠产物判定，不设状态文件**：指标 Excel 在 → Stage 1 完成；`02_error_corr.png` 在 → Stage 2 完成；FINDINGS.md 有"现象"条目 → Stage 3 完成。续跑（pv-analysis-resume）从第一个未完成阶段进入。
+- **阶段进度靠"经核验的产物清单"判定**：`analysis_state.json` 是快速索引，但**真相始终以真实产物为准**——每次 orient 都重扫 figures/ 与真实文件，state 说 done 但产物缺了就地降级。判据不变：指标 Excel + suspect_days.csv 在 → Stage 1 完成；`02_error_corr.png`+stats 在 → Stage 2 完成；FINDINGS.md 有"现象"条目（或 figures 下有 ANALYSIS.md+stats.json 可重建）→ Stage 3 完成。续跑由 orient 从第一个未完成阶段进入（不再是单独技能）。
 - **ensemble 的分析边界**：ensemble 是 M1-M4 的均值组合，无独立特征与机制（models.md 该节为空）。指标层（Stage 1 摘要、图#3、Stage 3 现象）**必须报告**它——是否优于最佳单模型、哪些月不是；但机制层（Stage 4、Playbook B、图#4–#8 的模型聚焦）**只做 M1-M4**——"ensemble 为什么好/不好"的正确问法是"成员误差是否分散"（图#2）与"离事后最优还有多远"（图#9），不是给它编独立机制故事。
 
 ## Step 1：定位路径 + 质检（Stage 1）
@@ -119,7 +157,11 @@ Excel 只能告诉你"哪个月/哪个口径变差了"，回答"为什么"要回
 
 **数据准备**：读 predicted 与 true_label 按 timestamp 对齐得两个 `(样本 × 192)` 矩阵 → signed 误差 `over_error = pred − true`（正=高估，负=低估）→ 逐样本 RMSE。另做**日级天气分型**（GHI 算日晴空指数 kt 与日内波动 σΔ → 五类：晴稳 kt≥0.65 / 多云平稳 0.35≤kt<0.65 / 阴稳 kt<0.35 / 多云波动 σΔ 超分位 / 突变日 kt 骤变，优先级最高），存 `weather_class.csv`。天气分型是"为什么"类问题的核心工具：把"X 月变差"分解成"坏天占比变了"和"类内能力变了"两个可分别验证的因子。
 
-**以上计算与全部图谱已固化在 `scripts/`**（`data_utils.py` + `plots.py`，用法见 `scripts/README.md`）。**优先复用脚本，不要现写 pandas。** 标准命令（质检通过后跑；范围按问题改）：
+**以上计算与全部图谱已固化在 `scripts/`**（`data_utils.py` + `plots.py`，用法见 `scripts/README.md`）。**优先复用脚本，不要现写 pandas。**
+
+> **编排提示**：Stage 2–3 的画图+事实提取应**外包给 figure+fact subagent**（`references/subagent-briefs.md` Brief A），一个 range/图组一个、并行派发；下面的命令就是 subagent 在其 brief 里跑的那条。主 agent 自己一般不跑它、也不读图，只汇总 subagent 回传的现象清单。（单张补图或调试时主 agent 也可直接跑。）
+
+标准命令（质检通过后跑；范围按问题改）：
 
 ```bash
 # 月度诊断（必画 #1/#2/#4/#8；可加 5,6,7,9）：
@@ -182,6 +224,7 @@ python3 "<SKILL>/scripts/run_drift.py" --cols "GHI-solargis,observe_power_future
 | `analysis-discipline.md` | 结论三道门完整细则（稳健性门槛/假设登记/反驳门七条/样本量/台账/运行后回顾） |
 | `playbooks.md` | Stage 4 归因（Playbook A/B）与写 CONCLUSION.md 时读 |
 | `drift-and-nwp.md` | 分布漂移诊断（run_drift.py）与 NWP 误差分离模块 |
+| `subagent-briefs.md` | **派发 subagent 前读**——figure+fact（Stage 2–3）与 metric（Stage 1）子 agent 的固化 prompt 模板 |
 
 使用纪律：**已填写的字段才可引用；空字段（"待填"）视为未知——宁可写"缺少 XX 背景无法进一步归因"，也不编造。** references/ 是常开收纳位，**每次分析开始前 `ls references/` 扫一遍**，纳入新出现/新填的文档。`models.md` 由用户口述、可能与代码有出入：用户给代码仓库路径要求核验时，走配套技能 **`pv-model-verify`**。
 
@@ -203,3 +246,5 @@ python3 "<SKILL>/scripts/run_drift.py" --cols "GHI-solargis,observe_power_future
 ## 运行后回顾（每次实跑收尾必做）
 
 本技能靠"用得越多越准"——但只有把每次实跑暴露的问题**写回技能文件**才算数：脚本 bug/列名 → 改 `scripts/`；指令歧义/缺步骤 → 改 `SKILL.md`；确认的新项目事实 → 补 `references/`；首跑固化的 `generate_report` 调用 → 填"已固化调用"。**每次改动在 `CHANGELOG.md` 追加一行**（日期 | 改哪节 | 触发反馈 | 为什么）。完整三步见 `references/analysis-discipline.md`。
+
+另外，**每个阶段收尾（主 agent）都要更新两个日志文件**：`analysis_state.json`（机器可读的产物清单快照，供下次 orient 核验）与 `PROGRESS.md`（人读叙事日志，追加一行"这阶段做了什么、关键结论/产物"）——这样上下文被 clear 后，下次 orient + 读 PROGRESS.md 就能无缝接续。orient 会自动写这两个文件的骨架，主 agent 在阶段收尾补充结论行即可。
