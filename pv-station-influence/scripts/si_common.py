@@ -14,7 +14,13 @@
   "log_dir": "<训练日志目录>",                # Stage 0 前的 probe_logs 扫这里
   "checkpoint_dir": "<checkpoint 根>",        # 有此字段 => 解锁 Mode B（有 optimizer state 更好）
   "models": ["M1", "M2", "M3", "M4"],         # 要分析的模型（缺省四个都做）
-  "chunk_layout": {"n_chunks": 4, "sizes": [5, 5, 5, 2]}  # 每迭代的 chunk 结构
+  "chunk_layout": {"n_chunks": 4, "sizes": [5, 5, 5, 2]},  # 每迭代的 chunk 结构
+  "result_analysis_workdir": "<白马湖线 pv-result-analysis 工作目录（绝对路径）>",
+      # 预测侧上下文：嵌入运行默认 <influence工作目录>/result_analysis_baimahu/；
+      # 已单独跑过白马湖结果分析就填那个目录。orient 据此扫描可消费产物。
+  "result_analysis_status": "linked",
+      # "linked"=可消费其产物；"declined"=用户拒绝先跑（报告须注明缺预测侧上下文）；
+      # 缺失/null=还没问过用户 —— orient 会提示主 agent 先问。
 }
 """
 from __future__ import annotations
@@ -52,7 +58,7 @@ def has_config(path: str = CONFIG_PATH) -> bool:
 
 
 def mode_from_config(cfg: dict) -> str:
-    """有可用 checkpoint_dir => Mode B（解锁 Stage 2/4），否则 Mode A。"""
+    """有可用 checkpoint_dir => Mode B（解锁 Stage 3/5 与 Stage 1 的 --from-ckpt），否则 Mode A。"""
     ck = cfg.get("checkpoint_dir")
     return "B" if ck and os.path.isdir(ck) else "A"
 
@@ -66,7 +72,7 @@ def stations(cfg: dict) -> list[str]:
 
 # ---------------------------------------------------------------- 指标
 def rmse(pred: np.ndarray, true: np.ndarray) -> float:
-    """整体 48h RMSE（不取点、不拆天）——Stage 1 因变量默认口径，简单稳定。
+    """整体 48h RMSE（不取点、不拆天）——Stage 2 因变量默认口径，简单稳定。
 
     白马湖零样本评估用最朴素的 192 点整体 RMSE 即可；细分口径留给确认阶段。
     """
@@ -92,6 +98,62 @@ def load_test_label_matrix(cfg: dict):
     df = du.load_table(cfg["test_label"])
     Y = du.to_matrix(df, du.LABEL_COL)
     return df[du.TIMESTAMP_COL].to_numpy(), Y
+
+
+# ---------------------------------------------------------------- 预测侧上下文（pv-result-analysis 产物探测）
+def detect_result_analysis(cfg: dict) -> dict:
+    """只读扫描 result_analysis_workdir，返回白马湖线 pv-result-analysis 的产物清单。
+
+    判定逻辑镜像主技能 run_orient 的 stage_done（不 import 它——那个脚本假设 cwd
+    是分析目录且会写 state；这里纯只读、不改任何文件）。返回 dict 的 status 取值：
+      "linked"   工作目录有效且 station 匹配 → 附各产物 flag
+      "declined" 用户已明确拒绝先跑（config.result_analysis_status）
+      "absent"   没链接 / 目录无效 / 缺 analysis_config.json → 主 agent 该先问用户
+    """
+    import glob as _glob
+
+    status = cfg.get("result_analysis_status")
+    if status == "declined":
+        return {"status": "declined"}
+    wd = cfg.get("result_analysis_workdir")
+    acfg_path = os.path.join(wd, "analysis_config.json") if wd else None
+    if not wd or not os.path.isdir(wd) or not os.path.exists(acfg_path):
+        return {"status": "absent", "workdir": wd}
+    try:
+        with open(acfg_path, encoding="utf-8") as f:
+            acfg = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {"status": "absent", "workdir": wd}
+    station = acfg.get("station", "")
+    figdir = os.path.join(wd, "figures", station)
+    excels = (_glob.glob(os.path.join(wd, "*.xlsx"))
+              + _glob.glob(os.path.join(figdir, "**", "*.xlsx"), recursive=True))
+    analysis_mds = _glob.glob(os.path.join(figdir, "**", "ANALYSIS.md"), recursive=True)
+    findings_path = os.path.join(wd, "FINDINGS.md")
+    findings_txt = ""
+    if os.path.exists(findings_path):
+        try:
+            with open(findings_path, encoding="utf-8") as f:
+                findings_txt = f.read()
+        except OSError:
+            pass
+    ev = {
+        "status": "linked",
+        "workdir": wd,
+        "station": station,
+        # 并行线保护：链接到雅砻江等其他实验线的目录 → 拒绝消费
+        "station_mismatch": station != cfg.get("test_station", "baimahu"),
+        "metric_excels": len(excels),
+        "suspect_days": os.path.exists(os.path.join(wd, "suspect_days.csv")),
+        "weather_class": os.path.exists(os.path.join(wd, "weather_class.csv")),
+        "analysis_mds": len(analysis_mds),
+        "findings": os.path.exists(findings_path),
+        "drift_dir": os.path.isdir(os.path.join(figdir, "drift")),
+    }
+    # 镜像主技能判定：Stage1=质检+指标；Stage3=现象提取（ANALYSIS.md 或 FINDINGS 有"现象"）
+    ev["stage1_done"] = ev["suspect_days"] and ev["metric_excels"] > 0
+    ev["stage3_done"] = ev["analysis_mds"] > 0 or ("现象" in findings_txt)
+    return ev
 
 
 # ---------------------------------------------------------------- adapter 加载（Mode B 用户代码接缝）

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage 1 —— 影响力回归（Mode A 主证据，纯统计，零 GPU）。
+"""Stage 2 —— 影响力回归（Mode A 主证据，纯统计，零 GPU）。
 
 思想：每迭代把 17 站随机重排进 4 个 chunk（3×5+2），是一场**天然随机化实验**。
 把"训完某 chunk 后白马湖 RMSE 的变化 ΔRMSE"回归到"该 chunk 里有哪些站"，
@@ -162,7 +162,7 @@ def main():
 
     # ≤30 行摘要
     print("=" * 56)
-    print(f"Stage 1 影响力回归  迭代数={n_iters}  λ={args.lam}  boot={args.boot}")
+    print(f"Stage 2 影响力回归  迭代数={n_iters}  λ={args.lam}  boot={args.boot}")
     print(f"  {out['power_note']}")
     for m, r in out["models"].items():
         if "error" in r:
@@ -173,7 +173,7 @@ def main():
         print(f"  [{m}] n_obs={r['n_obs']} 最拖累前三: {top}  CI排除0: {sig or '无'}")
     if "cross_model_spearman" in out:
         print(f"  跨模型排名一致性 Spearman: {out['cross_model_spearman']}")
-    print("→ influence_coefs.json 已写。下一步：Stage 3 漂移解释；有 checkpoint 则 Stage 2 梯度佐证。")
+    print("→ influence_coefs.json 已写。下一步：有 checkpoint 则 Stage 3 梯度佐证；再 Stage 4 漂移解释。")
     print("=" * 56)
 
 

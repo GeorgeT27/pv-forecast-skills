@@ -7,9 +7,10 @@ M4=PatchTSTPvForecaster）与数据加载。本技能不假设你的目录结构
 
 用法：
   cp <skill>/scripts/adapter_template.py ./adapter.py
-  # 编辑 ./adapter.py，填入下面 4 个函数的 TODO（从 influence_config.json.train_repo 导入）
+  # 编辑 ./adapter.py，填入下面 5 个函数的 TODO（从 influence_config.json.train_repo 导入；
+  # 第 5 个 load_loss_history 可选——只服务 Stage 1 训练动力学的 checkpoint 路径）
 本技能脚本会 `import adapter` 并调用这些函数。填不了的函数留 NotImplementedError，
-只跑用得到它的阶段（如只做 Stage 2 不做回放，可不填 sample_assignments）。
+只跑用得到它的阶段（如只做 Stage 3 不做回放，可不填 sample_assignments）。
 """
 from __future__ import annotations
 
@@ -34,7 +35,7 @@ def sample_assignments(iteration: int, seed) -> list[list[str]]:
     raise NotImplementedError("接入训练仓库的分组采样函数，返回 [[站,...]×4]")
 
 
-# ---------------------------------------------------------------- Stage 1/2：评估与模型
+# ------------------------------------------------- Stage 0 指纹 / Stage 2 补料：评估与模型
 def load_model(model_name: str, ckpt_path: str, device: str = "cpu"):
     """按模型名 + checkpoint 路径构建并载入模型，返回可推理/可求梯度的对象（eval 态）。"""
     raise NotImplementedError("按 model_name 选类、load_state_dict(ckpt_path)")
@@ -49,7 +50,7 @@ def predict_station(model, station_id: str, cfg: dict) -> tuple[np.ndarray, np.n
     raise NotImplementedError("构建该站 dataloader，前向出 (pred,true)")
 
 
-# ---------------------------------------------------------------- Stage 2：梯度（TracIn）
+# ---------------------------------------------------------------- Stage 3：梯度（TracIn）
 def loss_gradient(model, station_id: str, cfg: dict,
                   n_windows: int = 200, params_filter=None) -> np.ndarray:
     """在某站一个固定子样本上算训练损失对参数的梯度，展平成 1 维向量返回。
@@ -59,3 +60,14 @@ def loss_gradient(model, station_id: str, cfg: dict,
     - 固定子样本（同一 n_windows、同一顺序）保证跨 checkpoint 可比。
     """
     raise NotImplementedError("对训练损失 backward，收集并展平梯度")
+
+
+# ------------------------------------------- Stage 1（可选）：checkpoint 内的 loss 历史
+def load_loss_history(model_name: str, ckpt_path: str):
+    """若训练把逐 epoch loss 存进了 checkpoint（如 ckpt["loss_history"]），在此取出。
+
+    返回 [(epoch, loss), ...]；没存则返回 None（Stage 1 训练动力学将只依赖日志路径，
+    日志也没有就整段跳过——所以本函数**可不实现**，默认 None 不阻塞任何阶段）。
+    只取 dict 里的小标量列表，别把权重张量带出来（上下文纪律）。
+    """
+    return None

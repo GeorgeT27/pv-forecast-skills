@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Stage 2（Mode B）—— TracIn 式梯度影响力，独立于 RMSE 序列的第二条证据线。
+"""Stage 3（Mode B）—— TracIn 式梯度影响力，独立于 RMSE 序列的第二条证据线。
 
 思想：若某训练站 s 的梯度与白马湖验证梯度**持续反向**，说明训到它把参数推离"对白马湖好"
-的方向 => 负迁移。影响力分 ≈ Σ_ckpt ⟨g_s, g_test⟩（TracInCP）。与 Stage 1 排名一致才升级
+的方向 => 负迁移。影响力分 ≈ Σ_ckpt ⟨g_s, g_test⟩（TracInCP）。与 Stage 2 排名一致才升级
 （见 references/attribution-discipline.md 的升级门槛）。
 
 上下文/磁盘纪律同 ckpt_eval：一个进程顺序处理 checkpoint，只把标量内积追加落盘，
@@ -12,6 +12,8 @@
   python <skill>/scripts/tracin_influence.py                    # 全模型，间隔取 checkpoint
   python <skill>/scripts/tracin_influence.py --every 1 --models M4
   # --every N：每 N 个迭代取一个 checkpoint（默认取每迭代最后一个 chunk）降成本。
+  # 多卡/多机分片（单卡请单跑全量——GPU 不并行时分片无收益）：
+  python <skill>/scripts/tracin_influence.py --models M1 --raw tracin_dots.M1.csv --out tracin_scores.M1.json
 """
 from __future__ import annotations
 
@@ -26,19 +28,16 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import si_common as sic
 
-RAW = "tracin_dots.csv"       # 逐 checkpoint 逐站的原始内积（可续跑）
-OUT = "tracin_scores.json"    # 汇总
 
-
-def _done_set():
-    if not os.path.exists(RAW):
+def _done_set(raw):
+    if not os.path.exists(raw):
         return set()
-    d = pd.read_csv(RAW)
+    d = pd.read_csv(raw)
     return set(zip(d["model"], d["iteration"], d["station"]))
 
 
-def _append(row):
-    pd.DataFrame([row]).to_csv(RAW, mode="a", header=not os.path.exists(RAW), index=False)
+def _append(row, raw):
+    pd.DataFrame([row]).to_csv(raw, mode="a", header=not os.path.exists(raw), index=False)
 
 
 def _locate(adapter, cfg, model, it, pos, pattern):
@@ -47,8 +46,8 @@ def _locate(adapter, cfg, model, it, pos, pattern):
     return os.path.join(cfg["checkpoint_dir"], pattern.format(model=model, it=it, pos=pos, chunk=pos))
 
 
-def _summarize(station_list, models):
-    d = pd.read_csv(RAW)
+def _summarize(station_list, models, raw):
+    d = pd.read_csv(raw)
     out = {"note": "influence = Σ_ckpt ⟨g_station, g_test⟩；越正=越拖累白马湖", "models": {}}
     coef = {}
     for model in models:
@@ -57,7 +56,7 @@ def _summarize(station_list, models):
             continue
         # 每站对所有 checkpoint 的内积求和（TracInCP）。注意符号约定：
         # 训练在降损失 => 有益站的 g_s 与 g_test 同向（内积>0 表示"训它也降白马湖损失"=有益）。
-        # 为了让"高=拖累"与 Stage 1 一致，这里取负：harm = -Σ⟨g_s,g_test⟩。
+        # 为了让"高=拖累"与 Stage 2（回归 θ_s）一致，这里取负：harm = -Σ⟨g_s,g_test⟩。
         agg = sub.groupby("station")["dot"].sum()
         harm = (-agg).sort_values(ascending=False)
         coef[model] = harm.reindex(station_list).values
@@ -91,6 +90,10 @@ def main():
     ap.add_argument("--pattern", default="{model}/iter{it}_chunk{pos}.pt")
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--n-windows", type=int, default=200)
+    ap.add_argument("--raw", default="tracin_dots.csv",
+                    help="逐 checkpoint 逐站原始内积 CSV（可续跑）；分片时各写各的")
+    ap.add_argument("--out", default="tracin_scores.json",
+                    help="汇总 JSON；分片时各写各的，主 agent 合并原始 CSV 后重跑汇总")
     args = ap.parse_args()
 
     cfg = sic.load_config()
@@ -104,7 +107,7 @@ def main():
     layout = cfg.get("chunk_layout") or {"n_chunks": 4}
     last_pos = int(layout.get("n_chunks", 4))  # 默认取每迭代最后一个 chunk 的 checkpoint
 
-    done = _done_set()
+    done = _done_set(args.raw)
     for model in models:
         for it in range(1, n_iters + 1, max(1, args.every)):
             ckpt = _locate(adapter, cfg, model, it, last_pos, args.pattern)
@@ -122,7 +125,7 @@ def main():
                     continue
                 g_s = np.asarray(adapter.loss_gradient(m, s, cfg, n_windows=args.n_windows), float)
                 dot = float(np.dot(g_s, g_test) / (np.linalg.norm(g_s) * gtn + 1e-12))  # 余弦式，跨 ckpt 可比
-                _append({"model": model, "iteration": it, "station": s, "dot": round(dot, 8)})
+                _append({"model": model, "iteration": it, "station": s, "dot": round(dot, 8)}, args.raw)
             print(f"  [{model}] iter{it}: 17 站梯度对齐已记")
             del m, g_test
             gc.collect()
@@ -132,15 +135,18 @@ def main():
             except Exception:
                 pass
 
-    out = _summarize(station_list, models)
-    sic.dump_json(OUT, out)
+    out = _summarize(station_list, models, args.raw)
+    sic.dump_json(args.out, out)
     print("=" * 56)
-    print("Stage 2 TracIn 完成。各模型最拖累前三：")
+    print("Stage 3 TracIn 完成。各模型最拖累前三：")
     for m, r in out["models"].items():
         print(f"  [{m}] {r['ranking_harmful_first'][:3]}  ({r['n_checkpoints']} checkpoints)")
     if "cross_model_spearman" in out:
         print(f"  跨模型一致性: {out['cross_model_spearman']}")
-    print("→ tracin_scores.json 已写。与 influence_coefs.json 的排名对照＝升级门槛核心。")
+    if args.raw != "tracin_dots.csv":
+        print("  ⚠ 分片输出：主 agent 收齐后 concat 原始 CSV 为 tracin_dots.csv、"
+              "重跑一次汇总（无 --raw/--out）得合并版 tracin_scores.json。")
+    print(f"→ {args.out} 已写。与 influence_coefs.json 的排名对照＝升级门槛核心。")
     print("=" * 56)
 
 

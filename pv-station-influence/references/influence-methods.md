@@ -1,12 +1,47 @@
 # 影响力归因方法细节
 
-本库承接 SKILL.md，放不进正文的方法学。三个方法：影响力回归（Stage 1）、TracIn 梯度（Stage 2）、回放失效时的指派问题兜底（Stage 0）。
+本库承接 SKILL.md，放不进正文的方法学。四个方法：训练动力学（Stage 1）、影响力回归（Stage 2）、TracIn 梯度（Stage 3）、回放失效时的指派问题兜底（Stage 0）。
 
 ## 为什么随机重分组是天然实验
 
 每迭代把 17 站随机重排进 4 个 chunk，是无混杂的随机化：某站进哪个 chunk 与它自身"好坏"无关。于是"训完含站 s 的 chunk 后白马湖 RMSE 变化"的跨多迭代平均，就是**训练到 s 对白马湖的因果边际效应**（在给定训练动力学下）。这正是分组随机子集数据估值（Banzhaf / Data-Shapley 的蒙特卡洛近似）的设定——我们不需要枚举子集，随机分组已经在采样子集。
 
-## Stage 1：影响力回归
+## Stage 1：训练动力学（为什么不同 chunk 的 loss 不同）
+
+### 指标（`loss_dynamics.py`，逐 (model, iteration, chunk)）
+- **final_loss**：尾 `tail_k=3` 个 epoch 的均值（20 epoch/chunk 里去掉尾部抖动，比单末 epoch 稳）。
+- **conv_slope**：`log(loss) ~ epoch` 的 OLS 斜率（log 让不同量级的 loss 曲线尺度稳健；负得越多 = 收敛越快，越接近 0 = 越慢/平台期）。
+- **plateau_epoch**：首个进入 `final_loss×1.05` 的 epoch（多快到平台）。
+
+### 站效应回归
+与 Stage 2 **完全同款**的设计（中心化站指示 + 岭 + 控制 iteration/position/size，代码直接
+import 复用 `influence_regression` 的实现，同一"和为零"语义）——只是因变量从 ΔRMSE 换成
+final_loss / conv_slope。θ_s 读法："含站 s 的 chunk 终态 loss 相对平均站更高 / 收敛更慢"。
+
+**逐模型独立、绝不跨模型 pool loss**：M1–M4 损失函数不同（Huber+正则 / MSE / MSE+频域 L1 / L1），
+量纲不可比。跨模型只比 Spearman 排名（脚本已报 `cross_model_spearman`）。
+
+### 解读流程（连接 station.md / event-log —— 主 agent 的活，脚本只出数字）
+拿到 `highest_final_loss_stations` / `slowest_converging_stations` 后，逐站对照
+`pv-result-analysis/references/station.md` 的气候带/装机/数据质量字段 + `event-log.md`：
+- 高 loss + 气候极端（高原/戈壁等，与多数站差异大）= 分布难拟合，**预期内**，不是问题。
+- 高 loss + 气候平凡（和多数训练站相似却难学）= **数据质量红旗**（限电/坏 NWP/传感器），
+  走 suspect_days / event-log 核查——修数据，别急着怪站。
+- station.md 空字段照旧"不编造"：解释不出就写"待补站点档案"。
+
+### 与负迁移的关系（关键边界：loss 高 ≠ 有罪）
+"含 s 的 chunk loss 高"说明 s **自己难学**；"s 拖累白马湖"是另一回事——两者可同真、同假、交叉。
+四象限（θ_loss = Stage 1 loss 效应，θ_harm = Stage 2 回归系数）：
+
+| | θ_harm 高（拖累白马湖） | θ_harm 低 |
+|---|---|---|
+| **θ_loss 高（难学）** | 脏数据既难学又污染 → 数据质量红旗优先 | 难学但方向无害 → 留着无妨 |
+| **θ_loss 低（学得顺）** | **学得顺但把参数拉离白马湖 = 真·分布冲突的典型指纹** | 双低，正常站 |
+
+`rmse_link` 的 Spearman（final_loss × ΔRMSE 同现）只是**同现证据**：进反驳门当佐证，
+不单独给任何站定罪，也不能替代 Stage 2/3 的两法一致门槛。
+
+## Stage 2：影响力回归
 
 ### 因变量：差分去趋势
 `ΔRMSE(i,c) = RMSE_白马湖(训完 chunk c) − RMSE_白马湖(训完上一个 chunk)`。按**全局训练顺序** `(iteration, position)` 差分（`influence_regression._delta_rmse`）。差分消掉"训练整体在缓慢变好/变差"的慢趋势，只留每个 chunk 的**增量冲击**，这才是站效应的载体。
@@ -32,26 +67,27 @@
 ### 第二因变量（可选）：新近 vs 任意位置有害
 把"每迭代末白马湖 RMSE" 回归到"**最后一个 chunk** 有哪些站"，分离"只有排在最后才拖累（新近/遗忘型）"与"在任何位置都拖累（真·分布冲突型）"。两者处理不同：前者是训练顺序问题（混站/回放缓冲可解），后者才是"该不该留这个站"。
 
-## Stage 2：TracIn 梯度佐证
+## Stage 3：TracIn 梯度佐证
 
 ### 原理
 一阶泰勒：某步在 batch B 上更新，会让测试损失变化 ≈ −lr·⟨g_B, g_test⟩。累加多个 checkpoint：`influence(s) ≈ Σ_ckpt ⟨g_s, g_test⟩`（TracInCP）。⟨g_s, g_test⟩ **持续为正** = 训 s 也在降白马湖损失（有益）；持续为负 = 把参数推离白马湖（有害）。
 
 ### 脚本约定
 - `tracin_influence.py` 用**余弦式**归一内积（除以两侧范数）让跨 checkpoint 可比、不被某站梯度大小主导。
-- **符号**：脚本输出的 `harm_score = −Σ cos(g_s, g_test)`，**取负**是为了"高=拖累"与 Stage 1 的 θ_s 同向，便于直接比排名。
+- **符号**：脚本输出的 `harm_score = −Σ cos(g_s, g_test)`，**取负**是为了"高=拖累"与 Stage 2 的 θ_s 同向，便于直接比排名。
 - 降成本：`--every N` 每 N 迭代取一个 checkpoint、默认只取每迭代最后一个 chunk 的权重；`--n-windows` 控制每站梯度用多少窗口（固定子样本、固定顺序保证可比）；`adapter.loss_gradient` 的 `params_filter` 可只取最后线性头降内存。
+- 多卡/多机分片：`--models M1 --raw tracin_dots.M1.csv --out tracin_scores.M1.json` 各写各的，主 agent 合并原始 CSV 后重跑一次汇总（单卡别分片，无收益）。
 
-### 与 Stage 1 的关系（升级门槛）
+### 与 Stage 2 的关系（升级门槛）
 两条**独立**证据线：回归吃的是 RMSE 序列（含噪声、含遗忘），TracIn 吃的是梯度几何（与 RMSE 记录无关）。脚本报两两 Spearman；**排名一致的站才从"现象"升"假设"**。不一致要解释（如某站 TracIn 有害但回归无感 = 梯度冲突被后续恢复，非持久损害）。
 
 ## Stage 0：回放失效时的指派问题兜底
 
 正常路径：`adapter.sample_assignments(iteration, seed)` 用训练同款 RNG 复现分组。**风险**：numpy/torch 版本或 RNG 流程与训练不一致 → 回放的分组是错的但看起来合理。故 `--validate` 做**新近效应指纹**抽查：训完某 chunk，模型对该 chunk 的 ~5 个成员站 RMSE 改善应最大；回放成员与"改善 Top-k"重叠 <60% 就判回放不可信。
 
-回放不可信时的兜底（未内置、需要时实现）：对**每个 chunk** 用指纹法估成员——`gain[s] = RMSE_before(s) − RMSE_after(s)`（在全部 17 站上评估 before/after checkpoint）。再利用**硬约束**：每迭代必须把 17 站无重叠地分进 4 个 chunk（大小 5/5/5/2）。这是一个指派问题：在 `gain` 矩阵上求"每站恰好归一个 chunk、每 chunk 恰好 size 个站、总 gain 最大"的分配（匈牙利/ILP）。得到的 assignments 再喂 Stage 1。成本：每迭代要 before/after 在 17 站上各评估一次，比纯回放贵得多——所以优先修回放。
+回放不可信时的兜底（未内置、需要时实现）：对**每个 chunk** 用指纹法估成员——`gain[s] = RMSE_before(s) − RMSE_after(s)`（在全部 17 站上评估 before/after checkpoint）。再利用**硬约束**：每迭代必须把 17 站无重叠地分进 4 个 chunk（大小 5/5/5/2）。这是一个指派问题：在 `gain` 矩阵上求"每站恰好归一个 chunk、每 chunk 恰好 size 个站、总 gain 最大"的分配（匈牙利/ILP）。得到的 assignments 再喂 Stage 1/2。成本：每迭代要 before/after 在 17 站上各评估一次，比纯回放贵得多——所以优先修回放。
 
-## 处理决策（Stage 4 之后）
+## 处理决策（Stage 5 之后）
 
 确认某站有害后不是只有"删掉"一条路：
 - **真·分布冲突**（气候远、任意位置都有害、气象/功率映射差异大）→ 从训练集剔除，或改**相似度加权采样**（偏向白马湖气候的站多采）。
