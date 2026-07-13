@@ -3,76 +3,45 @@ name: pv-model-analysis
 description: 给定光伏功率预测项目的模型代码目录，生成「代码锚定」的模型参考文档——每个模型（M1-M4 + ensemble + Chronos）的工程流程图（I/O 维度、模块、损失）、逐方法数学分析、以及「架构→结果分析含义」桥接假设，产物同时供人阅读与供 pv-result-analysis 机制归因消费。当用户给出模型代码仓库/目录路径，要求"分析模型/生成模型档案/核验模型描述是否与代码一致/在代码库里找 M1-M4/为结果分析准备模型参考"时，务必使用本技能。既能从零生成，也能对已有产物按代码增量核验（reconcile）。
 ---
 
-# M1-M4 模型档案代码核验
+# 模型代码 → 模型参考文档（供人 + 供 pv-result-analysis）
 
-对照用户指定的代码仓库，逐条核验模型档案并以代码为准修正。
+给定模型代码目录，生成 `<repo>/.modelmap/` 文档集并写 pointer。既能从零生成，也能对已有产物
+按代码增量核验（reconcile）。纪律与产物格式见 `references/`。
 
-档案固定路径：`/Users/tqa946816/Documents/华为/光伏预测/结果分析skill/pv-result-analysis/references/models.md`
+产物固定位置：`<repo>/.modelmap/`；pointer 固定路径见 `references/output-spec.md`。
 
-## 为什么要核验
+## Step 0：定位模型（先问后花）
+按 `references/models-template.md` 的「定位速查表」grep 类名定位 M1-M4 + Chronos 用法 +
+ensemble 组合器；类名搬走了用架构签名兜底。确认 类名→M-id 映射。多候选版本（实验副本/旧文件）
+→ 列候选请用户确认哪个是产线，绝不自行裁决。某模型定位不到 → 报"未找到"，该节留空，不硬套。
 
-models.md 是结果分析归因的依据——模型看得见/看不见什么，决定哪些诊断结论可以下。它由用户口述整理，口述会记错（已有先例：M3 损失归一化的方向，口述与代码相反）。档案错一条，下游归因假设就错一串。代码是唯一事实来源。
+## Step 1：（可选）数据画像
+用户给了数据样本 → 跑 `scripts/profile_data.py` 落 `data-profile.md`，把"为什么"从 📐 升 📊；
+没给则静默跳过。
 
-## Step 1：读档案，拆核验清单
+## Step 2：逐模型抽取（一模型一子代理，写完即忘；无子代理则串行）
+每个模型产出三层（纪律见 `references/machinery.md`）：
+- 工程（✅ `file:line`）：输入通道与维度、切 patch、模块、**读实际代码的损失**、训练窗口。
+- 数学（📐）：每个方法（Fourier tokenizer、MoBA、RevIN、pinball≡4.5·MAE、MSE+rfft、Moirai…）。
+- 桥接（架构→结果分析含义）：架构事实 → 预期误差形态 → 哪张图检验 → H-ID。桥接须遵
+  `references/cross-skill-contract.md`（读 hypotheses.md + 图谱目录，H-ID 写回登记）。
+核验优先级：损失函数 > 输入特征 > 训练窗口 > 其余结构。
 
-先完整读 models.md，把每个模型的描述拆成**原子断言清单**——每条都是能在代码里直接查证真伪的事实（通道构成、patch 大小、损失函数、训练窗口……），不是复述文档。例如"M4 用 9 个对称分位 pinball 喂单条输出"是一条可查证断言，且它是"损失 ≡ 4.5×MAE ⇒ 纯中位数回归"推导的前提——前提列进清单，推导标记为受它牵连。
+## Step 3：Reconcile（统一核验流）
+已有 `.modelmap/` 且仓库未变（commit 命中）→ 复用；变了 → 重抽取、与旧产物 diff，改动条目带
+日期锚 `【代码核验 YYYY-MM-DD，来源 file:line】`；**前提被推翻的桥接假设必须重推**（不留半新半旧）。
 
-带 `<!-- 待确认 -->` 的条目单独列一栏：这次核验正是补齐它们的机会（如 Chronos 零样本还是微调、M1 的 Huber delta 与三个 λ 量级、M1 推理是否关 dropout 单次前向）。
+## Step 4：落盘 + 写 pointer
+按 `references/output-spec.md` 写 `.modelmap/` 全套（models.md 结构照 `references/models-template.md`）；
+用 `scripts/pointer.py` 的 `write_pointer` 写 pointer（commit 取 `git -C <repo> rev-parse HEAD`，
+无 git 用 `no-git`）。
 
-## Step 2：在代码库中定位 M1-M4
-
-用户给的是大仓库，模型在代码里未必叫 M1-M4。按序尝试：
-
-1. **先按代码类名直接定位（首选，2026-07-09 用户提供）**——每个模型在代码里的类名已知，
-   `grep -rn` 类名即可直达定义文件，比架构关键词可靠得多：
-
-   | 模型 | 代码类名（grep 首选） | 容错前缀 |
-   |------|------|------|
-   | M1 | `FourierMobaTransformer` | `FourierMoba` |
-   | M2 | `PatchRegForecast` | `PatchReg` |
-   | M3 | `MoiraiPvForecaster` | `MoiraiPv` |
-   | M4 | `PatchTSTPvForecaster` | `PatchTSTPv` |
-
-   注意 M2 类名用 "Reg" 而非 M3/M4 的 "PvForecaster"，命名风格不同（拼写 `PatchRegForecast`
-   已确认）——若精确串搜不到，用容错前缀 `PatchReg` 再搜。
-2. **找路标**：训练入口、配置文件、实验名（`find <repo> -maxdepth 3 -name "*.yaml" -o -name "train*.py"`、README）常写着模型注册名与产线配置，确认类名到 M1-M4 的映射。
-3. **架构签名兜底**——类名搜不到（改过名/多副本）时，用 models.md 的结构当搜索词：
-
-   | 模型 | Grep 关键词（任一命中即候选） |
-   |------|------|
-   | M4 | `PatchTST` / `RevIN` / `TSTencoder` / `pinball` / `quantile` |
-   | M1 | `MoBA` / `vicreg` / `ortho` / `fourier` / `customTSTiEncoder` |
-   | M3 | `moirai` / `MultiInSizeLinear` / `loss_auxi` / `rfft` |
-   | M2 | `stat_embd` / `GHIembedding` / `Patch1d` / `weather_source_names` |
-   | 共用 | `chronos` / `observe_power_predicted` |
-
-4. **多版本歧义不要自行裁决**：同一类名/签名命中多个文件（实验副本、旧版本）时，列出候选（路径 + 关键差异点）请用户确认哪个对应产线 M1-M4。对错版本核验，整个结果作废。
-4. **找不到就明说**：某模型定位不到 → 报告"未找到"，该模型档案保持原状；不要拿相似代码硬套。
-
-## Step 3：逐条核验
-
-对每条断言，在代码中找到对应实现，给出 `file:line` 证据，判为三类：
-
-- **证实**：代码与档案一致 → 该条不动，去掉对应 `<!-- 待确认 -->` 并标注核验日期。
-- **不符**：代码与档案矛盾 → 记下代码实际逻辑，关键处直接摘代码片段。
-- **未找到**：查不到对应实现 → 原文与待确认标注保留，不改。
-
-核验优先级：**损失函数 > 输入特征构成 > 训练窗口 > 其余结构细节**——前三者直接决定归因结论的可采信性。损失函数必须读实际代码而非注释或函数名。
-
-## Step 4：修正档案
-
-- **不符条目**：改为代码实际情况，标注 `【代码核验 YYYY-MM-DD，来源 <file:line>】`；若原口述曾支撑某条诊断假设，注明"原口述为 X，已按代码修正"，不无痕覆盖。
-- **连带修正推导**：models.md 各模型的"架构 → 结果分析含义"小节是从架构事实推导的假设，前提被推翻时推导必须重做（如 M4 的 4.5×MAE 与"纯中位数回归压峰"假设，全系于"单条输出 + 9 对称分位"这一前提）。不允许出现事实已改、假设还引用旧事实的半新半旧状态。
-- **空白节可以从代码填写**：M2、ensemble 若在代码库中找到，直接依代码填写并标注核验来源——代码证据即事实，不违反"空字段不编造"纪律。
-- 已证实条目清理 `<!-- 待确认 -->`。
-
-## Step 5：向用户汇报
-
-输出核验表：**断言 | 代码证据（file:line）| 结论（证实 / 不符→改为什么 / 未找到）**。不符条目逐条讲清代码实际怎么做、档案改成了什么、牵连了哪些分析假设——尤其是影响归因方向的差异（损失、特征、Chronos 依赖），不要只说"已更新"。
+## Step 5：自检（强制）
+跑 `references/machinery.md` 第 5 节：落盘后置条件 + 锚点抽查 + 链接 + 覆盖 + 无裸断言，
+末尾给自检报告。
 
 ## 纪律
-
-- 证据强度：代码 > 口述 > 空白；但多版本并存时，哪个算"产线版本"由用户定。
-- "代码里没找到" ≠ "不存在"——未找到的条目保留原状，不删口述内容。
-- 每处修改都要带日期与 file:line 来源，让下次核验能增量进行。
-- 修正完成后 models.md 必须整体自洽：事实、待确认标注、分析假设三层同步。
+- 证据强度：代码 > 推导 > 空白；多版本"哪个是产线"由用户定。
+- "代码里没找到" ≠ "不存在"——未找到留空，不编造。
+- 每处结论带置信标签 + `file:line`；未知永远显式。
+- 产出后 `.modelmap/` 三层（事实 / 待确认 / 桥接假设）必须自洽。
