@@ -18,6 +18,7 @@
 - **H-ID convention:** `H-<TOPIC-or-model>-<n>` (existing e.g. `H-CHRONOS-1`, `H-WXSRC-1`, `H-M1-2`). Producer must **check `hypotheses.md` before appending** and mark new rows `预注册 by pv-model-analysis YYYY-MM-DD`.
 - **Do not rewrite historical log entries** (`pv-result-analysis/CHANGELOG.md` past rows that mention `pv-model-verify` stay as history).
 - **Commit after every task.** Work stays on branch `design/pv-model-analysis`.
+- **⚠️ Concurrency safety (another session is editing `pv-station-influence/` in the same working tree).** NEVER use `git add -A` / `git add .` — stage only this task's explicit file paths. Before every `git commit`, run `git status --short` and confirm ONLY this task's files are staged; if any file from the other session (esp. under `pv-station-influence/`) got staged, `git restore --staged <that-file>` before committing. Do **not** create, edit, or stage anything under `pv-station-influence/` in this run (Task 12's sibling-skill edit is deferred — see that task).
 - **cartographer source of truth** for imported machinery/scripts: `/Users/tqa946816/Documents/华为/project-cartographer/` (`SKILL.md`, `scripts/profile_data.py`, `scripts/read_pptx.py`, `references/`).
 
 ---
@@ -59,10 +60,12 @@ test ! -d pv-model-verify && echo "OLD GONE"
 ```
 Expected: `DIR OK`, `NAME OK`, `OLD GONE`
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Commit (explicit paths only — see Concurrency safety)**
 
 ```bash
-git add -A
+cd "/Users/tqa946816/Documents/华为/光伏预测/结果分析skill"
+git add pv-model-analysis
+git status --short   # confirm ONLY the rename (R pv-model-verify/... -> pv-model-analysis/...) is staged
 git commit -m "refactor: rename pv-model-verify -> pv-model-analysis (frontmatter)"
 ```
 
@@ -631,10 +634,12 @@ grep -q "pv-model-analysis" pv-result-analysis/references/subagent-briefs.md && 
 ```
 Expected: `MODELS.MD GONE`, `BRIEF OK`, `PTR OK`, `TRIGGER OK`.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Commit (explicit paths only — see Concurrency safety)**
 
 ```bash
-git add -A
+cd "/Users/tqa946816/Documents/华为/光伏预测/结果分析skill"
+git add pv-result-analysis/references/models.md pv-result-analysis/references/subagent-briefs.md
+git status --short   # confirm ONLY the models.md deletion + subagent-briefs.md edit are staged
 git commit -m "feat: pv-result-analysis consumes model ref via pointer; delete dictated models.md"
 ```
 
@@ -726,7 +731,8 @@ git commit -m "docs: changelog — pointer-based model reference + pv-model-anal
 ### Task 12: Sweep stale `pv-model-verify` references
 
 **Files:**
-- Modify: `README.md` (lines 20, 38), `结果分析Skill介绍.md` (lines 185, 189), `pv-station-influence/SKILL.md` (line 3 description)
+- Modify: `README.md` (lines 20, 38), `结果分析Skill介绍.md` (lines 185, 189)
+- **DEFERRED (do NOT touch this run):** `pv-station-influence/SKILL.md` (line 3 description mentions `pv-model-verify`) — another session is actively editing this file. This one-word update (`pv-model-verify` → `pv-model-analysis` in the description) is handled separately after that session finishes; leave the file untouched here.
 
 - [ ] **Step 1: Update README.md**
 
@@ -738,25 +744,23 @@ git commit -m "docs: changelog — pointer-based model reference + pv-model-anal
 - Line 185 (the table row for `pv-model-verify`): rename the skill to `pv-model-analysis` and change the description to "从模型代码**生成**代码锚定的模型参考（工程流程图 + 数学 + 架构→含义桥接），供人阅读并供 pv-result-analysis 消费；亦可对已有产物按代码增量核验".
 - Line 189 (两者关系): replace `pv-model-verify 保证分析的输入前提（模型档案）正确` with `pv-model-analysis 从代码生成模型参考（存 .modelmap，经 model-ref.pointer 定位）`, and keep the rest of the sentence about `pv-result-analysis` executing the main flow.
 
-- [ ] **Step 3: Update pv-station-influence/SKILL.md description**
-
-Line 3: change the parenthetical `pv-model-verify（模型档案代码核验）` to `pv-model-analysis（从代码生成/核验模型参考）`.
-
-- [ ] **Step 4: Verify no unintended stale references remain**
+- [ ] **Step 3: Verify no unintended stale references remain (pv-station-influence is expected to still have one — deferred)**
 
 Run:
 ```bash
 cd "/Users/tqa946816/Documents/华为/光伏预测/结果分析skill"
-echo "--- pv-model-verify mentions left (expect ONLY historical CHANGELOG + docs/superpowers/specs) ---"
+echo "--- pv-model-verify mentions left ---"
 grep -rn "pv-model-verify" --include="*.md" . | grep -v "/.git/"
 ```
-Expected: only `pv-result-analysis/CHANGELOG.md` historical rows and `docs/superpowers/` design/plan files appear (those are history — leave them).
+Expected: matches ONLY in `pv-result-analysis/CHANGELOG.md` (history), `docs/superpowers/` (design/plan), and `pv-station-influence/SKILL.md` (DEFERRED — the other session owns it). README.md and 结果分析Skill介绍.md must show NO matches.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit (explicit paths only — see Concurrency safety)**
 
 ```bash
-git add README.md 结果分析Skill介绍.md pv-station-influence/SKILL.md
-git commit -m "docs: sweep pv-model-verify -> pv-model-analysis across README/intro/sibling skill"
+cd "/Users/tqa946816/Documents/华为/光伏预测/结果分析skill"
+git add README.md 结果分析Skill介绍.md
+git status --short   # confirm pv-station-influence/ is NOT staged
+git commit -m "docs: sweep pv-model-verify -> pv-model-analysis across README/intro"
 ```
 
 ---
