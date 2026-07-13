@@ -79,9 +79,9 @@ orient 读工作目录的 `analysis_config.json` 与 `analysis_state.json`，**�
 
 阶段纪律：
 
-- **Stage 3 只写"看到了什么"**：现象 + 数字 + 稳健性检验结果，**禁止机制语言**（不写"因为 PatchTST 的 RevIN…"）。**Stage 4 才允许"为什么"**：必须引用 models.md/station.md/seasonality.md 已填字段 + hypotheses.md 假设 ID，并过反驳门。把"事实"与"故事"物理隔开，既防事后编故事，也让最贵的步骤只花在用户点名的现象上。
+- **Stage 3 只写"看到了什么"**：现象 + 数字 + 稳健性检验结果，**禁止机制语言**（不写"因为 PatchTST 的 RevIN…"）。**Stage 4 才允许"为什么"**：必须引用 模型参考（.modelmap/models.md）/station.md/seasonality.md 已填字段 + hypotheses.md 假设 ID，并过反驳门。把"事实"与"故事"物理隔开，既防事后编故事，也让最贵的步骤只花在用户点名的现象上。
 - **阶段进度靠"经核验的产物清单"判定**：`analysis_state.json` 是快速索引，但**真相始终以真实产物为准**——每次 orient 都重扫 figures/ 与真实文件，state 说 done 但产物缺了就地降级。判据不变：指标 Excel + suspect_days.csv 在 → Stage 1 完成；`02_error_corr.png`+stats 在 → Stage 2 完成；FINDINGS.md 有"现象"条目（或 figures 下有 ANALYSIS.md+stats.json 可重建）→ Stage 3 完成。续跑由 orient 从第一个未完成阶段进入（不再是单独技能）。
-- **ensemble 的分析边界**：ensemble 是 M1-M4 的均值组合，无独立特征与机制（models.md 该节为空）。指标层（Stage 1 摘要、图#3、Stage 3 现象）**必须报告**它——是否优于最佳单模型、哪些月不是；但机制层（Stage 4、Playbook B、图#4–#8 的模型聚焦）**只做 M1-M4**——"ensemble 为什么好/不好"的正确问法是"成员误差是否分散"（图#2）与"离事后最优还有多远"（图#9），不是给它编独立机制故事。
+- **ensemble 的分析边界**：ensemble 是 M1-M4 的均值组合，无独立特征与机制（模型参考里 ensemble 节为空）。指标层（Stage 1 摘要、图#3、Stage 3 现象）**必须报告**它——是否优于最佳单模型、哪些月不是；但机制层（Stage 4、Playbook B、图#4–#8 的模型聚焦）**只做 M1-M4**——"ensemble 为什么好/不好"的正确问法是"成员误差是否分散"（图#2）与"离事后最优还有多远"（图#9），不是给它编独立机制故事。
 
 ## Step 1：定位路径 + 质检（Stage 1）
 
@@ -206,7 +206,7 @@ python3 "<SKILL>/scripts/run_drift.py" --cols "GHI-solargis,observe_power_future
 两类高频归因问题走固定流程，**详见 `references/playbooks.md`**：
 
 - **Playbook A："为什么 X 月变差了？"**——查台账/事件 → 图#3 定位口径 → 图#4/#7 定位坏天 → 图#8 占比分解（天变坏 vs 模型变弱）→ 图#11/#12 分布漂移 → 过反驳门写结论。
-- **Playbook B："为什么模型 A 比 B 好（差）？"**——图#2 同质化 → 图#8 分天气 → 图#4/#6 定位时间 → 图#5 分时效 → 对照 models.md/hypotheses.md 验证机制（想不出机制查 `figure-diagnostics.md`）→ 过门。
+- **Playbook B："为什么模型 A 比 B 好（差）？"**——图#2 同质化 → 图#8 分天气 → 图#4/#6 定位时间 → 图#5 分时效 → 对照 模型参考（.modelmap/models.md）/hypotheses.md 验证机制（想不出机制查 `figure-diagnostics.md`）→ 过门。
 - **CONCLUSION.md（面向主管，Stage 4 收尾）**：把 FINDINGS 已证实结论**翻译**成管理层语言，叙述优先、全文表格≤1 张、方法论机器不进正文、金字塔先结论后给建议。写法与模板见 `references/playbooks.md`。
 
 ## 背景知识库（references/）
@@ -216,7 +216,7 @@ python3 "<SKILL>/scripts/run_drift.py" --cols "GHI-solargis,observe_power_future
 | 文档 | 什么时候读 |
 |------|-----------|
 | `event-log.md` | **任何跨月归因之前必查**——突变点附近有事件先排除再谈模型能力 |
-| `models.md` | 模型间对比归因时读（架构/特征/训练窗口） |
+| 模型参考（`.modelmap/models.md`，经 `references/model-ref.pointer` 定位；缺失则子代理跑 pv-model-analysis 生成，见 subagent-briefs.md） | 模型间对比归因时读（架构/特征/训练窗口/桥接假设）；只引用带置信标签的已填字段 |
 | `hypotheses.md` | **任何模型对比或月度归因下结论前必读**——认领假设 ID，先预测后看图 |
 | `station.md` | ACC 归一化基准、限电导致的"假高估"、日出日落判断时读 |
 | `seasonality.md` | **回答"为什么 X 月变差"必读**——按排查清单形成假设再验 |
@@ -226,7 +226,7 @@ python3 "<SKILL>/scripts/run_drift.py" --cols "GHI-solargis,observe_power_future
 | `drift-and-nwp.md` | 分布漂移诊断（run_drift.py）与 NWP 误差分离模块 |
 | `subagent-briefs.md` | **派发 subagent 前读**——figure+fact（Stage 2–3）与 metric（Stage 1）子 agent 的固化 prompt 模板 |
 
-使用纪律：**已填写的字段才可引用；空字段（"待填"）视为未知——宁可写"缺少 XX 背景无法进一步归因"，也不编造。** references/ 是常开收纳位，**每次分析开始前 `ls references/` 扫一遍**，纳入新出现/新填的文档。`models.md` 由用户口述、可能与代码有出入：用户给代码仓库路径要求核验时，走配套技能 **`pv-model-verify`**。
+使用纪律：**已填写的字段才可引用；空字段（"待填"）视为未知——宁可写"缺少 XX 背景无法进一步归因"，也不编造。** references/ 是常开收纳位，**每次分析开始前 `ls references/` 扫一遍**，纳入新出现/新填的文档。模型参考不再是口述档案：由配套技能 **`pv-model-analysis`** 从模型代码生成（代码锚定、带置信标签），存于 `<repo>/.modelmap/`，经 `references/model-ref.pointer` 定位；pointer 缺失/过时则按 `subagent-briefs.md` 的"模型参考——定位或生成"派子代理生成后再读。
 
 ## 常见错误
 
