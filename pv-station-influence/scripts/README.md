@@ -8,7 +8,7 @@
 # 每次进入先 orient（识别 Mode A/B + 预测侧上下文 + 定位阶段）
 python3 <SKILL>/scripts/run_orient.py
 
-# Step 1 后：探日志——一次探两样（白马湖 RMSE + training loss）→ probe_summary.json
+# Step 1 后：探日志——一次探两样（留出站 RMSE + training loss）→ probe_summary.json
 python3 <SKILL>/scripts/probe_logs.py
 
 # Stage 0 回放分组（Mode B 可 --validate 做 checkpoint 指纹校验）
@@ -17,7 +17,7 @@ python3 <SKILL>/scripts/replay_assignments.py [--validate]
 # Stage 1 训练动力学（日志解析出 loss_records.csv 后；Mode B 无日志可 --from-ckpt）
 python3 <SKILL>/scripts/loss_dynamics.py [--from-ckpt] [--lam 1.0 --tail-k 3]
 
-# 若日志没记 RMSE 且有 checkpoint（Mode B）：逐 checkpoint 重算白马湖 RMSE
+# 若日志没记 RMSE 且有 checkpoint（Mode B）：逐 checkpoint 重算留出站 RMSE
 python3 <SKILL>/scripts/ckpt_eval.py [--models M1 --out rmse_series.M1.csv]  # --out 供分片
 
 # Stage 2 影响力回归（Mode A 主证据）
@@ -36,7 +36,7 @@ python3 ../pv-result-analysis/scripts/run_drift.py --cols GHI-solargis,observe_p
 |------|-----------|------|
 | `si_common.py` | 共享 | config 读取、模式判定、RMSE、预测侧上下文探测(detect_result_analysis)、复用 pv-result-analysis/data_utils、adapter 加载 |
 | `run_orient.py` | Step 0 | 识别模式 + 预测侧上下文三分支 + 定位阶段 + 前置检查，写 `influence_state.json`/`PROGRESS.md` |
-| `probe_logs.py` | Step 1 | 一次扫描同时探白马湖逐 chunk RMSE 与 training loss → `probe_summary.json`，报样例行让主 agent 写解析器 |
+| `probe_logs.py` | Step 1 | 一次扫描同时探留出站逐 chunk RMSE 与 training loss → `probe_summary.json`，报样例行让主 agent 写解析器 |
 | `replay_assignments.py` | Stage 0 | 种子回放还原分组 → `assignments.csv`；`--validate` 指纹校验 |
 | `loss_dynamics.py` | Stage 1 | 逐 chunk loss 指标 ~ 站成员回归 + RMSE 关联 → `chunk_loss_dynamics.json`；`--from-ckpt` 从 checkpoint 抽 loss（Mode B） |
 | `ckpt_eval.py` | Stage 2 补料/B | 日志没 RMSE 时逐 checkpoint 重算 → `rmse_series.csv`（续跑；`--out` 分片） |
@@ -54,4 +54,4 @@ python3 ../pv-result-analysis/scripts/run_drift.py --cols GHI-solargis,observe_p
 
 ## 产物（工作目录）
 
-`influence_config.json`(输入) · `probe_summary.json`(probe_logs 写) · `assignments.csv` + `assignments_summary.json` · `rmse_series.csv` · `loss_records.csv` + `chunk_loss_curves.csv` + `chunk_loss_dynamics.json` · `influence_coefs.json` · `tracin_scores.json` · `influence_state.json` + `PROGRESS.md`(orient 写) · `FINDINGS.md`/`ANALYSIS.md`/`CONCLUSION.md`(主 agent 写) · `result_analysis_baimahu/`(嵌入式主技能运行目录，可选；其中的最小 `analysis_config.json` 若只为 run_drift 而写，不代表跑过主技能)。
+`influence_config.json`(输入) · `probe_summary.json`(probe_logs 写) · `assignments.csv` + `assignments_summary.json` · `rmse_series.csv` · `loss_records.csv` + `chunk_loss_curves.csv` + `chunk_loss_dynamics.json` · `influence_coefs.json` · `tracin_scores.json` · `influence_state.json` + `PROGRESS.md`(orient 写) · `FINDINGS.md`/`ANALYSIS.md`/`CONCLUSION.md`(主 agent 写) · `result_analysis_<留出站拼音>/`(嵌入式主技能运行目录，可选；其中的最小 `analysis_config.json` 若只为 run_drift 而写，不代表跑过主技能)。
