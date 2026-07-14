@@ -8,7 +8,10 @@
 - 一次运行到达结论阶段（orient 报全部阶段完成，CONCLUSION.md 在），且
 - 用户表示"以后还要跑这类分析"，或你在运行后回顾时判断该场景会复发 → **主动提议**，用户点头才做。
 
-前置核验（不满足不固化）：`analysis_scripts/` 里**要快照的每个脚本在 PROGRESS.md 有验证记录**（验证步 PASS 行）；diagnose_config.json 的 questions 块完整。
+前置核验（不满足不固化）：`analysis_scripts/` 里**要快照的每个脚本在 PROGRESS.md 有验证记录**（验证步 PASS 行 + gen_gate 过闸报告）；diagnose_config.json 的 questions 块完整。
+
+**注意**：单次成功 ≠ 可固化。转正门槛是 §3 三关判据（`scripts/crystallize_gate.py` 判定）——
+第一次成功运行后通常先提议"记入 crystallize_record，攒够 N 个 case 再固化"，而不是当场固化。
 
 ## 1. AskUserQuestion 收集固化参数（一次问齐）
 
@@ -65,8 +68,11 @@ profile_version: 1            # 与 engine_common.PROFILE_VERSION 对齐；不�
 engine: ts-diagnose           # 相对仓库根；引擎搬家用 engine_path 绝对路径兜底
 playbook: training-sufficiency
 goal: "<一句话：这个固化实例回答什么问题>"
-experiment_line: <project-context 实验线 json 绝对路径>   # 可选。与实验线重叠的字段
-                              # 一律写这里引用，不复制数值——防 profile 与注册表两处漂移
+experiment_line:              # 可选。与实验线重叠的字段一律写引用，不复制数值——
+  path: <project-context 实验线 json 绝对路径>   # 防 profile 与注册表两处漂移
+  interface_version: v0-draft # project-context 消费接口未定稿：v0-draft = 占位不生效
+                              # （orient 不合并、相关问题照常问；固化技能不得对该字段做
+                              # 逻辑依赖）。定稿轮统一 v0→v1 迁移后才生效。
 config_defaults:              # 只放跨次稳定且不属于实验线的字段（缺则不写）
   log_glob: "logs/train_*.log"
 questions:                    # 已固化问答（source 会标 profile；answer 存原话）
@@ -83,7 +89,39 @@ scripts:                      # 快照清单（审计：从哪来、何时验证
 # 验证步: <PASS 摘要>。schema 变了别缝补——按 playbook 菜谱重生成并重跑验证步。
 ```
 
-## 3. 三步验证（不过不交付；结果写新技能 CHANGELOG 首行）
+## 3. 三关判据（转正门槛——`crystallize_gate.py` 判定，任一不过不许写 profile/SKILL）
+
+```bash
+python3 <ENGINE>/scripts/crystallize_gate.py --record crystallize_record.json --skill-dir <候选技能目录>
+```
+
+1. **关1 多样性**：≥N 个 `input_hash` 互异的成功 case（N = playbook frontmatter
+   `crystallize_min_cases`，默认 3；training-sufficiency 为 5）。case 不能是同一场景微调，
+   每个要注明覆盖的**适用域边界**（boundary 字段：如"文本日志源/单曲线退化形态/大规模多 series"）。
+2. **关2 held-out**：一个**从未参与开发调参**的留出场景，固化前跑一遍且 passed=true，
+   `input_hash` 不与任何开发 case 重合。它专门暴露"引擎是否过拟合那几次成功运行的环境"。
+   （held-out 场景库排后续轮；本轮判据要求该记录存在且通过。）
+3. **关3 快照自洽**：每个待快照脚本经 `gen_gate.py` 在其 playbook 金标准上重跑 PASS——
+   防"固化了一份当时能跑、换环境就崩"的脚本。golden 未覆盖的阶段列 unchecked 警告，
+   须有 PROGRESS.md 验证记录人工确认。
+
+**crystallize_record.json schema**（主 agent 跨运行汇总；input_hash 取各次运行
+provenance.json 的 `data.combined`）：
+
+```json
+{
+  "playbook": "training-sufficiency",
+  "cases": [
+    {"name": "chunk轮换-文本日志", "input_hash": "<provenance data.combined>",
+     "workdir": "<该次运行目录>", "date": "2026-07-14",
+     "boundary": "文本日志源 + 多 series；覆盖 grouped 变体"}
+  ],
+  "heldout": {"name": "<留出场景>", "input_hash": "<...>", "passed": true, "date": "..."},
+  "snapshots": [{"file": "scripts/dynamics.py", "stage": 2}]
+}
+```
+
+## 3.5 交付检查（三关过后、交付前）
 
 1. **冷启动 orient**：空临时目录跑 `orient.py --profile <new>/profile.yaml`，断言：
    playbook 正确加载；profile 固化的问题全部标 ✓固化；无 ✗ 遗漏本应固化的题；
@@ -92,6 +130,8 @@ scripts:                      # 快照清单（审计：从哪来、何时验证
    的跑一遍自检模式。
 3. **影子重跑**（可选，推荐）：临时目录里用原数据把最早一个阶段重跑，关键数字与原运行
    相对差 <1%。
+
+三关 + 交付检查的结果一并写新技能 CHANGELOG 首行。
 
 ## 4. 收尾
 

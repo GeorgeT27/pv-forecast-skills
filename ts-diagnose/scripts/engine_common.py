@@ -29,6 +29,10 @@ FINDINGS_PATH = "FINDINGS.md"
 
 PROFILE_VERSION = 1
 PENDING = "【待补】"
+# profile 里 experiment_line 引用的接口版本：project-context 定稿轮才发 v1。
+# v0-draft（含旧的裸字符串形态）= 占位不生效——固化技能不得对该字段做逻辑依赖。
+EXPERIMENT_LINE_IFACE_FINAL = "v1"
+CRYSTALLIZE_MIN_CASES_DEFAULT = 3
 # FINDINGS 状态保留字（_playbook-spec.md §3）
 FINDINGS_MARKERS = ("现象", "假设", "已证实", "被推翻")
 
@@ -360,8 +364,17 @@ def merge_profile(cfg, prof, date_stamp):
         if _filled(v) and not _filled(cfg.get(k)):
             cfg[k] = v
             merged_keys.append(k)
-    if prof.get("experiment_line"):
-        cfg.setdefault("experiment_line", prof["experiment_line"])
+    # experiment_line 引用：只有接口定稿（v1）才生效；v0-draft / 旧裸字符串 = 占位，
+    # 不写进 cfg——相关问题照常问（约束只针对固化产物；运行时主 agent 现场写入不受影响）。
+    exp_placeholder = False
+    exp = prof.get("experiment_line")
+    if exp:
+        iface = exp.get("interface_version") if isinstance(exp, dict) else "v0-draft"
+        path = exp.get("path") if isinstance(exp, dict) else exp
+        if iface == EXPERIMENT_LINE_IFACE_FINAL and path:
+            cfg.setdefault("experiment_line", path)
+        else:
+            exp_placeholder = True
     if version_ok:
         qs = cfg.setdefault("questions", {})
         for qid, rec in (prof.get("questions") or {}).items():
@@ -369,5 +382,10 @@ def merge_profile(cfg, prof, date_stamp):
                 qs[qid] = {"answer": rec.get("answer") if isinstance(rec, dict) else rec,
                            "source": "profile", "date": date_stamp}
                 merged_qs.append(qid)
-    return {"version_ok": version_ok,
+    return {"version_ok": version_ok, "experiment_line_placeholder": exp_placeholder,
             "merged_keys": merged_keys, "merged_questions": merged_qs}
+
+
+def crystallize_min_cases(fm):
+    """固化三关之一（多样性）的 N：playbook frontmatter 可覆盖默认值。"""
+    return int(fm.get("crystallize_min_cases") or CRYSTALLIZE_MIN_CASES_DEFAULT)

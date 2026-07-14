@@ -81,6 +81,9 @@ def main():
         else:
             notes.append(f"profile 合并：config +{len(res['merged_keys'])} 键，"
                          f"固化问答 +{len(res['merged_questions'])} 条。")
+        if res.get("experiment_line_placeholder"):
+            notes.append("⚠ profile 的 experiment_line 接口为 v0-draft：占位不生效，"
+                         "不合并实验线，相关问题照常问（project-context 定稿轮统一 v0→v1）。")
         ec.save_config(cfg)
     if args.playbook:
         cfg = cfg or {}

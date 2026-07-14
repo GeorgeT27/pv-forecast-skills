@@ -125,6 +125,7 @@ evidence_lines:
     stage: 4
     output: external_link.json
 upgrade_rule: "『某单元成员拖累/拉高 loss』要升「假设」：成分回归（loss 侧）与外部指标关联（目标侧）两线 Spearman 排名一致；只有一线（无外部指标）时结论上限是「现象」+『loss 侧』限定语"
+crystallize_min_cases: 5   # 最深 playbook：固化三关之关1（多样性）要求 5 个互异 case（默认 3）
 ---
 
 # Playbook：训练充分性 / 训练动力学
