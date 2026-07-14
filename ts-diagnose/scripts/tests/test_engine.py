@@ -1,8 +1,8 @@
 """engine_common / orient 的机制层测试。
 
-fixture 用真实的 playbooks/training-sufficiency.md（spec 要求：引擎与首个 playbook
-互为验证）。所有工作目录相关的测试在 tmp_path 里跑（engine_common 的 artifact/
-config 判定都是 cwd 相对）。
+fixture 用真实的 playbooks/training-sufficiency/playbook.md（spec 要求：引擎与首个
+playbook 互为验证）。所有工作目录相关的测试在 tmp_path 里跑（engine_common 的
+artifact/config 判定都是 cwd 相对）。
 """
 import json
 import os
@@ -15,7 +15,14 @@ SCRIPTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, SCRIPTS_DIR)
 import engine_common as ec  # noqa: E402
 
-TS_PLAYBOOK = os.path.join(ec.PLAYBOOKS_DIR, "training-sufficiency.md")
+TS_PLAYBOOK = ec.find_playbook("training-sufficiency")
+
+
+def test_find_playbook_dir_layout():
+    assert TS_PLAYBOOK.endswith(os.path.join("training-sufficiency", "playbook.md"))
+    assert os.path.basename(ec.playbook_dir("robustness")) == "robustness"
+    with pytest.raises(FileNotFoundError):
+        ec.find_playbook("no-such-playbook")
 
 
 @pytest.fixture

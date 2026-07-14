@@ -108,20 +108,30 @@ def _validate_frontmatter(fm, md_path):
 
 
 def find_playbook(name):
-    """按 id 定位本引擎 playbooks/<id>.md；也接受直接给路径（profile 可指向外部 playbook）。"""
+    """按 id 定位本引擎 playbooks/<id>/playbook.md（每 playbook 一个独立目录，Layer 1）；
+    兜底平铺 <id>.md（外部/旧式）；也接受直接给路径（profile 可指向外部 playbook）。"""
     if os.path.sep in str(name) and os.path.exists(name):
         return os.path.abspath(name)
-    p = os.path.join(PLAYBOOKS_DIR, f"{name}.md")
-    if not os.path.exists(p):
-        raise FileNotFoundError(f"playbook '{name}' 不存在（找过 {p}）")
-    return p
+    for p in (os.path.join(PLAYBOOKS_DIR, str(name), "playbook.md"),
+              os.path.join(PLAYBOOKS_DIR, f"{name}.md")):
+        if os.path.exists(p):
+            return p
+    raise FileNotFoundError(f"playbook '{name}' 不存在（找过 {PLAYBOOKS_DIR}/{name}/playbook.md 与 {name}.md）")
+
+
+def playbook_dir(name):
+    """playbook 的目录（golden/ 等资源所在）。平铺形态 → playbooks/ 本身。"""
+    return os.path.dirname(find_playbook(name))
 
 
 def list_playbooks():
     """[(id, name, goal)]，供 orient 无 config 时打印菜单。"""
     out = []
-    for p in sorted(glob.glob(os.path.join(PLAYBOOKS_DIR, "*.md"))):
-        if os.path.basename(p).startswith("_"):
+    cands = sorted(glob.glob(os.path.join(PLAYBOOKS_DIR, "*", "playbook.md"))) + \
+        sorted(glob.glob(os.path.join(PLAYBOOKS_DIR, "*.md")))
+    for p in cands:
+        rel = os.path.relpath(p, PLAYBOOKS_DIR)
+        if rel.split(os.path.sep)[0].startswith("_"):
             continue
         try:
             fm = load_frontmatter(p)

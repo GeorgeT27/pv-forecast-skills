@@ -28,7 +28,7 @@ brief **照抄进 Agent prompt**（`<...>` 占位换实参）。
 
 工作目录：<绝对路径，含 diagnose_config.json>
 引擎目录 ENGINE：/Users/tqa946816/Documents/华为/光伏预测/结果分析skill/ts-diagnose
-playbook 菜谱：读 <ENGINE>/playbooks/<id>.md 的「Stage <N>」节，照它的伪代码/公式/产物 schema 写脚本。
+playbook 菜谱：读 <ENGINE>/playbooks/<id>/playbook.md 的「Stage <N>」节，照它的伪代码/公式/产物 schema 写脚本。
 
 任务：
 1. 把脚本写进 analysis_scripts/<name>.py（已存在且本次无 schema 变化 → 直接复用别重写）。
