@@ -126,7 +126,7 @@ def main():
                 g_s = np.asarray(adapter.loss_gradient(m, s, cfg, n_windows=args.n_windows), float)
                 dot = float(np.dot(g_s, g_test) / (np.linalg.norm(g_s) * gtn + 1e-12))  # 余弦式，跨 ckpt 可比
                 _append({"model": model, "iteration": it, "station": s, "dot": round(dot, 8)}, args.raw)
-            print(f"  [{model}] iter{it}: 17 站梯度对齐已记")
+            print(f"  [{model}] iter{it}: 全部训练站梯度对齐已记")
             del m, g_test
             gc.collect()
             try:

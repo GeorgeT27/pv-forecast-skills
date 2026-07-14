@@ -2,6 +2,7 @@
   "name": "baimahu-line",
   "description": "17 条目分块联合训练，白马湖留出零样本（站点影响力归因主实验线）",
   "held_out_station": "白马湖",
+  "held_out_station_slug": "baimahu",
   "training_entries": ["1002", "1003", "1004", "1005", "1006", "1009", "1010", "1012", "1015", "1016", "1019", "1022", "runda-b", "hexi", "sihong", "xiaohaotu", "yalong-jiefang-b"],
   "chunking": {"n_chunks": 4, "sizes": [5, 5, 5, 2], "epochs_per_chunk": 20},
   "models": ["M1", "M2", "M3", "M4"],

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stage 2 —— 影响力回归（Mode A 主证据，纯统计，零 GPU）。
 
-思想：每迭代把 17 站随机重排进 4 个 chunk（3×5+2），是一场**天然随机化实验**。
+思想：每迭代把训练站随机重排进 K 个 chunk（见实验线 chunking），是一场**天然随机化实验**。
 把"训完某 chunk 后留出站 RMSE 的变化 ΔRMSE"回归到"该 chunk 里有哪些站"，
 站的系数 = 训练到它对留出站的**边际影响**（>0 = 拖累）。这是分组随机子集数据估值
 （Banzhaf 式），详见 references/influence-methods.md。
@@ -50,7 +50,7 @@ def _delta_rmse(rms: pd.DataFrame) -> pd.DataFrame:
 
 
 def _design(asg: pd.DataFrame, station_list: list[str]):
-    """构造设计矩阵：17 站成员指示（和为零中心化） + 控制列(iteration,position,size)。"""
+    """构造设计矩阵：训练站成员指示（和为零中心化） + 控制列(iteration,position,size)。"""
     idx = {s: i for i, s in enumerate(station_list)}
     key2mem = {}
     for _, r in asg.iterrows():
@@ -101,7 +101,7 @@ def _analyze(rms_d, key2mem, station_list, models, lam, boot, rng_seed=0):
             out["models"][model] = {"error": f"观测太少 ({len(y)})，跳过"}
             continue
         beta = _fit_ridge(X, y, lam)
-        theta = beta[1:1 + n_st]  # 站系数（截距后 17 个）
+        theta = beta[1:1 + n_st]  # 站系数（截距后 n_st 个）
         # bootstrap over 观测行
         bs = np.zeros((boot, n_st))
         idxs = np.arange(len(y))

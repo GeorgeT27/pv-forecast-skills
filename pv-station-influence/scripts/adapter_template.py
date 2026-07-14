@@ -27,12 +27,12 @@ import numpy as np
 
 # ---------------------------------------------------------------- Stage 0：回放分组
 def sample_assignments(iteration: int, seed) -> list[list[str]]:
-    """复现某一迭代的分组：返回 4 个 chunk，每个是站 id 列表（3×5 + 2）。
+    """复现某一迭代的分组：返回 K 个 chunk（见实验线 chunking），每个是站 id 列表。
 
     必须用与训练**完全相同**的随机流程（同一函数 + 同一 seed 推进方式）。
     若训练里 seed 是「基础种子 + 迭代号」派生，请在此如实复现该派生。
     """
-    raise NotImplementedError("接入训练仓库的分组采样函数，返回 [[站,...]×4]")
+    raise NotImplementedError("接入训练仓库的分组采样函数，返回 [[站,...]×K]")
 
 
 # ------------------------------------------------- Stage 0 指纹 / Stage 2 补料：评估与模型
@@ -45,7 +45,7 @@ def predict_station(model, station_id: str, cfg: dict) -> tuple[np.ndarray, np.n
     """在某站数据上前向，返回 (pred, true)，形状均 (n_samples, 192)。
 
     用于 ckpt_eval 重算留出站 RMSE（station_id = 测试站）与 Stage 0 的指纹验证
-    （在 17 个训练站上评估）。数据加载走你训练时同一套 pipeline，保证特征一致。
+    （在全部训练站上评估）。数据加载走你训练时同一套 pipeline，保证特征一致。
     """
     raise NotImplementedError("构建该站 dataloader，前向出 (pred,true)")
 

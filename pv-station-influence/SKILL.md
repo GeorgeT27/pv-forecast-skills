@@ -59,6 +59,7 @@ python3 "<SKILL>/scripts/run_orient.py" --goto 4 # 想直达某阶段：校验�
 - `checkpoint_dir`：给了就解锁 Mode B（含 optimizer state 更好）。
 - `result_analysis_workdir` + `result_analysis_status`：预测侧上下文（见上节；没问过先留空，orient 会提示）。
 - `experiment`：实验线名（Step 0.5 写入）。
+- `test_station`：留出测试站拼音/id（取实验线 held_out_station_slug）。
 - `test_station_aliases`：留出站在日志里的可能写法（中文/拼音/站 id，probe_logs 用它扫日志）。
 
 然后 **`python3 <SKILL>/scripts/probe_logs.py`**：一次探两样、落 `probe_summary.json`——

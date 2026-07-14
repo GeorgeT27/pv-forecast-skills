@@ -37,8 +37,8 @@ prompt**（`<...>` 占位换实参）。用通用 subagent（general-purpose）�
      train_stations = {全部训练站: 逐站 parquet}（可选；给了本技能 Stage 4 漂移就白捡）
 2. cd 该目录跑主技能 orient；随后照主技能 references/subagent-briefs.md 派发：
    Brief B（metric）×1 → 完成后 Brief A（figure+fact）×N 并行。
-   参数覆盖：工作目录 = result_analysis_<留出站拼音> 绝对路径；Brief B 原文里
-   "产物存 figures/<其他实验线拼音>/" 改为 figures/<留出站拼音>/（站名以 analysis_config.station 为准）。
+   参数覆盖：工作目录 = result_analysis_<留出站拼音> 绝对路径；Brief B 已通用
+   （figures/<留出站拼音>/，站名以 analysis_config.station 为准），无需改写该句。
 3. 跑到主技能 Stage 3 现象清单为止（其 Stage 4 深归因不跑——由本技能 Stage 2–5 接管）。
 4. 回 influence 工作目录：往 influence_config.json 回填
    result_analysis_workdir=<该目录绝对路径> + result_analysis_status="linked"；

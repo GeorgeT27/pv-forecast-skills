@@ -83,7 +83,7 @@ final_loss / conv_slope。θ_s 读法："含站 s 的 chunk 终态 loss 相对�
 
 ## Stage 0：回放失效时的指派问题兜底
 
-正常路径：`adapter.sample_assignments(iteration, seed)` 用训练同款 RNG 复现分组。**风险**：numpy/torch 版本或 RNG 流程与训练不一致 → 回放的分组是错的但看起来合理。故 `--validate` 做**新近效应指纹**抽查：训完某 chunk，模型对该 chunk 的 ~5 个成员站 RMSE 改善应最大；回放成员与"改善 Top-k"重叠 <60% 就判回放不可信。
+正常路径：`adapter.sample_assignments(iteration, seed)` 用训练同款 RNG 复现分组。**风险**：numpy/torch 版本或 RNG 流程与训练不一致 → 回放的分组是错的但看起来合理。故 `--validate` 做**新近效应指纹**抽查：训完某 chunk，模型对该 chunk 的成员站 RMSE 改善应最大；回放成员与"改善 Top-k"重叠 <60% 就判回放不可信。
 
 回放不可信时的兜底（未内置、需要时实现）：对**每个 chunk** 用指纹法估成员——`gain[s] = RMSE_before(s) − RMSE_after(s)`（在全部 N 站上评估 before/after checkpoint）。再利用**硬约束**：每迭代必须把 N 站无重叠地分进 K 个 chunk（大小见实验线 chunking）。这是一个指派问题：在 `gain` 矩阵上求"每站恰好归一个 chunk、每 chunk 恰好 size 个站、总 gain 最大"的分配（匈牙利/ILP）。得到的 assignments 再喂 Stage 1/2。成本：每迭代要 before/after 在 N 站上各评估一次，比纯回放贵得多——所以优先修回放。
 

@@ -21,6 +21,7 @@
   "name": "<实验线名（=文件名）>",
   "description": "<一句话>",
   "held_out_station": "<留出/目标测试站名，必填>",
+  "held_out_station_slug": "<留出站拼音 slug——figures/<slug>/ 目录名与 config 的 station/test_station 字段统一用它>",
   "training_entries": ["<entry_id，见 station-entries.md，必填>"],
   "chunking": {"n_chunks": 4, "sizes": [5, 5, 5, 2], "epochs_per_chunk": 20},
   "models": ["M1", "M2", "M3", "M4"],
@@ -30,7 +31,9 @@
 }
 ```
 
-约定：`held_out_station`/`training_entries` 必填；`data_paths` 允许【待补】占位——技能运行到需要处
+约定：`held_out_station`/`training_entries` 必填；`held_out_station_slug` 是留出站的拼音 slug，
+figures 目录名与 analysis_config/influence_config 的 station/test_station 字段统一用它，避免中文站名
+散落各处出现拼写不一致；`data_paths` 允许【待补】占位——技能运行到需要处
 追问一次并**补写回本文件**；`chunking` 无分块训练时置 null；`models` 按实验线实际。
 
 ## 发现机制

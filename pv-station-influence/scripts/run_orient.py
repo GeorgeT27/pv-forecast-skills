@@ -185,7 +185,7 @@ def main():
         print("=" * 60)
         print("未找到 influence_config.json —— 此前没跑过。")
         print("→ 回 Step 1：向用户收集 训练仓库/采样代码+种子、checkpoint 目录、留出站 true_label、")
-        print("  训练日志目录、17 站表 与 迭代数，写 influence_config.json（缺字段先留空）。")
+        print("  训练日志目录、训练条目表（training_entries）与 迭代数，写 influence_config.json（缺字段先留空）。")
         print("  同时确认：是否已有/是否要先跑留出站的 pv-result-analysis（预测侧上下文，")
         print("  见 SKILL.md「预测侧上下文」节）——已跑就填 result_analysis_workdir。")
         print("  然后先跑 probe_logs.py 探日志（同时探留出站 RMSE 与 training loss，")

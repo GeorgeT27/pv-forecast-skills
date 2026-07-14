@@ -11,7 +11,7 @@
 回放 vs 指纹校验：
   回放靠 adapter.sample_assignments(iteration, seed) 复现训练的随机流程。
   --validate（需 checkpoint + adapter.predict_station）：抽 2-3 个 chunk，比"训练该 chunk
-  前后在 17 个站上的 RMSE 改善"，改善最大的 ~5 个站应与回放成员吻合（新近效应指纹）。
+  前后在全部训练站上的 RMSE 改善"，改善最大的若干个站应与回放成员吻合（新近效应指纹）。
   不吻合 => 回放的 RNG 与训练不一致，别信 assignments，改走 references/influence-methods.md
   的「指派问题反推」兜底。
 """

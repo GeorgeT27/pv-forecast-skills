@@ -107,7 +107,7 @@ orient 读工作目录的 `analysis_config.json` 与 `analysis_state.json`，**�
 ```json
 {
   "experiment": "<实验线名（experiments/ 下文件名，Step 0.5 选定）>",
-  "station": "<留出测试站（= 实验线 held_out_station）>",
+  "station": "<留出测试站 slug（= 实验线 held_out_station_slug）>",
   "metric_py": "<metric.py 绝对路径>",
   "train_set": "<训练站联合训练集 parquet（pooled）；可选——不做跨站漂移可省略>",
   "true_label": "<留出站 test/true_label parquet 绝对路径>",
@@ -203,7 +203,7 @@ python3 "<SKILL>/scripts/run_drift.py" --cols "GHI-solargis,observe_power_future
 
 ### 输出与结论规范
 
-**PNG 是给人看的交付物，分析闭环走 stats.json，不 Read 图。** 闭环 = 读 stats.json（完整曲线/矩阵/分位数）→ 写结论（这张图说明什么、支持/否定哪个假设）→ 数字异常或缺失就查 `plots.py`/补 stats.json/重画 → 结论沉淀到 `figures/<电站>/<范围>/ANALYSIS.md`。只出图不给结论等于没分析。图仍要"可被人视觉阅读"（关键数值标注在图上、固定配色）供人复核，但**模型不靠读图下结论**。图输出目录 `figures/<留出站拼音>/<范围>/`（留出站来自实验线配置），命名 `<图号>_<内容>_<范围>.png`。
+**PNG 是给人看的交付物，分析闭环走 stats.json，不 Read 图。** 闭环 = 读 stats.json（完整曲线/矩阵/分位数）→ 写结论（这张图说明什么、支持/否定哪个假设）→ 数字异常或缺失就查 `plots.py`/补 stats.json/重画 → 结论沉淀到 `figures/<留出站拼音>/<范围>/ANALYSIS.md`。只出图不给结论等于没分析。图仍要"可被人视觉阅读"（关键数值标注在图上、固定配色）供人复核，但**模型不靠读图下结论**。图输出目录 `figures/<留出站拼音>/<范围>/`（留出站来自实验线配置），命名 `<图号>_<内容>_<范围>.png`。
 
 **结论三道门**（下结论、尤其标"已证实"前必过——完整细则见 `references/analysis-discipline.md`）：
 

@@ -9,7 +9,7 @@
   "test_station": "<留出测试站拼音/id>",      # 留出测试站（= 实验线 held_out_station）
   "test_station_aliases": [],                # 留出站在日志里的可能写法（probe_logs 扫日志用）
   "experiment": "<实验线名>",                 # project-context/experiments/ 下的文件名（Step 0.5 写入）
-  "stations": ["s01", ...],                  # 17 个训练站的 id/名（顺序即回归设计矩阵列序）
+  "stations": ["s01", ...],                  # N 个训练站（条目）的 id/名（顺序即回归设计矩阵列序）
   "test_label": "<留出站 true_label parquet>",# 算留出站 RMSE 的真值
   "train_repo": "<训练代码仓库根>",           # 供 adapter 导入 sampler / 模型类
   "sampler": {"seeds": [...], "n_iters": N}, # 种子与实际迭代数（Stage 0 回放用）
@@ -68,7 +68,7 @@ def mode_from_config(cfg: dict) -> str:
 def stations(cfg: dict) -> list[str]:
     st = cfg.get("stations") or []
     if not st:
-        raise ValueError("config.stations 为空：需要 17 个训练站的稳定 id/名（顺序=设计矩阵列序）。")
+        raise ValueError("config.stations 为空——需填训练条目列表（= 实验线 training_entries，顺序=设计矩阵列序）。")
     return list(st)
 
 
