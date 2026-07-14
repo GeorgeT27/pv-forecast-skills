@@ -146,6 +146,10 @@ upgrade_rule: "『某单元成员拖累/拉高 loss』要升「假设」：成�
 
 分析脚本由 agent 按下列菜谱**运行时生成**进工作目录 `analysis_scripts/`，每个脚本先过声明的验证步、结果记 PROGRESS.md，才可信其产出（crystallize 只快照有验证记录的脚本）。产物全部自足（json 带完整数字与形状描述），判读不读原始日志、不读 PNG。
 
+**生成闸（硬规则）**：Stage 2/3/4 的脚本生成后、碰真实数据前，必须先过金标准闸——
+`python3 <ENGINE>/scripts/gen_gate.py --script analysis_scripts/<name>.py --playbook training-sufficiency --stage <N>`。
+CLI 与产物最小 schema 以 `golden/manifest.json` 为准（可执行示例见 `golden/reference/`）。金标准算错 → 改脚本，**不改期望**；闸报告落 `gate_reports/`（provenance 汇总用）。Stage 0/1 依赖真实记录源格式无法预置金标准，用下述对账验证步。
+
 ### Stage 0：探测记录源与结构确认 → `probe_summary.json`
 
 - **输入**：question `loss-source` / `unit-structure` 的答案；config 里的日志/记录路径。

@@ -104,6 +104,10 @@ upgrade_rule: "结论要升「假设」：≥2 个独立扰动族下方向不变
 
 脚本生成进 `analysis_scripts/`，验证步过了才可信（记 PROGRESS.md）。
 
+**生成闸（硬规则）**：Stage 1 的脚本生成后、碰真实数据前，必须先过金标准闸——
+`python3 <ENGINE>/scripts/gen_gate.py --script analysis_scripts/<name>.py --playbook robustness --stage 1`
+（金标准 = 一组"差异全由 2 个极端单位驱动"的假差异数据，脚本必须抓得出来；CLI 契约见 `golden/manifest.json`，示例见 `golden/reference/`）。算错 → 改脚本，不改期望。Stage 0 基线要对用户原始数字对账，无法预置金标准。
+
 ### Stage 0：基线复算 → `baseline_metrics.json`
 - 按 `metric-and-pairing` 答案重算被检结论涉及的全部指标（**不信任来路数字，自己算一遍**），逐配对单位落长表 + 汇总。schema：`{conclusions: [{id, claim, baseline_diff, n_units}], per_unit: <路径或内嵌>}`。
 - **验证步（对账）**：汇总值与用户提供的原始数字比对，相对差 >1% 必须解释（口径/窗口/取点差异），解释不了不许继续。

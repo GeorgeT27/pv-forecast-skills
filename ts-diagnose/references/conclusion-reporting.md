@@ -39,6 +39,15 @@ _数据基础：<数据范围/样本量>；详见 FINDINGS.md 与工作目录产
 
 ## 可信度说明
 <两三句：哪些站得住、哪些是初步、缺什么料>
+
+## Provenance（结论可归因块）
+<provenance.py 打印的块原样粘贴>
 ```
+
+**归因闸（硬规则）**：写 CONCLUSION.md 之前先跑
+`python3 <ENGINE>/scripts/provenance.py --code analysis_scripts/*.py --data <本次输入文件> --out provenance.json`，
+把它打印的 Provenance 块贴在末尾——生成代码 hash + 输入数据 hash + 金标准自检结果。
+没有这个块的结论不可交付：两次运行结论不同时无法归因是"代码变了"还是"数据变了"。
+provenance 报某脚本 stale（过闸后被改）→ 先重跑 gen_gate 再出结论。
 
 写完照展示纪律把 CONCLUSION.md **直接呈现给用户**（内容 + 关键数字），不只报路径。

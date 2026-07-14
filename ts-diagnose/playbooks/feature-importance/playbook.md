@@ -109,6 +109,10 @@ upgrade_rule: "变量重要性排名要升「假设」：≥2 条证据线（per
 
 脚本生成进 `analysis_scripts/`，验证步过了才可信（记 PROGRESS.md）。
 
+**生成闸（硬规则）**：Stage 0 的脚本生成后、碰真实数据前，必须先过金标准闸——
+`python3 <ENGINE>/scripts/gen_gate.py --script analysis_scripts/<name>.py --playbook feature-importance --stage 0`
+（金标准植入了主导变量 x1 与泄漏列 x3，筛查必须隔离泄漏、排出 x1；CLI 契约见 `golden/manifest.json`，示例见 `golden/reference/`）。算错 → 改脚本，不改期望。Stage 1/2 需真实模型入口，用菜谱声明的植入回收验证步。
+
 ### Stage 0：数据对齐与相关筛查 → `correlation_screen.json`
 - 变量与目标误差对齐成一张分析表（对齐键与丢行数落盘披露）；逐变量算与误差的 Spearman/互信息 + 分位条件均值（误差最高 10% 时段里各变量的分布偏移）；共线组检测（|ρ|>0.9 聚组）。
 - schema：`{n_rows, dropped_rows, features: {col: {spearman_vs_error, mi, tail_shift}}, collinear_groups: [...], leakage_flagged: [...]}`。
