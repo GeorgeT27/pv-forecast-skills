@@ -14,8 +14,8 @@ Claude Code 要求 `~/.claude/skills/` 下每个一级子目录直接包含 `SKI
 所以**不能把整个仓库放进 skills 文件夹**，而是 clone 后分别 symlink 各子目录：
 
 ```bash
-git clone https://github.com/GeorgeT27/pv-result-analysis.git
-cd pv-result-analysis
+git clone https://github.com/GeorgeT27/pv-forecast-skills.git
+cd pv-forecast-skills
 ln -s "$(pwd)/pv-result-analysis"   ~/.claude/skills/pv-result-analysis
 ln -s "$(pwd)/pv-model-analysis"    ~/.claude/skills/pv-model-analysis
 ln -s "$(pwd)/pv-station-influence" ~/.claude/skills/pv-station-influence
