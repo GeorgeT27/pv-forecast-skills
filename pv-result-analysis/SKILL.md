@@ -12,9 +12,9 @@ description: 光伏功率预测（PV power forecasting）结果评估与分析�
 理解数据结构是正确分析的前提，先读这一节再动手。
 
 - **任务**：光伏（PV）功率预测，时间序列问题，15 分钟粒度（96 点/天）。
-- **跨站设定（2026-07-09，核心）**：**5 个电站的 2025 全年数据联合训练**（华能北方润达、国能和熙光储、泗洪、白马湖、西北戈壁小壕兔），**测试留出站 = 雅砻江（柯拉，川西高原、水光互补），完全不在训练里**——**零样本跨站迁移**。训练站跨两类气候带（江苏平原湿润 + 西北干旱高辐照），雅砻江是训练未覆盖的高原季风带（详见 `references/station.md`/`seasonality.md`）。因此**第一大分析主线是"雅砻江离训练分布多远、最像哪个训练站"**，不再是跨年。
-- **测试输出是单站（雅砻江）**：指标 Excel、图、结论都只针对雅砻江，不存在"两个测试站混算"的问题。但**训练侧要分站看**——判断雅砻江像谁时，5 训练站要逐站比较（跨站漂移诊断），不能 pooled 成一个平均气候。
-- **训练/测试都是 2025**：无跨年成分。训练集不参与指标计算，用途是**跨站漂移诊断的基准**（5 训练站 pooled + 逐站 vs 雅砻江，见 `references/drift-and-nwp.md`）——回答"模型是不是没见过这个站的这种天"。数据结构：训练与测试同构（同样的滚动窗口时序表）。**训练集是可选输入**：没放（如本次只评估雅砻江预测）就跳过跨站漂移诊断（`run_drift.py` / 图#11/#12），metric 与其余图谱照常。
+- **实验设定不写死在本技能（核心）**：训练/留出划分、站点全集、数据路径全部来自共享 **project-context**（经 `references/project-context.pointer` 定位；载入流程见 Step 0.5）。下文「**留出测试站**」= 实验线 `held_out_station`，「**训练站集合**」= 实验线 `training_entries` 对应站点。典型设定是**跨站零样本迁移**：若干训练站（条目）联合训练，留出站完全不在训练里——此时第一大分析主线是"留出站离训练分布多远、最像哪个训练站"（站点气候背景见 project-context 的 `stations.md`/`seasonality.md`）。
+- **测试输出是单站（留出站）**：指标 Excel、图、结论都只针对留出站，不存在"多测试站混算"。但**训练侧要分站看**——判断留出站像谁时，训练站要逐站比较（跨站漂移诊断），不能 pooled 成一个平均气候。
+- **训练集是可选输入**：不参与指标计算，用途是**跨站漂移诊断的基准**（训练站 pooled + 逐站 vs 留出站，见 `references/drift-and-nwp.md`）——回答"模型是不是没见过这个站的这种天"。数据结构：训练与测试同构（同样的滚动窗口时序表）。没放训练集就跳过漂移诊断（`run_drift.py` / 图#11/#12），metric 与其余图谱照常。是否跨年等设定细节以实验线 `notes` 为准。
 - **时间戳语义（关键，取点全靠它）**：
   - 每一行的 timestamp 是该样本序列的**起点**。例如某行标为 `2025-01-01 00:15:00`，表示该行的序列从 00:15 开始。
   - 行与行之间间隔 15 分钟（滚动窗口，每行前进一步）。
@@ -26,7 +26,7 @@ description: 光伏功率预测（PV power forecasting）结果评估与分析�
   - `GHI-solargis`、`temp solargis`：各 672+192 个点；未来 192 段是气象预报，作特征。
   - `SSRD_pos_1`~`SSRD_pos_9`、`t2m_pos_1`~`t2m_pos_9`：9 个网格点位的数值天气预报（辐照与 2 米气温）。
 - **本技能的输入不是模型**，而是两份已生成的结果文件：`predicted.parquet`（对未来 192 点的预测）与 `true_label.parquet`（对应真实功率）。
-- **⚠️ true_label.parquet 常沿用完整训练 schema（带上面所有特征列）——指标计算只用 `observe_power_future` 这一列（=真值 label），其余列（observe_power/GHI-solargis/temp/SSRD_pos/t2m_pos…）对评估无关，不要拿它们算指标或下结论。** 之所以强调：schema 侦察会把这些训练列一并打印出来，容易误当作评估输入；scripts 取 label 一律走 `data_utils.LABEL_COL`，别手写 pandas 时顺手把气象列也算进去。跨站漂移诊断（图#11/#12）确实要气象/功率特征——train 侧来自训练集 parquet，**test 侧（雅砻江）若要用 true_label 里的气象列，先跟用户确认这些列是雅砻江的真实值还是训练遗留的占位**，拿不准就别用、只报 label 指标。
+- **⚠️ true_label.parquet 常沿用完整训练 schema（带上面所有特征列）——指标计算只用 `observe_power_future` 这一列（=真值 label），其余列（observe_power/GHI-solargis/temp/SSRD_pos/t2m_pos…）对评估无关，不要拿它们算指标或下结论。** 之所以强调：schema 侦察会把这些训练列一并打印出来，容易误当作评估输入；scripts 取 label 一律走 `data_utils.LABEL_COL`，别手写 pandas 时顺手把气象列也算进去。跨站漂移诊断（图#11/#12）确实要气象/功率特征——train 侧来自训练集 parquet，**test 侧（留出站）若要用 true_label 里的气象列，先跟用户确认这些列是留出站的真实值还是训练遗留的占位**，拿不准就别用、只报 label 指标。
 
 ## Step 0：Orient —— 每次进入先定位阶段（含续跑与直达）
 
@@ -48,6 +48,17 @@ orient 读工作目录的 `analysis_config.json` 与 `analysis_state.json`，**�
   前置齐就跳过去，不齐就按它报的正确入口补齐再走。
 
 这一步吸收了旧"续跑技能"的全部职责——**续跑不是另一个技能，是本技能每次进入的默认动作**。
+
+## Step 0.5：载入项目上下文与实验线（首次问一次，之后自动复用）
+
+本技能不写死任何站点/划分——它们来自共享 **project-context**（站点注册表 + 实验线配置）：
+
+1. **定位 project-context**：读 `references/project-context.pointer` 的 `path:` 行；pointer 缺失/失效 → 探 `<技能目录>/../project-context`；仍无 → AskUserQuestion 问路径（或经用户同意按 project-context/README.md 的 schema 新建骨架），拿到后写回 pointer。
+2. **选实验线**：工作目录 `analysis_config.json` 已有 `experiment` 字段 → 直接载入 `<project-context>/experiments/<experiment>.json`，**不再问**。没有 → 列出 `experiments/*.json`，AskUserQuestion 让用户选已有实验线或新建。
+3. **新建实验线**：AskUserQuestion 收集——留出（目标）站、训练条目（对照 `station-entries.md` 列候选）、数据路径 → 按 README.md schema 写 `experiments/<name>.json`，后续会话复用。
+4. **字段缺口**：载入后发现 `data_paths` 有【待补】且本次要用 → 追问一次，答案**补写回实验线 json**（不是只写本地 config）。
+
+载入后：「留出测试站」=`held_out_station`；「训练站集合」=`training_entries` 对应站点（查 `station-entries.md`）；站点背景查 `<project-context>/stations.md`（只引用已填字段）。
 
 ## 编排模型：主 agent 调度，画图与事实提取外包 subagent
 
@@ -79,7 +90,7 @@ orient 读工作目录的 `analysis_config.json` 与 `analysis_state.json`，**�
 
 阶段纪律：
 
-- **Stage 3 只写"看到了什么"**：现象 + 数字 + 稳健性检验结果，**禁止机制语言**（不写"因为 PatchTST 的 RevIN…"）。**Stage 4 才允许"为什么"**：必须引用 模型参考（.modelmap/models.md）/station.md/seasonality.md 已填字段 + hypotheses.md 假设 ID，并过反驳门。把"事实"与"故事"物理隔开，既防事后编故事，也让最贵的步骤只花在用户点名的现象上。
+- **Stage 3 只写"看到了什么"**：现象 + 数字 + 稳健性检验结果，**禁止机制语言**（不写"因为 PatchTST 的 RevIN…"）。**Stage 4 才允许"为什么"**：必须引用 模型参考（.modelmap/models.md）/project-context 的 stations.md/seasonality.md 已填字段 + hypotheses.md 假设 ID，并过反驳门。把"事实"与"故事"物理隔开，既防事后编故事，也让最贵的步骤只花在用户点名的现象上。
 - **阶段进度靠"经核验的产物清单"判定**：`analysis_state.json` 是快速索引，但**真相始终以真实产物为准**——每次 orient 都重扫 figures/ 与真实文件，state 说 done 但产物缺了就地降级。判据不变：指标 Excel + suspect_days.csv 在 → Stage 1 完成；`02_error_corr.png`+stats 在 → Stage 2 完成；FINDINGS.md 有"现象"条目（或 figures 下有 ANALYSIS.md+stats.json 可重建）→ Stage 3 完成。续跑由 orient 从第一个未完成阶段进入（不再是单独技能）。
 - **ensemble 的分析边界**：ensemble 是 M1-M4 的均值组合，无独立特征与机制（模型参考里 ensemble 节为空）。指标层（Stage 1 摘要、图#3、Stage 3 现象）**必须报告**它——是否优于最佳单模型、哪些月不是；但机制层（Stage 4、Playbook B、图#4–#8 的模型聚焦）**只做 M1-M4**——"ensemble 为什么好/不好"的正确问法是"成员误差是否分散"（图#2）与"离事后最优还有多远"（图#9），不是给它编独立机制故事。
 
@@ -89,23 +100,24 @@ orient 读工作目录的 `analysis_config.json` 与 `analysis_state.json`，**�
 
 - **调用契约**：用户调用本技能时会同时给出**训练集 parquet、测试集（true label）parquet、metric.py** 三个路径；预测值文件如单独提供也一并记录。缺任何一个直接开口问，不要自行搜索猜测——不同月份/模型会有多份文件，选错整个分析都错。拿到后 `ls` 逐一确认存在。
 - `metric.py` 例外：没给可在项目目录内搜（`find <项目根> -maxdepth 4 -name "metric*.py"`），多个候选列出让用户确认。
-- 测试站固定是**雅砻江**。`train_set`（5 站联合训练集）**可选**：放了才能做跨站漂移诊断，确认它是**一个 pooled 文件**还是**逐站多个文件**（逐站填 `train_stations`）；本次不放训练集就省略这两个字段，跳过漂移诊断，其余照常。
+- 测试站 = 实验线 held_out_station（Step 0.5 已载入）。`train_set`（训练站联合训练集）**可选**：放了才能做跨站漂移诊断，确认它是**一个 pooled 文件**还是**逐站多个文件**（逐站填 `train_stations`）；本次不放训练集就省略这两个字段，跳过漂移诊断，其余照常。
 
 把路径写进工作目录下的 `analysis_config.json`（供本次及续跑复用）：
 
 ```json
 {
-  "station": "yalongjiang",
+  "experiment": "<实验线名（experiments/ 下文件名，Step 0.5 选定）>",
+  "station": "<留出测试站（= 实验线 held_out_station）>",
   "metric_py": "<metric.py 绝对路径>",
-  "train_set": "<5 站联合训练集 parquet（pooled）；可选——不做跨站漂移可省略>",
-  "true_label": "<雅砻江 test/true_label parquet 绝对路径>",
+  "train_set": "<训练站联合训练集 parquet（pooled）；可选——不做跨站漂移可省略>",
+  "true_label": "<留出站 test/true_label parquet 绝对路径>",
   "predicted": {"M1": "<路径>", "M2": "<路径>", "M3": "<路径>", "M4": "<路径>", "ensemble": "<路径>"},
   "pred_col": "<可选：预测列名；缺省则 run_analysis.py 自动侦测 192 宽的列>",
-  "train_stations": {"泗洪": "<路径>", "白马湖": "<路径>", "小壕兔": "<路径>", "润达": "<路径>", "和熙": "<路径>"}
+  "train_stations": {"<训练站名>": "<路径>", "…": "…"}
 }
 ```
 
-`predicted` 按模型名记字典（只给部分就填有的）。`train_stations` 可选——给了 `run_drift.py` 就做**逐站漂移**（找雅砻江最像哪个训练站）；没有则只做 pooled。
+`predicted` 按模型名记字典（只给部分就填有的）。`train_stations` 可选——给了 `run_drift.py` 就做**逐站漂移**（找留出站最像哪个训练站）；没有则只做 pooled。
 
 **环境准备（本会话第一次跑 Python 前一次）**：缺包则装（requirements.txt 在技能目录上一级）：
 
@@ -122,7 +134,7 @@ python3 "/Users/tqa946816/Documents/华为/光伏预测/结果分析skill/pv-res
 
 它做：schema 侦察（列名与 `data_utils.py` 顶部 CONFIG 对不上时**只改 CONFIG，不改逻辑**；predicted 常把 timestamp 存成 index，schema 看不到属正常；**true_label 的 schema 里那一堆训练特征列是 schema 沿用、与评估无关，只认 `observe_power_future`**）、基础完整性（重复戳/15min 网格缺口/常值段）、滚动窗口一致性抽查（不一致则取点口径全不可信，停下报告用户）、重建序列扫可疑日 → `suspect_days.csv`、载训练集抽查。
 
-**可疑日的二分处理**：区分"错误"（录入/传感器故障 → 从统计剔除并记录）与"事件"（限电/停机/极端天气 → 保留数据、进 `references/event-log.md`、归因时显式考虑）。两者处理相反，不可一律当异常"修掉"——修掉真实事件等于把最有信息量的样本扔了。
+**可疑日的二分处理**：区分"错误"（录入/传感器故障 → 从统计剔除并记录）与"事件"（限电/停机/极端天气 → 保留数据、进 `<project-context>/event-log.md`、归因时显式考虑）。两者处理相反，不可一律当异常"修掉"——修掉真实事件等于把最有信息量的样本扔了。
 
 ## Step 2：调用 metric.py 生成五个 Excel（Stage 1）
 
@@ -144,7 +156,7 @@ python3 "/Users/tqa946816/Documents/华为/光伏预测/结果分析skill/pv-res
 
 1. **首次运行**：先 `inspect.signature` 确认 `__init__` 与 `generate_report` 参数（训练集用在哪、预测怎么传、输出写哪），跑通后把确切调用填进下方"已固化调用"——之后照抄。
 2. 对照上面五口径定义核对源码取点逻辑（第 16 点、`[59:155]`、0-indexed），不一致以源码为准、报告用户并更新本文档。
-3. 按 M1-M4 与 ensemble 分别运行，产出 5 个 Excel（测试站只有雅砻江，产物存 `figures/yalongjiang/`）。
+3. 按 M1-M4 与 ensemble 分别运行，产出 5 个 Excel（测试站只有留出站，产物存 `figures/<留出站拼音>/`）。
 4. 首跑做**口径对账**：任选一月用 pandas 自算 RMSE 与 generate_report 对比（相对差 <1% 视为一致），验证取点理解没跑偏。之后可跳过。
 
 #### 已固化调用
@@ -191,7 +203,7 @@ python3 "<SKILL>/scripts/run_drift.py" --cols "GHI-solargis,observe_power_future
 
 ### 输出与结论规范
 
-**PNG 是给人看的交付物，分析闭环走 stats.json，不 Read 图。** 闭环 = 读 stats.json（完整曲线/矩阵/分位数）→ 写结论（这张图说明什么、支持/否定哪个假设）→ 数字异常或缺失就查 `plots.py`/补 stats.json/重画 → 结论沉淀到 `figures/<电站>/<范围>/ANALYSIS.md`。只出图不给结论等于没分析。图仍要"可被人视觉阅读"（关键数值标注在图上、固定配色）供人复核，但**模型不靠读图下结论**。图输出目录 `figures/yalongjiang/<范围>/`（测试站固定雅砻江），命名 `<图号>_<内容>_<范围>.png`。
+**PNG 是给人看的交付物，分析闭环走 stats.json，不 Read 图。** 闭环 = 读 stats.json（完整曲线/矩阵/分位数）→ 写结论（这张图说明什么、支持/否定哪个假设）→ 数字异常或缺失就查 `plots.py`/补 stats.json/重画 → 结论沉淀到 `figures/<电站>/<范围>/ANALYSIS.md`。只出图不给结论等于没分析。图仍要"可被人视觉阅读"（关键数值标注在图上、固定配色）供人复核，但**模型不靠读图下结论**。图输出目录 `figures/<留出站拼音>/<范围>/`（留出站来自实验线配置），命名 `<图号>_<内容>_<范围>.png`。
 
 **结论三道门**（下结论、尤其标"已证实"前必过——完整细则见 `references/analysis-discipline.md`）：
 
@@ -215,26 +227,26 @@ python3 "<SKILL>/scripts/run_drift.py" --cols "GHI-solargis,observe_power_future
 
 | 文档 | 什么时候读 |
 |------|-----------|
-| `event-log.md` | **任何跨月归因之前必查**——突变点附近有事件先排除再谈模型能力 |
+| `<project-context>/event-log.md` | **任何跨月归因之前必查**——突变点附近有事件先排除再谈模型能力 |
 | 模型参考（`.modelmap/models.md`，经 `references/model-ref.pointer` 定位；缺失则子代理跑 pv-model-analysis 生成，见 subagent-briefs.md） | 模型间对比归因时读（架构/特征/训练窗口/桥接假设）；只引用带置信标签的已填字段 |
 | `hypotheses.md` | **任何模型对比或月度归因下结论前必读**——认领假设 ID，先预测后看图 |
-| `station.md` | ACC 归一化基准、限电导致的"假高估"、日出日落判断时读 |
-| `seasonality.md` | **回答"为什么 X 月变差"必读**——按排查清单形成假设再验 |
+| `<project-context>/stations.md（+station-entries.md 条目表）` | ACC 归一化基准、限电导致的"假高估"、日出日落判断时读 |
+| `<project-context>/seasonality.md` | **回答"为什么 X 月变差"必读**——按排查清单形成假设再验 |
 | `figure-diagnostics.md` | **Stage 4 从 stats.json 读到某形态、要展开归因时读**——形态→候选机制反向索引，查到的是候选假设非结论 |
 | `analysis-discipline.md` | 结论三道门完整细则（稳健性门槛/假设登记/反驳门七条/样本量/台账/运行后回顾） |
 | `playbooks.md` | Stage 4 归因（Playbook A/B）与写 CONCLUSION.md 时读 |
 | `drift-and-nwp.md` | 分布漂移诊断（run_drift.py）与 NWP 误差分离模块 |
 | `subagent-briefs.md` | **派发 subagent 前读**——figure+fact（Stage 2–3）与 metric（Stage 1）子 agent 的固化 prompt 模板 |
 
-使用纪律：**已填写的字段才可引用；空字段（"待填"）视为未知——宁可写"缺少 XX 背景无法进一步归因"，也不编造。** references/ 是常开收纳位，**每次分析开始前 `ls references/` 扫一遍**，纳入新出现/新填的文档。模型参考不再是口述档案：由配套技能 **`pv-model-analysis`** 从模型代码生成（代码锚定、带置信标签），存于 `<repo>/.modelmap/`，经 `references/model-ref.pointer` 定位；pointer 缺失/过时则按 `subagent-briefs.md` 的"模型参考——定位或生成"派子代理生成后再读。
+使用纪律：**已填写的字段才可引用；空字段（"待填"）视为未知——宁可写"缺少 XX 背景无法进一步归因"，也不编造。** project-context 经 `references/project-context.pointer` 定位（见 Step 0.5）；站点/季节/事件是项目实例数据，方法类文档才在 references/。references/ 是常开收纳位，**每次分析开始前 `ls references/` 扫一遍**，纳入新出现/新填的文档。模型参考不再是口述档案：由配套技能 **`pv-model-analysis`** 从模型代码生成（代码锚定、带置信标签），存于 `<repo>/.modelmap/`，经 `references/model-ref.pointer` 定位；pointer 缺失/过时则按 `subagent-briefs.md` 的"模型参考——定位或生成"派子代理生成后再读。
 
 ## 常见错误
 
-- ❌ 跨站漂移把 5 训练站 pooled 成一个"平均气候"（掩盖"很像小壕兔、很不像泗洪"），逐站要分开看。
-- ❌ 把雅砻江变差直接归因为模型能力，却没查它是不是跨站 OOD（run_drift 逐站 vs 训练站）。
+- ❌ 跨站漂移把训练站集合 pooled 成一个"平均气候"（掩盖"很像 A 站、很不像 B 站"），逐站要分开看。
+- ❌ 把留出站变差直接归因为模型能力，却没查它是不是跨站 OOD（run_drift 逐站 vs 训练站）。
 - ❌ 对滚动窗口的行级 list 直接做分布统计（同一物理点重复计数几百次，必须先 `rebuild_series`）。
 - ❌ 未过稳健性门槛（Wilcoxon + 剔坏天）就写"A 比 B 好"。
-- ❌ 把限电/停机时段误差算进模型能力（先查 suspect_days 与 event-log.md）。
+- ❌ 把限电/停机时段误差算进模型能力（先查 suspect_days 与 `<project-context>/event-log.md`）。
 - ❌ 把真实事件（限电/极端天气）当异常值"修掉"。
 - ❌ 只看 stats.json 单点不看整条曲线走势就下判断；只发图不给结论；结论不引 stats 数值。
 - ❌ 引用 references/ 的空字段，或编造项目事实。
@@ -245,6 +257,6 @@ python3 "<SKILL>/scripts/run_drift.py" --cols "GHI-solargis,observe_power_future
 
 ## 运行后回顾（每次实跑收尾必做）
 
-本技能靠"用得越多越准"——但只有把每次实跑暴露的问题**写回技能文件**才算数：脚本 bug/列名 → 改 `scripts/`；指令歧义/缺步骤 → 改 `SKILL.md`；确认的新项目事实 → 补 `references/`；首跑固化的 `generate_report` 调用 → 填"已固化调用"。**每次改动在 `CHANGELOG.md` 追加一行**（日期 | 改哪节 | 触发反馈 | 为什么）。完整三步见 `references/analysis-discipline.md`。
+本技能靠"用得越多越准"——但只有把每次实跑暴露的问题**写回技能文件**才算数：脚本 bug/列名 → 改 `scripts/`；指令歧义/缺步骤 → 改 `SKILL.md`；确认的新项目事实 → 补 `project-context/`（站点/季节/事件）；方法类知识 → 补 `references/`；首跑固化的 `generate_report` 调用 → 填"已固化调用"。**每次改动在 `CHANGELOG.md` 追加一行**（日期 | 改哪节 | 触发反馈 | 为什么）。完整三步见 `references/analysis-discipline.md`。
 
 另外，**每个阶段收尾（主 agent）都要更新两个日志文件**：`analysis_state.json`（机器可读的产物清单快照，供下次 orient 核验）与 `PROGRESS.md`（人读叙事日志，追加一行"这阶段做了什么、关键结论/产物"）——这样上下文被 clear 后，下次 orient + 读 PROGRESS.md 就能无缝接续。orient 会自动写这两个文件的骨架，主 agent 在阶段收尾补充结论行即可。
