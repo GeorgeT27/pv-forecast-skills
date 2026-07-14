@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stage 0 前置 —— 一次扫描同时探测训练日志里的两类记录：
 
-  ① 逐 (迭代,chunk) 的白马湖 RMSE 序列（Stage 2 回归的因变量）
+  ① 逐 (迭代,chunk) 的留出站 RMSE 序列（Stage 2 回归的因变量）
   ② 逐 epoch/chunk 的 training loss 记录（Stage 1 训练动力学的原料）
 
 RMSE 结论决定走哪条路（用户当前不确定是否入日志）：
@@ -32,8 +32,19 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import si_common as sic
 
-# 白马湖可能的写法：中文 / 拼音 / 站 id
-STATION_PAT = re.compile(r"(白马湖|baima|baimahu|bmh)", re.IGNORECASE)
+# 留出站在日志里的可能写法：config 的 test_station + test_station_aliases（中文/拼音/站 id）。
+# 两者都空时回退默认（历史项目兼容）。
+DEFAULT_STATION_PAT = re.compile(r"(白马湖|baima|baimahu|bmh)", re.IGNORECASE)
+
+
+def station_pattern(cfg):
+    names = [cfg.get("test_station", "")] + list(cfg.get("test_station_aliases", []))
+    parts = [re.escape(n) for n in names if n]
+    if not parts:
+        return DEFAULT_STATION_PAT
+    return re.compile("(" + "|".join(parts) + ")", re.IGNORECASE)
+
+
 RMSE_PAT = re.compile(r"\brmse\b", re.IGNORECASE)
 # training loss：要求同行有 epoch/iter/chunk/step 线索才算命中（降误报——"loss" 一词太常见）
 LOSS_PAT = re.compile(r"\b(train[_ ]?loss|loss)\b\s*[:=]?\s*[-+]?\d*\.?\d+", re.IGNORECASE)
@@ -43,7 +54,7 @@ TEXT_EXT = (".log", ".txt", ".csv", ".tsv", ".json", ".jsonl", ".out", ".err", "
 SUMMARY_PATH = "probe_summary.json"
 
 
-def _scan_file(path, max_hits=5):
+def _scan_file(path, station_pat, max_hits=5):
     """一次遍历同时收两类命中，返回 {"rmse": [...], "loss": [...]}。"""
     hits = {"rmse": [], "loss": []}
     try:
@@ -51,7 +62,7 @@ def _scan_file(path, max_hits=5):
             for ln, line in enumerate(f, 1):
                 if (len(hits["rmse"]) < max_hits
                         and RMSE_PAT.search(line)
-                        and (STATION_PAT.search(line) or "val" in line.lower())):
+                        and (station_pat.search(line) or "val" in line.lower())):
                     hits["rmse"].append((ln, line.rstrip()[:200]))
                 if (len(hits["loss"]) < max_hits
                         and LOSS_PAT.search(line) and CTX_PAT.search(line)):
@@ -69,10 +80,12 @@ def main():
     args = ap.parse_args()
 
     log_dir = args.dir
+    station_pat = DEFAULT_STATION_PAT
     if log_dir is None:
         try:
             cfg = sic.load_config()
             log_dir = cfg.get("log_dir")
+            station_pat = station_pattern(cfg)
         except FileNotFoundError:
             pass
     if not log_dir or not os.path.isdir(log_dir):
@@ -95,7 +108,7 @@ def main():
     samples = {"rmse": [], "loss": []}
     shown = 0
     for p in sorted(files):
-        hits = _scan_file(p)
+        hits = _scan_file(p, station_pat)
         rel = os.path.relpath(p, log_dir)
         if hits["rmse"]:
             rmse_files.append(rel)
@@ -125,10 +138,10 @@ def main():
 
     print("-" * 56)
     if rmse_found:
-        print("→ [RMSE] 疑似找到白马湖 RMSE 记录。主 agent：核对样例行字段，写小解析器把")
+        print("→ [RMSE] 疑似找到留出站 RMSE 记录。主 agent：核对样例行字段，写小解析器把")
         print("  (iteration, chunk, position, model, rmse) 落成 rmse_series.csv → Stage 2（Mode A）。")
     else:
-        print("→ [RMSE] 未在日志找到白马湖逐 chunk RMSE。")
+        print("→ [RMSE] 未在日志找到留出站逐 chunk RMSE。")
         print("  有 checkpoint_dir → ckpt_eval.py 逐 checkpoint 重算（Mode B）；无 → Stage 2 阻塞。")
     if loss_found:
         print("→ [loss] 疑似找到 training loss 记录。主 agent：据样例行写小解析器落 loss_records.csv")

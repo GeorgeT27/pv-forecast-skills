@@ -6,18 +6,20 @@
 
 配置文件 influence_config.json（工作目录，字段全部可选、按模式渐进填）：
 {
-  "test_station": "baimahu",                 # 留出测试站（白马湖）
+  "test_station": "<留出测试站拼音/id>",      # 留出测试站（= 实验线 held_out_station）
+  "test_station_aliases": [],                # 留出站在日志里的可能写法（probe_logs 扫日志用）
+  "experiment": "<实验线名>",                 # project-context/experiments/ 下的文件名（Step 0.5 写入）
   "stations": ["s01", ...],                  # 17 个训练站的 id/名（顺序即回归设计矩阵列序）
-  "test_label": "<白马湖 true_label parquet>",# 算白马湖 RMSE 的真值
+  "test_label": "<留出站 true_label parquet>",# 算留出站 RMSE 的真值
   "train_repo": "<训练代码仓库根>",           # 供 adapter 导入 sampler / 模型类
   "sampler": {"seeds": [...], "n_iters": N}, # 种子与实际迭代数（Stage 0 回放用）
   "log_dir": "<训练日志目录>",                # Stage 0 前的 probe_logs 扫这里
   "checkpoint_dir": "<checkpoint 根>",        # 有此字段 => 解锁 Mode B（有 optimizer state 更好）
   "models": ["M1", "M2", "M3", "M4"],         # 要分析的模型（缺省四个都做）
   "chunk_layout": {"n_chunks": 4, "sizes": [5, 5, 5, 2]},  # 每迭代的 chunk 结构
-  "result_analysis_workdir": "<白马湖线 pv-result-analysis 工作目录（绝对路径）>",
-      # 预测侧上下文：嵌入运行默认 <influence工作目录>/result_analysis_baimahu/；
-      # 已单独跑过白马湖结果分析就填那个目录。orient 据此扫描可消费产物。
+  "result_analysis_workdir": "<留出站线 pv-result-analysis 工作目录（绝对路径）>",
+      # 预测侧上下文：嵌入运行默认 <influence工作目录>/result_analysis_<留出站拼音>/；
+      # 已单独跑过留出站结果分析就填那个目录。orient 据此扫描可消费产物。
   "result_analysis_status": "linked",
       # "linked"=可消费其产物；"declined"=用户拒绝先跑（报告须注明缺预测侧上下文）；
       # 缺失/null=还没问过用户 —— orient 会提示主 agent 先问。
@@ -74,7 +76,7 @@ def stations(cfg: dict) -> list[str]:
 def rmse(pred: np.ndarray, true: np.ndarray) -> float:
     """整体 48h RMSE（不取点、不拆天）——Stage 2 因变量默认口径，简单稳定。
 
-    白马湖零样本评估用最朴素的 192 点整体 RMSE 即可；细分口径留给确认阶段。
+    留出站零样本评估用最朴素的 192 点整体 RMSE 即可；细分口径留给确认阶段。
     """
     pred = np.asarray(pred, float)
     true = np.asarray(true, float)
@@ -92,7 +94,7 @@ def dump_json(path: str, obj) -> None:
 
 
 def load_test_label_matrix(cfg: dict):
-    """载入白马湖真值并转 (n,192) 矩阵 + timestamps。复用 data_utils。"""
+    """载入留出站真值并转 (n,192) 矩阵 + timestamps。复用 data_utils。"""
     if du is None:
         raise RuntimeError("找不到 pv-result-analysis/scripts/data_utils.py，无法读 parquet。")
     df = du.load_table(cfg["test_label"])
@@ -102,7 +104,7 @@ def load_test_label_matrix(cfg: dict):
 
 # ---------------------------------------------------------------- 预测侧上下文（pv-result-analysis 产物探测）
 def detect_result_analysis(cfg: dict) -> dict:
-    """只读扫描 result_analysis_workdir，返回白马湖线 pv-result-analysis 的产物清单。
+    """只读扫描 result_analysis_workdir，返回留出站线 pv-result-analysis 的产物清单。
 
     判定逻辑镜像主技能 run_orient 的 stage_done（不 import 它——那个脚本假设 cwd
     是分析目录且会写 state；这里纯只读、不改任何文件）。返回 dict 的 status 取值：
@@ -141,8 +143,8 @@ def detect_result_analysis(cfg: dict) -> dict:
         "status": "linked",
         "workdir": wd,
         "station": station,
-        # 并行线保护：链接到雅砻江等其他实验线的目录 → 拒绝消费
-        "station_mismatch": station != cfg.get("test_station", "baimahu"),
+        # 并行线保护：链接到另一条实验线的目录 → 拒绝消费
+        "station_mismatch": station != cfg.get("test_station", ""),
         "metric_excels": len(excels),
         "suspect_days": os.path.exists(os.path.join(wd, "suspect_days.csv")),
         "weather_class": os.path.exists(os.path.join(wd, "weather_class.csv")),

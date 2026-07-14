@@ -3,7 +3,7 @@
 
 真相以产物为准（同 pv-result-analysis 的 orient 哲学）：每次重扫工作目录产物，
 不信任可能过期的 state。模式由 config.checkpoint_dir 有无自动判定，不需用户预选。
-预测侧上下文（白马湖线 pv-result-analysis 产物）由 config.result_analysis_workdir/
+预测侧上下文（留出站线 pv-result-analysis 产物）由 config.result_analysis_workdir/
 result_analysis_status 判定——orient 只打印指引，问用户与写 config 是主 agent 的活。
 
 用法：
@@ -141,14 +141,14 @@ def current(ev, mode):
 
 
 def print_prediction_context(cfg):
-    """预测侧上下文块：检测白马湖线 pv-result-analysis 产物，打印三分支指引。"""
+    """预测侧上下文块：检测留出站线 pv-result-analysis 产物，打印三分支指引。"""
     ra = sic.detect_result_analysis(cfg)
     print("-" * 60)
     if ra["status"] == "linked":
         if ra.get("station_mismatch"):
             print(f"  ⚠⚠ 预测侧上下文：链接目录 station='{ra['station']}' ≠ 本技能测试站"
-                  f"'{cfg.get('test_station', 'baimahu')}' —— 这是另一条实验线（如雅砻江）！")
-            print("     拒绝消费其产物。回 Step 1 改 result_analysis_workdir 指向白马湖线目录。")
+                  f"'{cfg.get('test_station', '')}' —— 这是另一条实验线！")
+            print("     拒绝消费其产物。回 Step 1 改 result_analysis_workdir 指向留出站线目录。")
         else:
             s1 = "✓" if ra.get("stage1_done") else "✗"
             s3 = "✓" if ra.get("stage3_done") else "✗"
@@ -160,15 +160,16 @@ def print_prediction_context(cfg):
                   f"  ANALYSIS.md×{ra['analysis_mds']}"
                   f"  FINDINGS {'✓' if ra['findings'] else '✗'}"
                   f"  drift/ {'✓' if ra['drift_dir'] else '✗'}")
-            print("    用法：指标=白马湖基线；weather_class=天气分型条件；suspect_days=反驳门#3"
+            print("    用法：指标=留出站基线；weather_class=天气分型条件；suspect_days=反驳门#3"
                   "数据质量证据；FINDINGS 现象=归因素材；drift/=Stage 4 直接复用。")
     elif ra["status"] == "declined":
         print("  预测侧上下文 [declined]：用户已选择不先跑 pv-result-analysis —— "
               "报告与 FINDINGS 须注明缺预测侧上下文。")
     else:
-        print("  ⚠ 预测侧上下文 [absent]：尚未对白马湖预测跑过 pv-result-analysis（或未链接）。")
+        print("  ⚠ 预测侧上下文 [absent]：尚未对留出站预测跑过 pv-result-analysis（或未链接）。")
         print("    主 agent 必须先问用户：是否先跑主技能 Stage 1–3（质检+指标+现象提取）作归因上下文？")
-        print("    同意 → 建 <cwd>/result_analysis_baimahu/，按本技能 references/subagent-briefs.md")
+        print(f"    同意 → 建 <cwd>/result_analysis_{cfg.get('test_station', '<test_station>')}/，"
+              "按本技能 references/subagent-briefs.md")
         print("           「嵌入式主技能运行」节执行；完成后回填 config.result_analysis_workdir")
         print("           + result_analysis_status=\"linked\"。")
         print("    拒绝 → 回填 result_analysis_status=\"declined\"，继续 influence-only 分析。")
@@ -183,11 +184,11 @@ def main():
     if not sic.has_config():
         print("=" * 60)
         print("未找到 influence_config.json —— 此前没跑过。")
-        print("→ 回 Step 1：向用户收集 训练仓库/采样代码+种子、checkpoint 目录、白马湖 true_label、")
+        print("→ 回 Step 1：向用户收集 训练仓库/采样代码+种子、checkpoint 目录、留出站 true_label、")
         print("  训练日志目录、17 站表 与 迭代数，写 influence_config.json（缺字段先留空）。")
-        print("  同时确认：是否已有/是否要先跑白马湖的 pv-result-analysis（预测侧上下文，")
+        print("  同时确认：是否已有/是否要先跑留出站的 pv-result-analysis（预测侧上下文，")
         print("  见 SKILL.md「预测侧上下文」节）——已跑就填 result_analysis_workdir。")
-        print("  然后先跑 probe_logs.py 探日志（同时探白马湖 RMSE 与 training loss，")
+        print("  然后先跑 probe_logs.py 探日志（同时探留出站 RMSE 与 training loss，")
         print("  决定 Mode A 是否零权重、Stage 1 动力学是否可跑）。")
         print("=" * 60)
         return

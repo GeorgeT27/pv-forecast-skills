@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stage 3（Mode B）—— TracIn 式梯度影响力，独立于 RMSE 序列的第二条证据线。
 
-思想：若某训练站 s 的梯度与白马湖验证梯度**持续反向**，说明训到它把参数推离"对白马湖好"
+思想：若某训练站 s 的梯度与留出站验证梯度**持续反向**，说明训到它把参数推离"对留出站好"
 的方向 => 负迁移。影响力分 ≈ Σ_ckpt ⟨g_s, g_test⟩（TracInCP）。与 Stage 2 排名一致才升级
 （见 references/attribution-discipline.md 的升级门槛）。
 
@@ -48,14 +48,14 @@ def _locate(adapter, cfg, model, it, pos, pattern):
 
 def _summarize(station_list, models, raw):
     d = pd.read_csv(raw)
-    out = {"note": "influence = Σ_ckpt ⟨g_station, g_test⟩；越正=越拖累白马湖", "models": {}}
+    out = {"note": "influence = Σ_ckpt ⟨g_station, g_test⟩；越正=越拖累留出站", "models": {}}
     coef = {}
     for model in models:
         sub = d[d["model"] == model]
         if sub.empty:
             continue
         # 每站对所有 checkpoint 的内积求和（TracInCP）。注意符号约定：
-        # 训练在降损失 => 有益站的 g_s 与 g_test 同向（内积>0 表示"训它也降白马湖损失"=有益）。
+        # 训练在降损失 => 有益站的 g_s 与 g_test 同向（内积>0 表示"训它也降留出站损失"=有益）。
         # 为了让"高=拖累"与 Stage 2（回归 θ_s）一致，这里取负：harm = -Σ⟨g_s,g_test⟩。
         agg = sub.groupby("station")["dot"].sum()
         harm = (-agg).sort_values(ascending=False)

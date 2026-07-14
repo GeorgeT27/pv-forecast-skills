@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage 2 补料（Mode B）—— 日志没记白马湖 RMSE 时，逐 checkpoint 重算出 rmse_series.csv。
+"""Stage 2 补料（Mode B）—— 日志没记留出站 RMSE 时，逐 checkpoint 重算出 rmse_series.csv。
 
 上下文/磁盘纪律（checkpoint ~300MB/个）：**一个进程内顺序** load→前向→算RMSE→释放→
 （可选）删除临时解压，绝不把权重或预测张量带进对话。结果**追加**写输出 CSV，
@@ -87,7 +87,7 @@ def main():
                 _append_row({"iteration": it, "chunk": pos, "position": pos,
                              "model": model, "rmse": round(val, 6)}, args.out)
                 n_new += 1
-                print(f"  [{model}] iter{it} chunk{pos}  白马湖RMSE={val:.4f}")
+                print(f"  [{model}] iter{it} chunk{pos}  留出站RMSE={val:.4f}")
                 del m, pred, true
                 gc.collect()
                 try:

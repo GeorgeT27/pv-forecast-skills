@@ -4,11 +4,11 @@
 对每个 chunk 提取 final_loss（尾 k epoch 均值）/ conv_slope（log-loss~epoch 斜率）/
 plateau_epoch，再把这些指标回归到 17 站成员上（与 Stage 2 完全同款的中心化+岭设计，
 复用 influence_regression 的实现）——"含站 s 的 chunk 终态 loss 更高 / 收敛更慢"
-就是站 s 的 loss 效应。最后（若 rmse_series.csv 在）报 loss 指标与白马湖 ΔRMSE 的
+就是站 s 的 loss 效应。最后（若 rmse_series.csv 在）报 loss 指标与留出站 ΔRMSE 的
 Spearman 关联，回答"高 loss chunk 是否与 RMSE 跳升同现"。
 
 ⚠️ 结论纪律：**loss 高 ≠ 有罪**。loss 是训练站自己身上的量——站的 loss 效应说明
-它"难学"（数据脏/分布难拟合/容量异质），**不是**白马湖负迁移排名，禁止直接当
+它"难学"（数据脏/分布难拟合/容量异质），**不是**留出站负迁移排名，禁止直接当
 harm 榜用。四象限解读与 station.md 连接流程见 references/influence-methods.md
 「Stage 1 训练动力学」节。M1–M4 损失函数/量纲不同 ⇒ 逐模型独立回归、
 **绝不跨模型 pool loss**，跨模型只比 Spearman 排名。
@@ -197,7 +197,7 @@ def main():
            "models_without_loss": skipped_models,
            "power_note": ("迭代数 < 10：只报排名，不下显著性结论" if n_iters < 10
                           else f"迭代数 {n_iters}：CI 排除 0 的站可报为'现象'（仍需过反驳门）"),
-           "discipline_note": ("loss 效应=机制线索（该站难学），非白马湖负迁移排名；"
+           "discipline_note": ("loss 效应=机制线索（该站难学），非留出站负迁移排名；"
                                "解读须结合 station.md 气候/容量/数据质量与 influence-methods.md 四象限")}
 
     theta_by_model = {}
@@ -223,7 +223,7 @@ def main():
         if lvl:
             theta_by_model[model] = lvl[0]
 
-        # 与白马湖 RMSE 震荡的关联（同现证据，非定罪）
+        # 与留出站 RMSE 震荡的关联（同现证据，非定罪）
         if rmse_d is not None:
             j = sub.merge(rmse_d[rmse_d["model"] == model],
                           on=["model", "iteration", "position"], how="inner")

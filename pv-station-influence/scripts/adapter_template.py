@@ -44,7 +44,7 @@ def load_model(model_name: str, ckpt_path: str, device: str = "cpu"):
 def predict_station(model, station_id: str, cfg: dict) -> tuple[np.ndarray, np.ndarray]:
     """在某站数据上前向，返回 (pred, true)，形状均 (n_samples, 192)。
 
-    用于 ckpt_eval 重算白马湖 RMSE（station_id = 测试站）与 Stage 0 的指纹验证
+    用于 ckpt_eval 重算留出站 RMSE（station_id = 测试站）与 Stage 0 的指纹验证
     （在 17 个训练站上评估）。数据加载走你训练时同一套 pipeline，保证特征一致。
     """
     raise NotImplementedError("构建该站 dataloader，前向出 (pred,true)")
@@ -55,7 +55,7 @@ def loss_gradient(model, station_id: str, cfg: dict,
                   n_windows: int = 200, params_filter=None) -> np.ndarray:
     """在某站一个固定子样本上算训练损失对参数的梯度，展平成 1 维向量返回。
 
-    - station_id = 训练站 => 得 g_s；station_id = 测试站(白马湖) => 得 g_test。
+    - station_id = 训练站 => 得 g_s；station_id = 测试站(留出站) => 得 g_test。
     - params_filter：可选，只取部分层（如最后线性头）以降内存；两侧必须一致。
     - 固定子样本（同一 n_windows、同一顺序）保证跨 checkpoint 可比。
     """

@@ -2,13 +2,13 @@
 """Stage 2 —— 影响力回归（Mode A 主证据，纯统计，零 GPU）。
 
 思想：每迭代把 17 站随机重排进 4 个 chunk（3×5+2），是一场**天然随机化实验**。
-把"训完某 chunk 后白马湖 RMSE 的变化 ΔRMSE"回归到"该 chunk 里有哪些站"，
-站的系数 = 训练到它对白马湖的**边际影响**（>0 = 拖累）。这是分组随机子集数据估值
+把"训完某 chunk 后留出站 RMSE 的变化 ΔRMSE"回归到"该 chunk 里有哪些站"，
+站的系数 = 训练到它对留出站的**边际影响**（>0 = 拖累）。这是分组随机子集数据估值
 （Banzhaf 式），详见 references/influence-methods.md。
 
 输入（工作目录，Stage 0 产物）：
   assignments.csv   : iteration,chunk,position,size,stations   (stations = ";" 连接)
-  rmse_series.csv   : iteration,chunk,position,model,rmse       (训完该 chunk 后白马湖 RMSE)
+  rmse_series.csv   : iteration,chunk,position,model,rmse       (训完该 chunk 后留出站 RMSE)
 输出：
   influence_coefs.json  : 逐模型 + pooled 的 θ_s（含 bootstrap CI、排名、Spearman 一致性、功效提示）
 
@@ -36,7 +36,7 @@ import si_common as sic
 def _load_inputs():
     if not (os.path.exists("assignments.csv") and os.path.exists("rmse_series.csv")):
         sys.exit("缺 assignments.csv 或 rmse_series.csv —— 先跑 Stage 0（replay_assignments.py）"
-                 "与日志/ckpt_eval 产出白马湖 RMSE 序列。")
+                 "与日志/ckpt_eval 产出留出站 RMSE 序列。")
     asg = pd.read_csv("assignments.csv")
     rms = pd.read_csv("rmse_series.csv")
     return asg, rms
