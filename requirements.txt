@@ -5,3 +5,4 @@ matplotlib>=3.7
 pyarrow>=14.0        # parquet 读取与 schema 侦察
 scipy>=1.10          # Wilcoxon 稳健性门槛、KS 检验（缺失时脚本降级但结论门槛不可用）
 openpyxl>=3.1        # 读 metric.py 产出的月度指标 Excel（图#3）
+pyyaml>=6.0          # ts-diagnose 引擎：playbook frontmatter 与 profile.yaml 解析

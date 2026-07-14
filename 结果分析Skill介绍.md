@@ -187,3 +187,21 @@ metric.py 的 Excel 只能告诉"哪个月、哪个口径变差了"，无法回�
 > 注：原独立的 `pv-analysis-resume`（续跑入口）已于 2026-07-10 合并进 `pv-result-analysis` 的 Step 0 Orient，2026-07-13 删除该目录，触发词一并并入主技能 description。
 
 **两者关系**：`pv-model-analysis` 从代码生成模型参考（存 `.modelmap`，经 `model-ref.pointer` 定位），`pv-result-analysis` 执行分析主流程（含自带续跑）并按需读取或触发生成模型参考。两个技能通过统一的 `references/` 方法知识库、共享的顶层 `project-context/`（站点注册表 + 实验线配置）和产物约定协同工作。
+
+### 更新四：泛化诊断引擎 ts-diagnose 与技能固化（crystallize）机制
+
+**原状况**：三个技能都是针对特定实验线写死的专用技能。同类时序任务换一个关注点（如"训练是否充分、是不是 batch 不足、chunk 间训练分配有没有问题"），就得从头写一个新技能——而其中真正有价值的 workflow（orient 续跑、事实/解释隔离、结论三道门、多证据线、subagent 编排）明明是通用的。
+
+**新增功能**：把这些已验证的 workflow 提取成一个**泛化引擎技能** `ts-diagnose`，三层结构：
+
+| 层 | 是什么 | 谁来写 |
+|----|--------|--------|
+| **引擎** | 领域无关的机制：通用 orient（阶段由 playbook 定义而非写死）、check-DSL 前置判定、提问状态机、FINDINGS/HYPOTHESES 模板 | 随引擎发布，pytest 覆盖 |
+| **playbook** | 一个诊断目标的完整定义：阶段/必答问题/变体/证据线（frontmatter，机器读）+ 分析代码怎么写的菜谱（正文，agent 读） | 首发三个：训练充分性（最深）、鲁棒性、变量重要性；按 `_playbook-spec.md` 可扩展 |
+| **profile** | 一次成功运行固化下来的已答问题与脚本快照，属于固化出的薄专用技能 | crystallize 时生成 |
+
+三个关键设计：
+
+1. **提问是一等公民**：引擎面向没见过的任务，**不许用假设填补不确定**。playbook 声明必答问题（schema、判据口径等），orient 报 ✗ 的问题不问完不许开工；另有引擎级恒问五类（schema 不明/判据未定义/证据不足以升级/昂贵操作/多候选文件）。答案落 config 问一次不再问。
+2. **分析代码运行时生成、验证后才可信**：引擎不带分析脚本——agent 按 playbook 菜谱（伪代码+公式+产物 schema+**强制验证步**：对账/合成小样/植入回收）现场生成，验证记录进 PROGRESS.md。已用合成数据影子验证全程走通（植入的"难学成员"与"拖累成员"均被正确召回）。
+3. **泛化 → 特化（crystallize）**：运行成熟后按 `references/crystallize.md` 固化成薄专用技能——SKILL.md（触发词）+ profile.yaml（已答问答对+稳定路径，与 project-context 实验线重叠的字段写引用不复制）+ 验证过的脚本快照。下次同类任务经 `orient.py --profile` 进入，固化问题不再问；workflow 留在引擎，**引擎升级时所有固化技能自动受益**。三个 PV 专用技能即此机制概念上的先例（先于引擎存在，原样保留）。
