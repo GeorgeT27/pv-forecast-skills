@@ -1,6 +1,6 @@
 # Playbook 接口规范（_playbook-spec）
 
-playbook = 一个诊断目标的完整定义：**frontmatter**（YAML，`orient.py` 机器读，驱动阶段/前置/提问/变体判定）+ **正文**（agent 读的菜谱，指导运行时生成分析代码与判读）。新增 playbook 按本规范写，放本目录，文件名 = `<id>.md`。
+playbook = 一个诊断目标的完整定义：**frontmatter**（YAML，`orient.py` 机器读，驱动阶段/前置/提问/变体判定）+ **正文**（agent 读的菜谱，指导运行时生成分析代码与判读）。新增 playbook 按本规范写：**每个 playbook 一个独立目录** `playbooks/<id>/`，正文在 `<id>/playbook.md`，金标准基线在 `<id>/golden/`（§6）。三个 playbook 之间零共享内联、互不引用（Layer 1 纪律，test_layering.py 守卫）。
 
 ## 1. Frontmatter schema
 
@@ -45,6 +45,8 @@ evidence_lines:                   # 可选。独立证据线登记（多证据�
     stage: 3
     output: composition_effects.json
 upgrade_rule: "两线 Spearman 排名一致才把嫌疑从「现象」升「假设」"   # evidence_lines ≥2 时必填
+crystallize_min_cases: 5          # 可选。固化三关之关1（多样性）所需的互异成功 case 数，
+                                  # 默认 3（engine_common.CRYSTALLIZE_MIN_CASES_DEFAULT）
 ---
 ```
 
@@ -68,13 +70,42 @@ upgrade_rule: "两线 Spearman 排名一致才把嫌疑从「现象」升「假�
 ## 4. 正文必备节（agent 菜谱）
 
 1. **问题框定与首要陷阱**——本目标最容易犯的归因错误（对应 pv-station-influence 的"震荡≠有罪"层级），放最前。
-2. **逐阶段菜谱**——每阶段：目标 / 输入 / **脚本菜谱**（伪代码 + 关键公式 + 落盘产物 schema + 自足 summary 要求 + **脚本验证步**）/ done 判据。分析脚本由 agent 运行时生成进工作目录 `analysis_scripts/`，每个脚本必须先过本节声明的验证步（对账 / 合成小样自检）才可信其产出——验证结果记 PROGRESS.md（crystallize 只快照有验证记录的脚本）。
+2. **逐阶段菜谱**——每阶段：目标 / 输入 / **脚本菜谱**（伪代码 + 关键公式 + 落盘产物 schema + 自足 summary 要求 + **脚本验证步**）/ done 判据。分析脚本由 agent 运行时生成进工作目录 `analysis_scripts/`，每个脚本必须先过本节声明的验证步（对账 / 合成小样自检）才可信其产出——验证结果记 PROGRESS.md（crystallize 只快照有验证记录的脚本）。**golden 覆盖到的阶段另有生成闸硬规则**：先过 `scripts/gen_gate.py`（金标准算对）才许碰真实数据（§6），正文里要写出闸命令。
+   结论阶段的菜谱必须包含**归因闸**：写 CONCLUSION.md 前跑 `scripts/provenance.py`，末尾附 Provenance 块（代码 hash + 数据 hash + 金标准自检），见引擎 references/conclusion-reporting.md。
 3. **证据升级规则**——哪些证据组合能把结论从"现象"升"假设"升"已证实"；每条规则必须映射到结论三道门之一（references/mechanisms.md）。
 4. **停顿点与汇报**——`pause_after` 阶段完成后向用户汇报什么、请用户点名什么。
 5. **subagent 拆分建议**——哪些阶段可并发、分片 `--out` 命名约定（防竞态，见 references/subagent-briefs.md）。
 6. **结论模板与本 playbook 特有反驳门条目**。
 
-## 5. 编写纪律
+## 5. golden/ 金标准基线（每个 playbook 必带）
+
+```
+playbooks/<id>/golden/
+├── make_golden.py     # 确定性生成器：解析式构造，零随机（Date/random 都不许）
+├── <输入数据文件>      # 小体量（几 KB），植入已知效应，随仓库提交
+├── manifest.json      # 机器契约：inputs / args（各阶段脚本 CLI）/ expect（断言 DSL）
+│                      #   op ∈ eq/ge/le/between/contains/first_is/argmax/argmin/exists
+└── reference/*.py     # 按菜谱写的参考实现：CLI 契约的可执行示例 + CI 端到端被闸对象
+```
+
+- **期望值来自 reference 实跑并留容差**；生成脚本金标准算错 → 改脚本不改期望；要改期望，
+  必须连 make_golden.py 一起改并重跑 pytest（test_gen_gate.py 会用 reference 验证自洽）。
+- 覆盖不了的阶段（依赖真实记录源格式/真实模型入口）在 manifest note 写明原因，
+  由菜谱声明的对账/植入回收验证步兜底。
+
+## 6. 预留接口位置（本轮只占位，实施排后续轮）
+
+- **`playbooks/<id>/heldout/`（held-out 场景库）**：固化三关之关2 的场景来源——从未参与
+  开发调参的输入 + 期望，结构与 golden/ 同构（manifest + 数据）。落地前，关2 由
+  crystallize_record.json 里的 heldout 记录（passed + input_hash 不重合）人工保障。
+- **`regression/baselines/`（机制脚本回归 evals，引擎级目录）**：存每个 playbook 在其
+  金标准上的期望输出快照；任何 `scripts/` 机制脚本改动 → 重跑全部 playbook 金标准逐一
+  比对，并重跑固化代理快照确认隔离生效（引擎改了、固化产物输出不变）。
+- **experiment_line v0→v1 迁移**：profile 中实验线引用现为 `interface_version: v0-draft`
+  （占位不生效，见 references/crystallize.md）；project-context 消费接口定稿轮统一迁移
+  到 v1 并启用合并。
+
+## 7. 编写纪律
 
 - **产物自足**：每个落盘 JSON/CSV 带完整数字与形状描述，判读只读产物 summary，不读图（PNG）、不读原始大文件。
 - **显式标出事实阶段**：哪个阶段产"现象清单"（禁机制语言）要在正文写明，且该阶段 `pause_after: true`。

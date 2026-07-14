@@ -11,9 +11,11 @@
 
 ## 引擎与专用技能的关系
 
+- **路由优先级（写死在各技能 description，勿改丢——有 CI 守卫）**：已固化代理技能 > 三个专用技能 > 引擎兜底。命中已固化场景直接短路用固化技能；引擎只接前两类都不覆盖的新诊断目标。
 - **专用技能优先**：光伏结果评估 → pv-result-analysis；训练站负迁移归因 → pv-station-influence；模型档案 → pv-model-analysis。这三个是引擎概念上的"已固化实例"**先例**——先于引擎存在、不经 profile 机制、原样保留维护。
 - **新诊断目标走引擎**：换一个关注点（如"训练是否充分 / batch 是否不足 / chunk 分配有没有问题"）用 `ts-diagnose` + 对应 playbook；不确定处引擎按提问纪律 AskUserQuestion，绝不假设。
-- **泛化 → 特化（crystallize）**：一次成功运行后按 `ts-diagnose/references/crystallize.md` 固化成薄专用技能（SKILL.md 触发词 + profile.yaml 已答问题 + 验证过的脚本快照）——下次同类任务不再重复提问；workflow 留在引擎，引擎升级时薄技能自动受益。
+- **泛化 → 特化（crystallize）**：按 `ts-diagnose/references/crystallize.md` 固化成薄专用技能（SKILL.md 触发词 + profile.yaml 已答问题 + 验证过的脚本快照）——下次同类任务不再重复提问；workflow 留在引擎，引擎升级时薄技能自动受益。转正门槛 = **三关判据**（多样性 ≥N 个互异 case / held-out 留出场景 / 快照金标准自洽，`scripts/crystallize_gate.py` 判定），与人工技能同等可信才放行。
+- **质量闸**：引擎运行时生成的分析代码要先过**生成闸**（`scripts/gen_gate.py`：静态检查 + 每 playbook 自带的金标准基线算对了才许碰真实数据）；结论必附**归因闸** provenance 块（代码 hash + 数据 hash，两次结论不同可判是代码变了还是数据变了）。
 - **新目标扩展**：按 `ts-diagnose/playbooks/_playbook-spec.md` 写新 playbook，orient 直接执行其 frontmatter（先跑 `ts-diagnose/scripts/tests` 的 pytest 确认可解析）。
 
 ## 安装
