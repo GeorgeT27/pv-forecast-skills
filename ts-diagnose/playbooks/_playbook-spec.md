@@ -1,0 +1,82 @@
+# Playbook 接口规范（_playbook-spec）
+
+playbook = 一个诊断目标的完整定义：**frontmatter**（YAML，`orient.py` 机器读，驱动阶段/前置/提问/变体判定）+ **正文**（agent 读的菜谱，指导运行时生成分析代码与判读）。新增 playbook 按本规范写，放本目录，文件名 = `<id>.md`。
+
+## 1. Frontmatter schema
+
+```yaml
+---
+id: training-sufficiency          # 必填，= 文件名（不含 .md），kebab-case
+name: 训练充分性/训练动力学          # 必填，人读短名
+goal: 一句话诊断目标                # 必填
+stages:                           # 必填，按执行顺序；id 为整数（不必连续，orient 按列表顺序推进）
+  - id: 0
+    name: 探测记录源
+    done_when:                    # 完成判定（真相以产物为准），三种可组合/择一：
+      artifacts: ["probe_summary.json"]   # 每个 glob 至少命中工作目录一个文件
+      findings_marker: "现象"              # 该词出现在 FINDINGS.md 中（用下面的保留字表）
+      manual: false                        # true = 由主 agent 人工判定后写 state（逃生门）
+    prereqs:                      # 进入前置，check 用 DSL（见 §2）；desc 以（可选）开头 = 不阻塞
+      - desc: 记录源问题已答
+        check: "question:loss-source"
+    pause_after: false            # true = 本阶段完成后强制停顿，主 agent 向用户汇报并等点名
+    subagent_ok: true             # false = 必须主 agent 亲自做（如反驳门/结论）
+variants:                         # 可选。条件变体：when 不成立 → unlocks_stages 里的阶段
+  - id: grouped                   #   在 orient 中标"变体未激活（跳过，不阻塞）"
+    when: "config:units_multiple"
+    unlocks_stages: [3]
+questions:                        # 提问声明（引擎提问纪律的载体，见 references/question-discipline.md）
+  - id: loss-source               # 稳定 id；答案落 diagnose_config.json 的 questions 块
+    stage: 0                      # 进入该 stage 前必须已答（或有 default / skip_if 命中）
+    ask: "训练 loss 记录在哪里、每行什么格式？（贴 2-3 行样例）"
+    why: "猜错 schema 会污染全部下游"
+    options: ["结构化 CSV/JSON", "文本日志", "只在 checkpoint 里", "没记录"]
+    default: null                 # null = 必问；非 null = 可默认（orient 标 ✓默认，不阻塞）
+    skip_if: "artifact:loss_records.csv"   # 可选：DSL 成立 = 证据自答，不问不阻塞
+contexts:                         # 可选。外部分析上下文（泛化 ask-then-embed 三分支）
+  - id: upstream-analysis
+    name: 预测侧上下文
+    workdir_key: linked_workdir   # config 里存路径的键
+    status_key: linked_status     # config 里存状态的键：linked / declined /（空 = absent）
+    marker_files: ["FINDINGS.md"] # linked 有效性核验：目录下这些文件须存在
+    on_absent: ask                # absent 时主 agent 必须先问用户（orient 只打印指引）
+evidence_lines:                   # 可选。独立证据线登记（多证据线一致性判定的依据）
+  - id: composition-regression
+    stage: 3
+    output: composition_effects.json
+upgrade_rule: "两线 Spearman 排名一致才把嫌疑从「现象」升「假设」"   # evidence_lines ≥2 时必填
+---
+```
+
+## 2. check-DSL（prereqs.check / variants.when / questions.skip_if 通用）
+
+| 表达式 | 语义 |
+|---|---|
+| `config:<dotted.key>` | `diagnose_config.json` 该键存在且值为真（非空/非 null/非【待补】） |
+| `file:config.<dotted.key>` | 该 config 键的值是路径且文件/目录存在 |
+| `artifact:<glob>` | 工作目录下该 glob 至少命中一个文件 |
+| `stage:<id>` | 该阶段已完成（done_when 判定） |
+| `question:<qid>` | 该问题已答（含 profile/默认/实验线/证据自答） |
+| `not <expr>` | 取反（只允许一层） |
+
+不追求图灵完备：组合逻辑写不下就拆成多条 prereq，或用 `manual`。
+
+## 3. findings_marker 保留字表
+
+`done_when.findings_marker` 只允许下列词（FINDINGS.md 的状态枚举，见 templates/FINDINGS.template.md）：**现象 / 假设 / 已证实 / 被推翻**。不要用自造措辞——文本标记本就脆弱，收敛到保留字才可判定。
+
+## 4. 正文必备节（agent 菜谱）
+
+1. **问题框定与首要陷阱**——本目标最容易犯的归因错误（对应 pv-station-influence 的"震荡≠有罪"层级），放最前。
+2. **逐阶段菜谱**——每阶段：目标 / 输入 / **脚本菜谱**（伪代码 + 关键公式 + 落盘产物 schema + 自足 summary 要求 + **脚本验证步**）/ done 判据。分析脚本由 agent 运行时生成进工作目录 `analysis_scripts/`，每个脚本必须先过本节声明的验证步（对账 / 合成小样自检）才可信其产出——验证结果记 PROGRESS.md（crystallize 只快照有验证记录的脚本）。
+3. **证据升级规则**——哪些证据组合能把结论从"现象"升"假设"升"已证实"；每条规则必须映射到结论三道门之一（references/mechanisms.md）。
+4. **停顿点与汇报**——`pause_after` 阶段完成后向用户汇报什么、请用户点名什么。
+5. **subagent 拆分建议**——哪些阶段可并发、分片 `--out` 命名约定（防竞态，见 references/subagent-briefs.md）。
+6. **结论模板与本 playbook 特有反驳门条目**。
+
+## 5. 编写纪律
+
+- **产物自足**：每个落盘 JSON/CSV 带完整数字与形状描述，判读只读产物 summary，不读图（PNG）、不读原始大文件。
+- **显式标出事实阶段**：哪个阶段产"现象清单"（禁机制语言）要在正文写明，且该阶段 `pause_after: true`。
+- **量纲纪律**：跨模型/跨组不可比的量只比排名（Spearman），不 pool 数值。
+- 引擎级恒问五类（question-discipline.md）**不需要**在 questions 里重复声明——那是主 agent 的常备纪律；questions 只声明本目标特有的、可预知的问题。
