@@ -147,7 +147,7 @@ def print_prediction_context(cfg):
     if ra["status"] == "linked":
         if ra.get("station_mismatch"):
             print(f"  ⚠⚠ 预测侧上下文：链接目录 station='{ra['station']}' ≠ 本技能测试站"
-                  f"'{cfg.get('test_station', '')}' —— 这是另一条实验线！")
+                  f"'{cfg.get('test_station', '<test_station>')}' —— 这是另一条实验线！")
             print("     拒绝消费其产物。回 Step 1 改 result_analysis_workdir 指向留出站线目录。")
         else:
             s1 = "✓" if ra.get("stage1_done") else "✗"

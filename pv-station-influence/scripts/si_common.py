@@ -144,6 +144,8 @@ def detect_result_analysis(cfg: dict) -> dict:
         "workdir": wd,
         "station": station,
         # 并行线保护：链接到另一条实验线的目录 → 拒绝消费
+        # test_station 未设时以空串比较 → 任何已链接目录都会判 mismatch（fail-closed）；
+        # 预期该字段由 Step 0.5/Step 1 写入
         "station_mismatch": station != cfg.get("test_station", ""),
         "metric_excels": len(excels),
         "suspect_days": os.path.exists(os.path.join(wd, "suspect_days.csv")),
