@@ -1,6 +1,6 @@
 ---
 name: pv-station-influence
-description: 光伏多站分块训练的「站点影响力归因」——找出联合训练的 N 个训练站/数据条目里哪些拖累了留出测试站的零样本预测（负迁移），并解释训练动力学（为什么不同 iteration/chunk 的 training loss 不同）。当用户说"哪个站拖累留出站/哪些训练站有负迁移/为什么每个 chunk 的 RMSE 上下震荡/为什么有的 chunk loss 更高、收敛更慢/某些站是不是在帮倒忙/从 N 站里挑出该剔除的站/训练集构成对某站的影响/先做留出站结果分析再归因"时使用。区别于 pv-result-analysis（单次预测结果评估）与 pv-model-analysis（从模型代码生成模型参考档案）：本技能做的是**训练集构成 → 目标站性能**的归因；实验设定（站点全集/留出站/chunk 方案）经共享 project-context 载入（Step 0.5，AskUserQuestion 问一次落盘）；它会检测/复用留出站线 pv-result-analysis 的产物作预测侧上下文，没跑过会先问用户要不要嵌入跑。两种证据模式：只有预测/日志走观测归因（Mode A，零 GPU），有 checkpoint 可进一步做梯度与重训确认（Mode B），模式由 config 自动识别。
+description: 光伏多站分块训练的「站点影响力归因」——找出联合训练的 N 个训练站/数据条目里哪些拖累了留出测试站的零样本预测（负迁移），并解释训练动力学（为什么不同 iteration/chunk 的 training loss 不同）。当用户说"哪个站拖累留出站/哪些训练站有负迁移/为什么每个 chunk 的 RMSE 上下震荡/为什么有的 chunk loss 更高、收敛更慢/某些站是不是在帮倒忙/从 N 站里挑出该剔除的站/训练集构成对某站的影响/先做留出站结果分析再归因"时使用。区别于 pv-result-analysis（单次预测结果评估）与 pv-model-analysis（从模型代码生成模型参考档案）：本技能做的是**训练集构成 → 目标站性能**的归因；实验设定（站点全集/留出站/chunk 方案）经共享 project-context 载入（Step 0.5，AskUserQuestion 问一次落盘）；它会检测/复用留出站线 pv-result-analysis 的产物作预测侧上下文，没跑过会先问用户要不要嵌入跑。两种证据模式：只有预测/日志走观测归因（Mode A，零 GPU），有 checkpoint 可进一步做梯度与重训确认（Mode B），模式由 config 自动识别。路由优先级：本技能是专用技能，在上述场景内优先于泛化引擎 ts-diagnose，但让位于覆盖同场景的已固化代理技能；触发边界收窄——训练动力学解释仅限「站点/条目影响力归因」场景，一般性的训练充分性/batch 或数据量不足/收敛诊断（不问"哪个站拖累留出站"）→ ts-diagnose 的 training-sufficiency。
 ---
 
 # 光伏站点影响力归因（负迁移诊断 + 训练动力学）
