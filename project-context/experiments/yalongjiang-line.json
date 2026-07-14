@@ -1,0 +1,15 @@
+{
+  "name": "yalongjiang-line",
+  "description": "5 站 2025 全年联合训练，雅砻江（柯拉）留出零样本（结果分析主实验线，2026-07-09 设定）",
+  "held_out_station": "雅砻江",
+  "training_entries": ["sihong-2025", "baimahu-2025", "xiaohaotu-2025", "runda-2025", "hexi-2025"],
+  "chunking": null,
+  "models": ["M1", "M2", "M3", "M4", "ensemble"],
+  "data_paths": {"train": "【待补】", "test_label": "【待补】", "metric_py": "【待补】", "predictions": {}},
+  "notes": [
+    "训练站跨两类气候带——江苏平原湿润（泗洪/白马湖）与西北干旱沙戈荒高辐照（小壕兔；润达/和熙疑似同类【待补】）",
+    "留出站雅砻江属川西高原季风带（海拔约 4600m、水光互补）——训练未覆盖；第一大分析主线是'雅砻江离训练分布多远、最像哪个训练站'",
+    "训练/测试都是 2025，无跨年成分；训练集不参与指标计算，只作跨站漂移诊断基准"
+  ],
+  "source": "迁自 pv-result-analysis SKILL.md 项目背景节 + station.md 跨站结构节，2026-07-14"
+}
