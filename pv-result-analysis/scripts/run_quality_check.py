@@ -45,7 +45,7 @@ def main(config_path="analysis_config.json"):
     suspect.to_csv("suspect_days.csv")
     print(f"\n可疑日 {len(suspect)} 天 → suspect_days.csv（交用户核对：限电/停机 vs 传感器故障）")
 
-    # 训练集（5 站 2025 pooled）：不参与指标计算，是跨站漂移诊断的基准。
+    # 训练集（训练站集合 2025 pooled）：不参与指标计算，是跨站漂移诊断的基准。
     # 可选——没放训练集时跳过（跨站漂移诊断 run_drift.py / 图#11/#12 也随之不可用，其余照常）。
     if cfg.get("train_set"):
         train = du.load_table(cfg["train_set"])

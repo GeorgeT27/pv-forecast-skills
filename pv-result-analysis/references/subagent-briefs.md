@@ -68,7 +68,7 @@
 2. 按 SKILL.md Step 2 用 metric.py 的 SolarMetricCalculator.generate_report 对 M1-M4 + ensemble
    各跑一遍，产出 5 个 Excel（五口径 × RMSE/MAE/ACC）。首跑先 inspect.signature 对号参数、
    做一次口径对账（任选一月 pandas 自算 RMSE 比对，相对差 <1%）。
-3. 产物存 figures/yalongjiang/（测试站固定雅砻江）。不要写 analysis_state.json / PROGRESS.md。
+3. 产物存 figures/<留出站拼音>/（留出站名从 analysis_config.json 的 station 字段取）。不要写 analysis_state.json / PROGRESS.md。
 
 回传【指标摘要】：各模型各口径的月度值要点 + **ensemble 是否确实优于最佳单模型、哪些月不是** +
 质检有无红旗（可疑日/缺口/窗口问题）。不要回传整份 Excel。

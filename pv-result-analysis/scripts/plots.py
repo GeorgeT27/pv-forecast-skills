@@ -329,7 +329,7 @@ def fig09_oracle_gap(sample_rmse: dict[str, pd.Series], out_png,
 def fig11_train_test_dist(train_series: pd.Series, test_series: pd.Series,
                           varname: str, out_png):
     """输入为重建后的物理连续序列（train vs test，跨站/跨期通用；跨站设定下
-    train=5 训练站 pooled、test=雅砻江）。逐月对比 + KS/PSI。"""
+    train=训练站集合 pooled、test=留出站）。逐月对比 + KS/PSI。"""
     try:
         from scipy.stats import ks_2samp
     except ImportError:
@@ -371,7 +371,7 @@ def fig11_train_test_dist(train_series: pd.Series, test_series: pd.Series,
 def fig12_power_ghi_mapping(power_train, ghi_train, power_test, ghi_test,
                             out_png, bins: int = 20):
     """输入均为物理连续序列；按 GHI 分位分箱画 train/test 的功率均值曲线
-    （跨站设定下 train=训练站、test=雅砻江）。"""
+    （跨站设定下 train=训练站、test=留出站）。"""
     fig, ax = plt.subplots(figsize=(7, 5))
     stats = {"fig": 12, "curve": {}}
     for label, p, g, color in [("train", power_train, ghi_train, "steelblue"),

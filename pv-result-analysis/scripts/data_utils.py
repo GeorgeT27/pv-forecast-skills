@@ -269,7 +269,7 @@ def psi(expected: np.ndarray, actual: np.ndarray, bins: int = 10) -> float:
 def drift_table(train_df: pd.DataFrame, test_df: pd.DataFrame, cols,
                 bins: int = 10) -> pd.DataFrame:
     """特征漂移 / 标签漂移的数值总表：对每个变量列先 rebuild_series 重建物理连续序列，
-    再 train vs test **同月对比** PSI + KS（跨站设定下 train=5 训练站、test=雅砻江）。cols 传气象列做特征漂移、功率标签列做
+    再 train vs test **同月对比** PSI + KS（跨站设定下 train=训练站集合、test=留出站）。cols 传气象列做特征漂移、功率标签列做
     标签漂移，口径一致。返回长表：[var, month, psi, ks_p, median_train, median_test,
     n_train, n_test, drift]（drift：PSI>0.25 显著 / 0.1-0.25 轻微 / 否则 稳定）。
     先跑本表定位"哪个变量哪个月漂了"，再用 fig11 把该变量画出来看形态。"""
@@ -300,7 +300,7 @@ def weather_class_drift(ghi_train: pd.Series, ghi_test: pd.Series,
                         **kw) -> dict:
     """天气型漂移：用 **train（基准）的晴天包络与 sigma 阈值作共享基准**分类两侧，
     这样"test 整体更亮/更暗、多波动天变多"才显现（各自归一化会抹平）。跨站设定下
-    train=5 训练站(pooled)、test=雅砻江。ghi_* 为 rebuild_series 后的连续 GHI。返回：
+    train=训练站集合(pooled)、test=留出站。ghi_* 为 rebuild_series 后的连续 GHI。返回：
       - share：各天气型占比表（DataFrame，行=天气型，列=[train, test, 占比差]）；
       - kt / sigma：两侧日级 kt、sigma 的 PSI + KS（回答"晴空指数分布是否偏移"）；
       - counts：各型天数（披露样本量用）。
