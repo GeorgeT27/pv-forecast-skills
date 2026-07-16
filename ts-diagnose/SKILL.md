@@ -1,6 +1,6 @@
 ---
 name: ts-diagnose
-description: 泛化的时序模型诊断引擎（兜底技能——仅当无匹配的专用诊断技能或已固化代理技能时使用）。当用户对时序/预测任务提出**新的诊断目标**时使用："训练是否充分/是不是 batch 不足/训练分配（chunk/fold 构成）有没有问题/为什么 loss 震荡或收敛慢"（training-sufficiency）、"结论/模型在扰动与分组切片下稳不稳"（robustness）、"哪个输入变量对误差影响最大"（feature-importance）。**负面清单（这些场景用专用技能，不用本引擎）**：光伏预测结果评估/指标 Excel/月度归因 → pv-result-analysis；训练站负迁移归因（哪个站拖累留出站）→ pv-station-influence；从模型代码生成参考档案 → pv-model-analysis。已固化代理技能（经 crystallize 产出、orient --profile 入口）若覆盖当前场景则优先级最高，直接用它。
+description: 泛化的时序模型诊断引擎（兜底技能——仅当无匹配的专用诊断技能或已固化代理技能时使用）。当用户对时序/预测任务提出**新的诊断目标**时使用："训练是否充分/是不是 batch 不足/训练分配（chunk/fold 构成）有没有问题/为什么 loss 震荡或收敛慢"（training-sufficiency）、"结论/模型在扰动与分组切片下稳不稳"（robustness）、"哪个输入变量对误差影响最大"（feature-importance）。**负面清单（这些场景用专用技能，不用本引擎）**：光伏预测结果评估/指标 Excel/月度归因 → pv-result-analysis；训练站负迁移归因（哪个站拖累留出站）→ pv-station-influence；从模型代码生成参考档案 → pv-model-analysis；有 feature_true 对照的预测特征质量归因（哪些 feature 导致指标变差/把特征换成真值重预测的反事实验证）→ pv-feature-blame。已固化代理技能（经 crystallize 产出、orient --profile 入口）若覆盖当前场景则优先级最高，直接用它。
 ---
 
 # ts-diagnose：Layer 0 路由层
@@ -11,7 +11,7 @@ description: 泛化的时序模型诊断引擎（兜底技能——仅当无匹�
 ## 路由优先级（四类技能共存的确定顺序）
 
 1. **已固化代理技能**最高——命中其场景直接短路（`orient.py --profile` 入口，已验证脚本 + 免重复提问）；
-2. **三个专用技能**次之——见上方 description 负面清单；
+2. **四个专用技能**次之——见上方 description 负面清单；
 3. **本引擎兜底**——只接前两类都不覆盖的新诊断目标。
 
 ## 路由表（识别目标 → 匹配 playbook）

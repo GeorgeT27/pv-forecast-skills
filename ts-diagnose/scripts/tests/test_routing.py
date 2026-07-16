@@ -10,7 +10,7 @@ import re
 ENGINE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 REPO_ROOT = os.path.dirname(ENGINE_DIR)
 
-SKILLS = ("pv-result-analysis", "pv-station-influence", "pv-model-analysis")
+SKILLS = ("pv-result-analysis", "pv-station-influence", "pv-model-analysis", "pv-feature-blame")
 
 
 def description_of(skill_dir):
@@ -23,7 +23,7 @@ def description_of(skill_dir):
 def test_engine_is_fallback_with_negative_list():
     d = description_of(ENGINE_DIR)
     assert "仅当无匹配的专用诊断技能或已固化代理技能时使用" in d
-    for s in SKILLS:                       # 负面清单必须点名三个专用技能
+    for s in SKILLS:                       # 负面清单必须点名全部专用技能
         assert s in d, f"引擎负面清单丢了 {s}"
     assert "已固化代理技能" in d and "优先级最高" in d
 
@@ -46,6 +46,7 @@ def test_specific_skills_keep_trigger_phrases():
         "pv-result-analysis": ("结果评估", "准确率", "月度"),
         "pv-station-influence": ("拖累", "负迁移", "留出"),
         "pv-model-analysis": ("模型代码", "模型参考"),
+        "pv-feature-blame": ("feature", "指标变差", "feature_true", "反事实"),
     }
     for s, phrases in required.items():
         d = description_of(os.path.join(REPO_ROOT, s))
@@ -59,3 +60,18 @@ def test_overlap_case_station_influence_narrowed():
     d = description_of(os.path.join(REPO_ROOT, "pv-station-influence"))
     assert "训练动力学解释仅限「站点/条目影响力归因」场景" in d
     assert "ts-diagnose 的 training-sufficiency" in d
+
+
+def test_overlap_case_feature_blame_narrowed():
+    """已知重叠 query（"哪个变量对误差影响大"）：有 feature_true 对照的特征质量归因归
+    pv-feature-blame，无对照的一般变量重要性归引擎 feature-importance。"""
+    d = description_of(os.path.join(REPO_ROOT, "pv-feature-blame"))
+    assert "无 feature_true 对照的一般变量重要性" in d
+    assert "ts-diagnose 的 feature-importance" in d
+    assert "绝不静默降级" in d              # feature_true 硬规则不许被改丢
+
+
+def test_feature_blame_yields_to_result_analysis_scope():
+    """pv-result-analysis 的让路句：特征质量归因场景指向 pv-feature-blame。"""
+    d = description_of(os.path.join(REPO_ROOT, "pv-result-analysis"))
+    assert "pv-feature-blame" in d

@@ -1,6 +1,6 @@
 # project-context —— 当前项目实例的全部事实（技能之外的共享外部信息）
 
-本目录是 pv-result-analysis 与 pv-station-influence 两个技能的**共享站点注册表与实验配置**。
+本目录是 pv-result-analysis / pv-station-influence / pv-feature-blame 各技能的**共享站点注册表与实验配置**。
 技能本体（SKILL.md/scripts/references）不写死任何站点、数量、划分——它们全在这里。
 **换新项目 = 整目录替换（或把各技能 references/project-context.pointer 指向别处）**，技能一行不用改。
 
@@ -25,7 +25,9 @@
   "training_entries": ["<entry_id，见 station-entries.md，必填>"],
   "chunking": {"n_chunks": 4, "sizes": [5, 5, 5, 2], "epochs_per_chunk": 20},
   "models": ["M1", "M2", "M3", "M4"],
-  "data_paths": {"train": "【待补】", "test_label": "【待补】", "metric_py": "【待补】", "predictions": {}},
+  "data_paths": {"train": "【待补】", "test_label": "【待补】", "metric_py": "【待补】", "predictions": {},
+                 "feature_true": "【待补】"},
+  "predict_api": {"endpoint": "【待补】", "payload_note": "【待补】"},
   "notes": ["<实验线级别的重要事实（分析主线、气候带覆盖等）>"],
   "source": "<谁在什么时候提供>"
 }
@@ -34,7 +36,9 @@
 约定：`held_out_station`/`training_entries` 必填；`held_out_station_slug` 是留出站的拼音 slug，
 figures 目录名与 analysis_config/influence_config 的 station/test_station 字段统一用它，避免中文站名
 散落各处出现拼写不一致；`data_paths` 允许【待补】占位——技能运行到需要处
-追问一次并**补写回本文件**；`chunking` 无分块训练时置 null；`models` 按实验线实际。
+追问一次并**补写回本文件**；`chunking` 无分块训练时置 null；`models` 按实验线实际；
+`data_paths.feature_true`（特征预测/真值对照 parquet）与 `predict_api`（FastAPI 预测服务）
+由 pv-feature-blame 消费/回填，同样遵循问一次写回。
 
 ## 发现机制
 
