@@ -323,10 +323,12 @@ class Runner:
             base, oracle = err_of(frozenset()), err_of(frozenset(self.pcols))
             gate = cf.gap_gate(base, oracle, eps, g_min)
             ent = lad.setdefault(metric, {}).setdefault(model, {}).setdefault(str(ts), {})
+            # minimal_G/minimal_gate：本层残差尺度的自算缺口/门控，命名与 run_oracle 的权威
+            # 整换真值 G/gate 分开——绝不覆盖后者（同一 summary.json 会被两个模式先后写入）。
             if not gate["ok"]:
                 ent["verdict"] = ("非特征问题" if gate["reason"] in
                                   ("not_feature_problem", "gap_within_noise") else "无法判定")
-                ent["gate"] = gate["reason"]
+                ent["minimal_gate"] = gate["reason"]
                 continue
             pool = self.pool_of(metric, model, grp)
             per_feat = {f: err_of(frozenset([f])) for f in pool}
@@ -338,7 +340,7 @@ class Runner:
                 minimal["pool_expanded"] = True
             out = cf.classify_row(base, oracle, eps, g_min, per_feat, minimal, tau)
             ent.update({"verdict": out["verdict"], "features": out.get("features"),
-                        "G": _r(gate["G"]), "gate": "ok",
+                        "minimal_G": _r(gate["G"]), "minimal_gate": "ok",
                         "minimal_status": minimal.get("status"),
                         "n_invalid": minimal.get("n_invalid", 0)})
             for f in out.get("features") or []:
@@ -452,29 +454,48 @@ class Runner:
     def rebuild_modes_summary(self):
         if not os.path.exists(self.args.out):
             return
-        allr = pd.read_csv(self.args.out, parse_dates=["timestamp"])
-        if "subset_id" not in allr.columns:
+        per = per_feature_effects_from_csv(self.args.out)
+        if per is None:
             return
-        allr["subset_id"] = allr["subset_id"].fillna("")
-        ok = allr[allr["status"] == "ok"].drop_duplicates(
-            subset=["metric", "model", "timestamp", "subset_id"], keep="last")
-        base = ok[ok["subset_id"] == ""].set_index(["metric", "model", "timestamp"])
-        singles = ok[(ok["subset_id"] != "") & ~ok["subset_id"].str.contains(r"\|")]
-        per = {}
-        for (metric, model, feat), grp in singles.groupby(["metric", "model", "subset_id"]):
-            b = base.reindex([(metric, model, t) for t in grp["timestamp"]])["api_row_error"] \
-                .to_numpy()
-            r = grp["api_row_error"].to_numpy(float)
-            fin = np.isfinite(b) & np.isfinite(r)
-            if not fin.any():
-                continue
-            delta = r[fin] - b[fin]
-            per.setdefault(metric, {}).setdefault(model, {})[feat] = {
-                "n": int(fin.sum()), "baseline_mean": _r(float(np.mean(b[fin]))),
-                "replaced_mean": _r(float(np.mean(r[fin]))),
-                "delta_mean": _r(float(np.mean(delta))),
-                "improved_share": round(float((delta < 0).mean()), 4)}
         self.summary.setdefault("modes", {})["per_feature_effects"] = per
+
+
+def per_feature_effects_from_csv(csv_path: str):
+    """CSV → per_feature_effects 汇总（纯函数，零网络，Runner 与测试共用）。
+    repl_mode 必须参与去重——否则同 (metric,model,ts,subset_id) 的 full（oracle 全换真值）
+    与 res（marginal/minimal/lattice 的 pred−ε_res）两行会互相覆盖，Δ 被两种替换口径
+    悄悄混掺。per_feature_effects 只反映**单一口径**：有 res 行（decomp 开、Task 8 起的常态）
+    就用 res（"换 ε_res 是否顶用"是本设计要回答的问题）；只有 full 行（decomp 关/旧 CSV，
+    back-compat）就退回 full——两者从不混算同一特征。oracle 的整换真值缺口另在 ladder/G 节，
+    不进本函数。"""
+    allr = pd.read_csv(csv_path, parse_dates=["timestamp"])
+    if "subset_id" not in allr.columns:
+        return None
+    allr["subset_id"] = allr["subset_id"].fillna("")
+    if "repl_mode" not in allr.columns:                          # 旧 CSV：全整换真值
+        allr["repl_mode"] = "full"
+    allr["repl_mode"] = allr["repl_mode"].fillna("full")
+    ok = allr[allr["status"] == "ok"].drop_duplicates(
+        subset=["metric", "model", "timestamp", "subset_id", "repl_mode"], keep="last")
+    repl = "res" if (ok["repl_mode"] == "res").any() else "full"
+    ok = ok[ok["repl_mode"] == repl]
+    base = ok[ok["subset_id"] == ""].set_index(["metric", "model", "timestamp"])
+    singles = ok[(ok["subset_id"] != "") & ~ok["subset_id"].str.contains(r"\|")]
+    per = {}
+    for (metric, model, feat), grp in singles.groupby(["metric", "model", "subset_id"]):
+        b = base.reindex([(metric, model, t) for t in grp["timestamp"]])["api_row_error"] \
+            .to_numpy()
+        r = grp["api_row_error"].to_numpy(float)
+        fin = np.isfinite(b) & np.isfinite(r)
+        if not fin.any():
+            continue
+        delta = r[fin] - b[fin]
+        per.setdefault(metric, {}).setdefault(model, {})[feat] = {
+            "n": int(fin.sum()), "baseline_mean": _r(float(np.mean(b[fin]))),
+            "replaced_mean": _r(float(np.mean(r[fin]))),
+            "delta_mean": _r(float(np.mean(delta))),
+            "improved_share": round(float((delta < 0).mean()), 4)}
+    return per
 
 
 def _r(x):
