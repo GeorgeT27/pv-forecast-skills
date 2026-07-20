@@ -69,8 +69,9 @@ def _mini_ft(tmp_path):
     for T in rows:
         t = pd.DatetimeIndex(T + FREQ * np.arange(H))
         hod = (t.hour + t.minute / 60.0).to_numpy()
-        true = 50.0 + 10.0 * np.sin(2 * np.pi * hod / 24.0)
         n = ((t - pd.Timestamp("2025-01-01")) / FREQ).astype(int).to_numpy()
+        true = 50.0 + 10.0 * np.sin(2 * np.pi * hod / 24.0) \
+             + 20.0 * np.sin(2 * np.pi * n / 131.0 + 0.4)  # 反退化：素数步长周期 ~32.75h
         w = 5.0 * np.sin(2 * np.pi * n / 16.0)            # 波动：低 df 曲面装不下
         pred = 1.3 * true + w
         recs.append({"timestamp_win": T,
@@ -110,9 +111,8 @@ def test_decompose_end_to_end(tmp_path, monkeypatch):
                   ((pd.DatetimeIndex(T + FREQ * np.arange(192)) - pd.Timestamp("2025-01-01")) / FREQ)
                   .astype(int) / 16.0) for T in rows])
     cc = np.corrcoef(res.ravel(), W.ravel())[0, 1]
-    # 阈值 0.85→0.55（实测 0.609）：own-pred hinge 项按 spec 设计本就吃乘性偏差
-    # （s_f(X_pred_f) 同时承载"报得越高越偏高"），而合成 w 是直接加进 pred 里的
-    # （corr(w,pred)=0.36 非零）——消融验证：去掉 own-pred hinge 后 corr(res,W)=1.00、
-    # sys_frac 掉到 0.26，证明泄漏 100% 来自 own-pred 项而非谐波/lead 项，方向正确、
-    # 幅度是该合成构造下的真实上限，非实现 bug。
-    assert cc >= 0.55
+    # Fix Round 1：true 加入不可公度周期项（period≈32.75h，非 hod/doy 谐波 3/2 阶、非
+    # lead/own-pred hinge 可表出）打破合成世界退化——此前 true 是 hod 的纯谐波函数，
+    # ε=1·pred−smooth(hod) 被设计矩阵精确表出，泄漏进 own-pred 项把 corr(res,W) 压到
+    # 0.6087（阈值曾放宽至 0.55）。加 u 项后实测 corr(res,W)=0.9758，恢复 spec 原阈 0.85。
+    assert cc >= 0.85

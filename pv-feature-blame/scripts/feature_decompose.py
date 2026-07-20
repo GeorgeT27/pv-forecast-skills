@@ -115,6 +115,7 @@ def main():
     fmask = point_mask(front, n_rows, H)
     bmask = point_mask(back, n_rows, H)
     frow = np.zeros(n_rows, bool); frow[front] = True
+    brow = np.zeros(n_rows, bool); brow[back] = True
 
     feats, lines = {}, []
     for feat in sorted(eps):
@@ -127,7 +128,7 @@ def main():
             "sys_frac": round(max(0.0, 1.0 - var_res / var_raw), 4) if var_raw > 0 else 0.0,
             "reducibility": fb.lag1_reducibility(res),
             "res_var_front": round(float(np.nanvar(res[frow])), 6),
-            "res_var_back": round(float(np.nanvar(res[~frow])), 6) if (~frow).any() else None,
+            "res_var_back": round(float(np.nanvar(res[brow])), 6) if brow.any() else None,
         })
         feats[feat] = meta
         lines.append(f"  {feat:16s} λ={meta['stability_lambda']:.2f} sys_frac="
