@@ -25,6 +25,11 @@
             "z_relax": 1.0, "pool_cap": 8},    # Stage 4：消解候选池放宽线与上限
   "revision": {"enabled": true,               # 翻新跳变分析（Stage 2 并行产物，免 API）
                "spearman_min": 0.3, "jumpiness_min": 0.05, "stable_max": 0.02},
+  "decompose": {"enabled": true,                # Stage 1.5：ε_sys/ε_res 分解（v3）
+                "embargo": "48h",               # 前/后段稳定性切分的重叠窗隔离（=192 步）
+                "max_orders_hod": 3, "max_orders_doy": 2, "n_knots": 4,   # df 上限
+                "alpha": 1e-3, "fit_cap": 400000,   # 岭系数 / 拟合点数上限（等距抽样）
+                "reducibility_min": 0.1},       # Stage 2 可约性闸：低于此不点名
   "api": {"endpoint": "【待补】", "confirmed": false,
           "neighbor_swap_confirmed": false,   # neighbor-swap 模式单独确认（拼接序列可能被服务端拒）
           "timeout_s": 30, "batch_size": 8}
@@ -217,3 +222,92 @@ def zscores(v: np.ndarray) -> np.ndarray:
     if not np.isfinite(sd) or sd == 0:
         return np.zeros_like(v)
     return (v - np.nanmean(v)) / sd
+
+
+# ---------------------------------------------------------------- ε 分解构件（Stage 1.5）
+def harmonic_basis(x: np.ndarray, period: float, n_orders: int = 3) -> np.ndarray:
+    """cyclic 谐波基 sin/cos(2πk·x/period)，k=1..n_orders → (n, 2·n_orders)。
+    钟点/DoY 用它——天然处理午夜与跨年回绕，无分箱边界。"""
+    x = np.asarray(x, float)
+    cols = []
+    for k in range(1, n_orders + 1):
+        ang = 2.0 * np.pi * k * x / period
+        cols += [np.sin(ang), np.cos(ang)]
+    return np.column_stack(cols)
+
+
+def hinge_basis(x: np.ndarray, n_knots: int = 4) -> np.ndarray:
+    """线性 + 分位点 hinge 样条基，df = 1+n_knots ≤ 6（结构性防偷波动：低 df 曲面
+    只装得下慢变偏置）。x 先稳健标准化（median/IQR）；常量列返回全零基。"""
+    x = np.asarray(x, float)
+    med = np.nanmedian(x)
+    iqr = np.nanpercentile(x, 75) - np.nanpercentile(x, 25)
+    if not np.isfinite(iqr) or iqr == 0:
+        return np.zeros((len(x), 1))
+    z = (x - med) / iqr
+    knots = np.nanpercentile(z, np.linspace(20, 80, n_knots))
+    return np.column_stack([z] + [np.maximum(0.0, z - q) for q in knots])
+
+
+def huber_ridge(X: np.ndarray, y: np.ndarray, alpha: float = 1e-3,
+                iters: int = 10):
+    """Huber-IRLS + 岭（确定性）。返回系数；样本 < max(30, 2p) → None（保守不剥）。
+    非有限行剔除后拟合；共线协变量靠岭稳住——只取拟合值不解释系数。"""
+    X, y = np.asarray(X, float), np.asarray(y, float)
+    m = np.isfinite(y) & np.all(np.isfinite(X), axis=1)
+    Xm, ym = X[m], y[m]
+    n, p = Xm.shape
+    if n < max(30, 2 * p):
+        return None
+    w, coef, eye = np.ones(n), np.zeros(p), np.eye(p)
+    for _ in range(iters):
+        Xw = Xm * w[:, None]
+        coef = np.linalg.solve(Xw.T @ Xm + alpha * n * eye, Xw.T @ ym)
+        r = ym - Xm @ coef
+        mad = np.median(np.abs(r - np.median(r)))
+        delta = 1.345 * 1.4826 * mad
+        if not np.isfinite(delta) or delta <= 0:
+            break
+        aw = np.abs(r)
+        w = np.where(aw <= delta, 1.0, delta / np.maximum(aw, 1e-12))
+    return coef
+
+
+def temporal_split(ts, embargo: str = "48h"):
+    """按时间中位切前/后段行号；后段起点 ≥ 前段末行 + embargo（重叠窗 192 步 = 48h，
+    防泄漏）。返回 (front_idx, back_idx)；数据太短后段可为空——调用方 λ=0 保守不剥。"""
+    ts = pd.DatetimeIndex(ts)
+    order = np.argsort(ts.asi8)
+    n = len(order)
+    if n < 4:
+        return order, np.array([], int)
+    half = n // 2
+    cutoff = ts[order[half - 1]] + pd.Timedelta(embargo)
+    back = np.array([i for i in order[half:] if ts[i] >= cutoff], int)
+    return order[:half], back
+
+
+def lag1_reducibility(E: np.ndarray) -> float:
+    """可约性 v1：逐行 lag-1 自相关的中位数，负值截 0 后平方（≈AR(1) 可解释方差占比）。
+    白噪声/常量 → 0（上游拿它没辙，点名是废话）。v2 占位：相位/幅度/爬坡形状分解。"""
+    rows = []
+    for r in np.asarray(E, float):
+        a, b = r[:-1], r[1:]
+        m = np.isfinite(a) & np.isfinite(b)
+        a, b = a[m], b[m]
+        if len(a) < 8 or np.std(a) == 0 or np.std(b) == 0:
+            continue
+        c = np.corrcoef(a, b)[0, 1]
+        if np.isfinite(c):
+            rows.append(float(c))
+    if not rows:
+        return 0.0
+    return round(max(0.0, float(np.median(rows))) ** 2, 4)
+
+
+def eps_matrices(ft: pd.DataFrame, pairs: list) -> dict:
+    """逐点特征误差矩阵 {feature: (n_rows,192) pred − label}。分解（Stage 1.5）与
+    归因（Stage 2）共用同一定义——只对配对特征存在 ε，未配对列无 ε 无反事实。"""
+    d = require_du()
+    return {p["feature"]: d.to_matrix(ft, p["pred_col"]) - d.to_matrix(ft, p["label_col"])
+            for p in pairs}

@@ -85,8 +85,7 @@ def main():
     ft, _ = fb.load_any(args.feature_true)
     ft_index = {t: i for i, t in enumerate(pd.DatetimeIndex(ft[d.TIMESTAMP_COL]))}
     slices = fb.metric_slices()
-    err_mats = {p["feature"]: d.to_matrix(ft, p["pred_col"]) - d.to_matrix(ft, p["label_col"])
-                for p in pairs}
+    err_mats = fb.eps_matrices(ft, pairs)
 
     report_rows, summary = [], {}
     for metric, by_model in br["metrics"].items():
