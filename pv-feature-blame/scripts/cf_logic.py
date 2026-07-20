@@ -30,6 +30,8 @@ from __future__ import annotations
 import itertools
 import math
 
+import numpy as np
+
 SEP = "|"
 
 
@@ -88,6 +90,15 @@ def make_predicate(base: float, G: float, tau: float, eps: float):
 
 def _finite(x) -> bool:
     return x is not None and isinstance(x, (int, float)) and math.isfinite(x)
+
+
+def residual_replacement(pred, eps_res):
+    """residual 模式替换向量：pred − ε_res = label + ε_sys（保留系统偏差、只去波动）。
+    保持输入在功率模型分布内（避开 ε_sys 方向的 OOD），Δ 才可信。任一点非有限 →
+    该点回退 pred（保守：不替换）。oracle 的 G 闸不用本函数——整换测"是不是特征问题"。"""
+    pred = np.asarray(pred, float)
+    out = pred - np.asarray(eps_res, float)
+    return np.where(np.isfinite(out), out, pred)
 
 
 # ---------------------------------------------------------------- 候选池
@@ -277,6 +288,15 @@ def selfcheck() -> dict:
     base, oracle = inner(frozenset()), inner(frozenset(["a", "b"]))
     r = greedy_minimal_set(["b", "a"], flaky, base, base - oracle)
     checks["invalid_keeps_feature"] = ("b" in r["set"] and r["n_invalid"] >= 1)
+    # 7) residual 替换恒等式：pred − ε_res = label + ε_sys；ε_res 非有限点回退 pred（保守不替换）
+    label = np.array([10.0, 20.0, 30.0])
+    sys_b = np.array([2.0, 2.0, 2.0])
+    res_b = np.array([1.0, -3.0, np.nan])      # 第三点 ε_res 缺失 → 该点保留原 pred
+    pred = label + sys_b + np.array([1.0, -3.0, 0.0])
+    rep = residual_replacement(pred, res_b)
+    checks["residual_replacement_identity"] = bool(
+        np.allclose(rep[:2], (label + sys_b)[:2]) and rep[2] == pred[2]
+        and np.isfinite(rep).all())
     return {"passed": all(checks.values()), "checks": checks}
 
 

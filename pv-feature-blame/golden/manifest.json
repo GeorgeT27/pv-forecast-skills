@@ -167,7 +167,8 @@
         {"file": "cf_logic_selfcheck.json", "path": "checks.redundant_pair_found", "op": "eq", "value": true},
         {"file": "cf_logic_selfcheck.json", "path": "checks.shapley_equal_split", "op": "eq", "value": true},
         {"file": "cf_logic_selfcheck.json", "path": "checks.gap_gate_blocks", "op": "eq", "value": true},
-        {"file": "cf_logic_selfcheck.json", "path": "checks.invalid_keeps_feature", "op": "eq", "value": true}
+        {"file": "cf_logic_selfcheck.json", "path": "checks.invalid_keeps_feature", "op": "eq", "value": true},
+        {"file": "cf_logic_selfcheck.json", "path": "checks.residual_replacement_identity", "op": "eq", "value": true}
       ]
     }
   }

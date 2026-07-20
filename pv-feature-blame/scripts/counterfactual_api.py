@@ -88,8 +88,8 @@ def row_error_of(pred: np.ndarray, truth: np.ndarray, metric: str) -> float:
     return float(np.sqrt(np.nanmean(diff ** 2)))
 
 
-CSV_COLS = ["metric", "model", "timestamp", "feature", "mode", "subset_id", "status",
-            "api_row_error"]
+CSV_COLS = ["metric", "model", "timestamp", "feature", "mode", "subset_id", "repl_mode",
+            "status", "api_row_error"]
 
 
 class Runner:
@@ -118,6 +118,19 @@ class Runner:
         self.cache = self._load_cache(args.out)
         self.summary = fb.read_json(args.summary) or {}
         self._csv_header = not os.path.exists(args.out)
+        # residual 模式：Stage 1.5 分解产物在 → 边际/minimal/lattice 层用 pred−ε_res（label+ε_sys）
+        # 替换（留系统偏差、只去波动，避开 ε_sys 方向 OOD），Δ 才可信。oracle 的 G 闸仍整换真值。
+        dec = fb.read_json("feature_decomp.json")
+        self.eps_res, self.residual_on = {}, False
+        if dec and (cfg.get("decompose", {}).get("enabled", True)) \
+                and int(dec.get("n_rows", -1)) == len(self.ft):
+            try:
+                self.eps_res = {f: np.load(f"eps_res_{fb.sanitize(f)}.npy")
+                                for f in self.pcols}
+                self.residual_on = True
+            except OSError:
+                self.eps_res = {}
+        self.summary["counterfactual_mode"] = "residual" if self.residual_on else "full"
 
     # ---------------------------------------------------------- 缓存与落盘
     @staticmethod
@@ -136,16 +149,19 @@ class Runner:
         if "status" not in prev.columns:
             prev["status"] = "ok"
         prev["subset_id"] = prev["subset_id"].fillna("")
+        if "repl_mode" not in prev.columns:                       # 旧 CSV 全是整换真值 → "full"
+            prev["repl_mode"] = "full"
+        prev["repl_mode"] = prev["repl_mode"].fillna("full")
         for r in prev.itertuples():
             if r.status == "ok" and np.isfinite(r.api_row_error):
                 cache[(r.metric, r.model, pd.Timestamp(r.timestamp),
-                       str(r.subset_id))] = float(r.api_row_error)
+                       str(r.subset_id), str(r.repl_mode))] = float(r.api_row_error)
         return cache
 
-    def _record(self, metric, model, ts, sid, status, err):
+    def _record(self, metric, model, ts, sid, status, err, repl_mode="full"):
         row = {"metric": metric, "model": model, "timestamp": ts,
                "feature": sid or "__baseline__", "mode": self.args.mode,
-               "subset_id": sid, "status": status,
+               "subset_id": sid, "repl_mode": repl_mode, "status": status,
                "api_row_error": round(err, 6) if err is not None and np.isfinite(err) else ""}
         pd.DataFrame([row])[CSV_COLS].to_csv(self.args.out, mode="a",
                                              header=self._csv_header, index=False)
@@ -173,30 +189,41 @@ class Runner:
                  for f, p in self.pcols.items()}
         return {"timestamp": str(ts), "features": feats}
 
-    def err_of_factory(self, metric, model, ts):
-        """cf_logic 的 err_of 回调：cache-first，未命中才打 API，落 CSV。None=invalid。"""
+    def err_of_factory(self, metric, model, ts, residual: bool = False):
+        """cf_logic 的 err_of 回调：cache-first，未命中才打 API，落 CSV。None=invalid。
+        residual=True 且分解产物在 → 替换向量用 pred−ε_res（label+ε_sys，只去波动、留系统偏差），
+        否则整换真值（label）。repl_mode 进 cache key 与 CSV：同 subset 的 res/full 是两个键，
+        不会串用（full 缓存值绝不冒充 residual 结果，反之亦然）。"""
+        use_res = bool(residual and self.residual_on)
+        repl = "res" if use_res else "full"
+
         def err_of(subset: frozenset):
             sid = cf.subset_id(subset)
-            key = (metric, model, ts, sid)
+            key = (metric, model, ts, sid, repl)
             if key in self.cache:
                 return self.cache[key]
             rd = self._row_dict(ts)
-            replaced = {f: rd["features"][f]["label"] for f in subset}
+            if use_res:
+                i = self.ft_idx[ts]
+                replaced = {f: cf.residual_replacement(rd["features"][f]["pred"],
+                                                       self.eps_res[f][i]) for f in subset}
+            else:
+                replaced = {f: rd["features"][f]["label"] for f in subset}
             try:
                 pred = self._predict(ts, replaced, model)
                 err = row_error_of(pred, self.Y[self.y_idx[ts]], metric)
             except Budget:
                 raise
             except ValueError:
-                self._record(metric, model, ts, sid, "skipped_nan", None)
+                self._record(metric, model, ts, sid, "skipped_nan", None, repl)
                 return None
             except Exception as e:                                # 网络/服务错 → invalid
-                self._record(metric, model, ts, sid, f"failed:{type(e).__name__}", None)
+                self._record(metric, model, ts, sid, f"failed:{type(e).__name__}", None, repl)
                 return None
             if not np.isfinite(err):
-                self._record(metric, model, ts, sid, "nan_error", None)
+                self._record(metric, model, ts, sid, "nan_error", None, repl)
                 return None
-            self._record(metric, model, ts, sid, "ok", err)
+            self._record(metric, model, ts, sid, "ok", err, repl)
             self.cache[key] = err
             return err
         return err_of
@@ -249,7 +276,7 @@ class Runner:
         drift_bad = drift_n = 0
         cfg_b = self.cfg.get("blame") or {}
         for metric, model, ts, grp in self.rows_of(only_blamed=False):
-            err_of = self.err_of_factory(metric, model, ts)
+            err_of = self.err_of_factory(metric, model, ts, residual=False)  # G 闸整换真值（spec §7）
             base = err_of(frozenset())
             oracle = err_of(frozenset(self.pcols))
             offline = float(grp["row_error"].iloc[0])
@@ -275,7 +302,7 @@ class Runner:
     def run_marginal(self, all_blamed: bool):
         """per-feature / all-blamed（v1 语义，经 subset 机制跨层去重）。"""
         for metric, model, ts, grp in self.rows_of(only_blamed=True):
-            err_of = self.err_of_factory(metric, model, ts)
+            err_of = self.err_of_factory(metric, model, ts, residual=True)
             err_of(frozenset())
             feats = sorted(grp.loc[grp["blamed_topk"], "feature"])
             if all_blamed:
@@ -290,7 +317,9 @@ class Runner:
         lad = self.summary.setdefault("ladder", {})
         freq = {}
         for metric, model, ts, grp in self.rows_of(only_blamed=False):
-            err_of = self.err_of_factory(metric, model, ts)
+            # residual 模式：base/oracle/子集全在 pred−ε_res 尺度，recovery=(base−err_S)/G 同尺一致；
+            # 权威的整换真值 G 闸由 oracle 模式那一趟落盘（spec §7）。
+            err_of = self.err_of_factory(metric, model, ts, residual=True)
             base, oracle = err_of(frozenset()), err_of(frozenset(self.pcols))
             gate = cf.gap_gate(base, oracle, eps, g_min)
             ent = lad.setdefault(metric, {}).setdefault(model, {}).setdefault(str(ts), {})
@@ -328,7 +357,7 @@ class Runner:
                 (float(grp["row_error"].iloc[0]), ts, grp))
         for (metric, model), lst in by_mm.items():
             for _, ts, grp in sorted(lst, key=lambda x: -x[0])[: self.args.lattice_rows]:
-                err_of = self.err_of_factory(metric, model, ts)
+                err_of = self.err_of_factory(metric, model, ts, residual=True)
                 base, oracle = err_of(frozenset()), err_of(frozenset(self.pcols))
                 gate = cf.gap_gate(base, oracle, eps, cfg_b.get("g_min", 0.2))
                 if not gate["ok"]:
@@ -465,6 +494,10 @@ def plan_table(runner, args):
            "minimal-set": len(rows_all) * (2 + p + 4),
            "lattice": mm * args.lattice_rows * (2 ** min(5, p)),
            "neighbor-swap": mm and args.pairs_top * (2 + max(1, 1))}
+    repl = runner.summary.get("counterfactual_mode", "full")
+    print(f"  替换口径 = {repl}"
+          + ("（边际/minimal/lattice 用 pred−ε_res=label+ε_sys；oracle G 闸整换真值）"
+             if repl == "residual" else "（分解产物缺/关，全整换真值）"))
     print(f"  调用计划（坏行全集 {len(rows_all)}，被点名行 {len(rows_bl)}，特征对 {len(runner.pcols)}，"
           f"缓存命中 {len(runner.cache)} 条已扣除不了——估上限）:")
     for m, n in est.items():
@@ -547,7 +580,8 @@ def main():
     lad = runner.summary.get("ladder") or {}
     verdicts = [ent.get("verdict") for by_mo in lad.values() for by_ts in by_mo.values()
                 for ent in by_ts.values() if ent.get("verdict")]
-    print(f"[counterfactual] mode={args.mode}  本次 API 调用 {runner.calls} {stopped}")
+    print(f"[counterfactual] mode={args.mode}  替换口径={runner.summary.get('counterfactual_mode', 'full')}"
+          f"  本次 API 调用 {runner.calls} {stopped}")
     if verdicts:
         from collections import Counter
         print("  行判定: " + "  ".join(f"{k}×{v}" for k, v in Counter(verdicts).items()))
