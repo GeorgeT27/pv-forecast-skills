@@ -1,5 +1,31 @@
 # CHANGELOG —— pv-feature-blame
 
+## 2026-07-20 v3：ε_sys/ε_res 分解（剥系统偏差后只对波动点名）
+
+- Stage 1.5 feature_decompose.py：稳健加性回归（钟点/DoY 谐波+提前期+全部配对特征 pred 值
+  hinge，df≤6）估 ε_sys；跨期稳定性 λ 收缩（embargo 48h）；lag-1 可约性；宁少剥不过剥。
+- Stage 2：z/Spearman/共线全算在 ε_res 上 + 可约性闸 + raw/sys/res 三栏 +
+  global_spearman_raw 对照；缺分解产物回退 raw 并标 decomp=off。
+- **洗清闸（sys_frac≥--sys-frac-max，默认 0.85）是代码门，非仅报告纪律**：z/Spearman
+  是尺度不变统计量，ε_res 塌到几个百分点量级也不改变秩——单靠剥 ε_sys 挡不住乘性稳偏
+  留下的伪相关残影（f_sys_bias 实测 raw ρ=0.997、res 后仍 blamed=3）。故 feature_blame.py
+  在可约性闸之外新增 sys_frac 数值闸，≥ 阈值即不点名，兑现"剥后洗清"（实现层修复，
+  非改断言迁就）。
+- Stage 4：residual 模式（边际/minimal/lattice 换 pred−ε_res=label+ε_sys；oracle 整
+  换不变），随后修跨模式回归：rebuild_modes_summary 去重加 repl_mode（full/res 不再
+  混掺 per_feature_effects）、run_minimal 不再覆盖 oracle 权威 G/gate（改
+  minimal_G/minimal_gate）。
+- golden 新埋点：f_sys_bias（乘性稳偏 raw 必冤枉、剥后必洗清）/f_res_culprit（波动必点名）/
+  f_irreducible（双关全过唯可约性闸挡）+ pred_M4res；f_jumpy 真值幅 5→25（防 own-pred 吸收，
+  值域重叠检验）。反驳门 ⑨系统偏差门 ⑩可约性门。
+- 验证记录：全仓 pytest 114 项全绿（v3 前基线 102 + 本轮新增 12：decompose 构件/单测、
+  decomp 闸、residual 模式回归等）。三金律（rmse_192×pred_M4res 闭环，golden 实测值）：
+  ①f_sys_bias raw ρ=0.997（旧逻辑必冤枉）→ sys_frac=0.988≥0.85 被洗清闸拦、blamed_rows=0；
+  ②f_res_culprit ρ=0.996、reducibility=0.853 双关过闸 → blamed_rows≥1（M4res 唯一被点名者）；
+  ③f_irreducible ρ=0.998 双关都过，唯 reducibility=0.0001≤0.05 被可约性闸挡 →
+  blamed_rows=0。
+- spec: docs/superpowers/specs/2026-07-17-pv-feature-blame-epsilon-decomp-design.md
+
 ## 2026-07-16 口径切换 rmse_192 + 标准调用模板
 
 - 用户定口径：**评估功率预测差的口径改为每行全 192 点 RMSE（`rmse_192`），全部行参与，
