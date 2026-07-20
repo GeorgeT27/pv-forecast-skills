@@ -83,7 +83,8 @@ def row_error_of(pred: np.ndarray, truth: np.ndarray, metric: str) -> float:
     d = fb.require_du()
     if metric == "ultra_short":
         return float(abs(pred[d.ULTRA_SHORT_IDX] - truth[d.ULTRA_SHORT_IDX]))
-    diff = pred[d.SHORT_SLICE] - truth[d.SHORT_SLICE]
+    sl = fb.metric_slices()[metric]           # rmse_192 / short：切片 RMSE，与 fb.row_errors 同口径
+    diff = pred[sl] - truth[sl]
     return float(np.sqrt(np.nanmean(diff ** 2)))
 
 

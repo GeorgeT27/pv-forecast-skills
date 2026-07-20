@@ -7,7 +7,7 @@
 |------|------|----------|------|
 | `run_orient.py` | Step 0 | `[--goto N]`；执行 feature_true 硬规则 | blame_state.json + PROGRESS.md |
 | `probe_schema.py` | 0 | `[--test --predict --feature-true] [--n-overlap-checks 200]` | probe_schema.json + feature_pairs.json |
-| `find_bad_rows.py` | 1 | `[--models auto|列名,..] [--metrics ultra_short,short] [--top-pct 10] [--summary-out ...]` | bad_rows_<口径>_<模型>.csv + bad_rows_summary.json |
+| `find_bad_rows.py` | 1 | `[--models auto|列名,..] [--metrics rmse_192(默认)|ultra_short,short] [--top-pct 10] [--summary-out ...]` | bad_rows_<口径>_<模型>.csv + bad_rows_summary.json |
 | `feature_blame.py` | 2 | `[--pairs feature_pairs.json] [--bad-rows bad_rows_summary.json] [--z-hi 2.0 --spearman-min 0.3 --top-k 3]` | blame_report.csv + blame_summary.json |
 | `feature_revision.py` | 2 | 翻新跳变两关（免 API）：`[--spearman-min 0.3 --jumpiness-min 0.05 --stable-max 0.02]` | revision_report.csv + revision_summary.json |
 | `counterfactual_api.py` | 4 | **先 `--dry-run`（计划表+payload）**；`--mode oracle|per-feature|all-blamed|minimal-set|lattice|neighbor-swap [--metric --model --max-calls 400 --lattice-rows 3 --pairs-top 5]`；跨层缓存去重 + 断点续跑 + 版本漂移闸 | counterfactual_results.csv + neighbor_swap_results.csv + counterfactual_summary.json |

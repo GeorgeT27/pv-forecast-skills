@@ -48,7 +48,7 @@ def feats(top):
                   "blamed_rows": 1 if f == top else 0, "z_max": 3.0}
     return out
 summary = {}
-for metric in ("ultra_short", "short"):
+for metric in ("ultra_short", "short", "rmse_192"):
     for model in ("pred_M1", "pred_ensemble"):
         summary.setdefault(metric, {})[model] = {
             "n_rows": 40, "n_bad": 1, "features": feats("f_decoy"),   # 放水：点名了诱饵

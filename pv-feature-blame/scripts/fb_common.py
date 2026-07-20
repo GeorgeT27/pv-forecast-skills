@@ -16,7 +16,8 @@
                                               #   feature_true 为空且未确认缺失 → orient 阻塞 Stage 0，
                                               #   绝不静默降级到重叠重建
   "metric_py": "<metric.py 路径>",             # 仅 Stage 4 --monthly 复算月度口径用，可缺
-  "metrics": ["ultra_short", "short"],        # 行级化口径（两口径各自找坏行）
+  "metrics": ["rmse_192"],                    # 行级化口径：rmse_192（默认，每行全 192 点 RMSE）
+                                              #   / ultra_short / short，可多选各自找坏行
   "top_pct": 10,                              # 坏行 = 高于均值 且 误差进 top 10%
   "threshold_rule": "top_pct_above_mean",
   "blame": {"z_hi": 2.0, "spearman_min": 0.3, "top_k": 3,
@@ -149,19 +150,24 @@ def list_columns(df: pd.DataFrame) -> dict[str, int]:
 
 # ---------------------------------------------------------------- 口径（常量一律取自 data_utils）
 def metric_slices() -> dict[str, slice]:
-    """特征误差的口径匹配切片：ultra_short 看前 0..16 步（考核点及其前导），
-    short 看 [59:155]（09:00 行的次日全天）。"""
+    """特征误差的口径匹配切片：rmse_192 看全窗 192 点，ultra_short 看前 0..16 步
+    （考核点及其前导），short 看 [59:155]（09:00 行的次日全天）。"""
     d = require_du()
-    return {"ultra_short": slice(0, d.ULTRA_SHORT_IDX + 1), "short": d.SHORT_SLICE}
+    return {"rmse_192": slice(0, d.HORIZON),
+            "ultra_short": slice(0, d.ULTRA_SHORT_IDX + 1), "short": d.SHORT_SLICE}
 
 
 def row_errors(timestamps: pd.Series, P: np.ndarray, Y: np.ndarray, metric: str):
     """行级误差。返回 (sel_idx, err)：sel_idx = 参与该口径的行号（相对入参顺序），
-    err = 对应行误差。ultra_short = 每行第 ULTRA_SHORT_IDX 点绝对误差（全行参与）；
+    err = 对应行误差。rmse_192 = 每行全 192 点 RMSE（全行参与，默认考核口径）；
+    ultra_short = 每行第 ULTRA_SHORT_IDX 点绝对误差（全行参与）；
     short = 仅 09:00 行，SHORT_SLICE 上 RMSE。"""
     d = require_du()
     ts = pd.DatetimeIndex(timestamps)
-    if metric == "ultra_short":
+    if metric == "rmse_192":
+        sel = np.arange(len(ts))
+        err = np.sqrt(np.nanmean((P - Y) ** 2, axis=1))
+    elif metric == "ultra_short":
         sel = np.arange(len(ts))
         err = np.abs(P[:, d.ULTRA_SHORT_IDX] - Y[:, d.ULTRA_SHORT_IDX])
     elif metric == "short":
@@ -169,7 +175,7 @@ def row_errors(timestamps: pd.Series, P: np.ndarray, Y: np.ndarray, metric: str)
         diff = P[sel, d.SHORT_SLICE] - Y[sel, d.SHORT_SLICE]
         err = np.sqrt(np.nanmean(diff ** 2, axis=1))
     else:
-        raise ValueError(f"未知口径 {metric}（支持 ultra_short / short）")
+        raise ValueError(f"未知口径 {metric}（支持 rmse_192 / ultra_short / short）")
     return sel, np.asarray(err, float)
 
 

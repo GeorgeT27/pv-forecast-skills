@@ -2,6 +2,7 @@
 """Stage 1：坏行定位——每口径 × 每模型，各自找坏行。
 
 行级误差定义（常量一律 import 自 pv-result-analysis 的 data_utils，绝不本地重定义）：
+  rmse_192：每行全 192 点 RMSE（全部行参与）——默认考核口径；
   ultra_short：每行第 ULTRA_SHORT_IDX(16) 点的绝对误差（全部行参与）；
   short：仅 09:00 行，SHORT_SLICE([59:155]，次日全天 96 点) 上的 RMSE。
 坏行 = 误差 > 该口径均值 且 进 top --top-pct%（两个条件都要；数据量小时阈值可调）。
@@ -10,7 +11,7 @@
 用法（在工作目录下；缺省从 blame_config.json 取路径与参数）：
   python3 <SKILL>/scripts/find_bad_rows.py \
       [--test T.parquet --predict P.parquet] [--models auto|pred_M1,pred_ensemble] \
-      [--metrics ultra_short,short] [--top-pct 10] [--out-dir .]
+      [--metrics rmse_192|ultra_short,short] [--top-pct 10] [--out-dir .]
 
 产物：bad_rows_<metric>_<model>.csv（timestamp,row_error,row_rank,is_bad，按时间序）
       bad_rows_summary.json（每口径×模型的 n/均值/阈值/坏行数/最坏时间戳/CSV 文件名）
@@ -35,7 +36,7 @@ def main():
     ap.add_argument("--test", default=cfg.get("test_label"))
     ap.add_argument("--predict", default=cfg.get("predict"))
     ap.add_argument("--models", default="auto", help="auto=全部 192 点列；或逗号分隔列名")
-    ap.add_argument("--metrics", default=",".join(cfg.get("metrics", ["ultra_short", "short"])))
+    ap.add_argument("--metrics", default=",".join(cfg.get("metrics", ["rmse_192"])))
     ap.add_argument("--top-pct", type=float, default=cfg.get("top_pct", 10))
     ap.add_argument("--out-dir", default=".")
     ap.add_argument("--summary-out", default="bad_rows_summary.json")

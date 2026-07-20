@@ -3,8 +3,8 @@
 
 方法（细节见 references/blame-methods.md）：
   1) 特征误差：每 (口径, 特征) 在口径匹配切片上算 RMSE(pred − label)
-     （ultra_short → [:ULTRA_SHORT_IDX+1] 考核点及其前导；short → SHORT_SLICE；
-      另附全 192 点参考列）；对**全体行**的分布做 z 归一（不同量纲特征才可比）。
+     （rmse_192 → 全窗 192 点；ultra_short → [:ULTRA_SHORT_IDX+1] 考核点及其前导；
+      short → SHORT_SLICE；另附全 192 点参考列）；对**全体行**的分布做 z 归一（不同量纲特征才可比）。
   2) 全局校准：跨全体行算 Spearman(行误差, 特征误差)——特征误差再大，若与该口径的
      行误差全局无关（模型可能根本不敏感），没资格被点名（诱饵防冤枉）。
   3) blame_score = z × max(ρ, 0)；blamed = z ≥ z_hi 且 ρ ≥ spearman_min 且 分数进该行 top_k。

@@ -83,7 +83,33 @@ def test_metric_slices_import_not_rederive():
     s = fb.metric_slices()
     assert s["ultra_short"] == slice(0, du.ULTRA_SHORT_IDX + 1)
     assert s["short"] == du.SHORT_SLICE
+    assert s["rmse_192"] == slice(0, du.HORIZON)
     assert du.ULTRA_SHORT_IDX == 16 and du.SHORT_SLICE == slice(59, 155)
+
+
+def test_row_errors_rmse_192_all_rows_full_window():
+    """rmse_192（默认考核口径）：每行全 192 点 RMSE，全部行参与，与时刻无关。"""
+    ts = pd.Series(pd.to_datetime(["2025-01-01 08:45", "2025-01-01 09:00", "2025-01-01 09:15"]))
+    Y = np.zeros((3, du.HORIZON))
+    P = np.zeros((3, du.HORIZON))
+    P[1, :] = 3.0                                                  # 全窗恒 3 → RMSE=3
+    P[2, du.ULTRA_SHORT_IDX] = 192.0                               # 单点 192 → RMSE=sqrt(192²/192)
+    sel, err = fb.row_errors(ts, P, Y, "rmse_192")
+    assert list(sel) == [0, 1, 2]                                  # 非 09:00 行也参与
+    assert err[0] == pytest.approx(0.0)
+    assert err[1] == pytest.approx(3.0)
+    assert err[2] == pytest.approx(np.sqrt(192.0))
+
+
+def test_counterfactual_row_error_matches_fb_row_errors():
+    """counterfactual_api 的单行误差与 Stage 1 的行级化必须同口径（版本漂移闸的前提）。"""
+    from counterfactual_api import row_error_of
+    rng = np.random.RandomState(7)
+    pred, truth = rng.rand(du.HORIZON), rng.rand(du.HORIZON)
+    ts = pd.Series(pd.to_datetime(["2025-01-01 09:00"]))
+    for metric in ("rmse_192", "ultra_short", "short"):
+        _, err = fb.row_errors(ts, pred[None, :], truth[None, :], metric)
+        assert row_error_of(pred, truth, metric) == pytest.approx(err[0])
 
 
 # ---------------------------------------------------------------- 窗一致性闸只闸真值列

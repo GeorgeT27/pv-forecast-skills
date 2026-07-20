@@ -1,6 +1,6 @@
 {
   "playbook": "pv-feature-blame",
-  "note": "金标准输入由 make_golden.py 确定性生成（零随机）；期望值来自 scripts/ 本体在金标准上的实跑并留容差。埋点：f_blame（day2 崩坏且耦合进 M1/ensemble → 必须被点名）、f_decoy（day5 崩坏、误差更大但零耦合 → 必须不被点名）、f_good/ghi（零误差；ghi 用奇异命名对 nwp_ghi_fc/ghi_obs 练配对启发式）、mystery_x（必须进 unmapped）。v2 翻新埋点：f_jumpy（parity 跳变 s(T)·A(t)，pred_M3 消费它 → revision 两关必点名；注意其真值误差路径 Spearman 仅 0.28（相位差）恰低于 0.3 点名线——真值误差抓不到、翻新分析才抓得到，这正是新轴的存在理由）、f_jumpy_decoy（period-4 方波跳变、幅更大、零耦合 → 必须不被点名：跳变大≠有罪）。Stage 1/2 的中间产物（feature_pairs/bad_rows_*）由 Stage 0/1 实跑生成后拷入，改上游脚本后需重生成。counterfactual_api 的 HTTP 层无法金标准化（需活 FastAPI，gen_gate 也禁网络导入），但其决策逻辑在 cf_logic.py（零网络）经 stage \"4\" 的 --selfcheck 过闸；--dry-run payload 确认步兜底。改本文件期望前先改 make_golden.py 并重跑 pytest。",
+  "note": "金标准输入由 make_golden.py 确定性生成（零随机）；期望值来自 scripts/ 本体在金标准上的实跑并留容差。埋点：f_blame（day2 崩坏且耦合进 M1/ensemble → 必须被点名）、f_decoy（day5 崩坏、误差更大但零耦合 → 必须不被点名）、f_good/ghi（零误差；ghi 用奇异命名对 nwp_ghi_fc/ghi_obs 练配对启发式）、mystery_x（必须进 unmapped）。v2 翻新埋点：f_jumpy（parity 跳变 s(T)·A(t)，pred_M3 消费它 → revision 两关必点名；注意其真值误差路径 Spearman 仅 0.28（相位差）恰低于 0.3 点名线——真值误差抓不到、翻新分析才抓得到，这正是新轴的存在理由）、f_jumpy_decoy（period-4 方波跳变、幅更大、零耦合 → 必须不被点名：跳变大≠有罪）。Stage 1/2 的中间产物（feature_pairs/bad_rows_*）由 Stage 0/1 实跑生成后拷入，改上游脚本后需重生成。counterfactual_api 的 HTTP 层无法金标准化（需活 FastAPI，gen_gate 也禁网络导入），但其决策逻辑在 cf_logic.py（零网络）经 stage \"4\" 的 --selfcheck 过闸；--dry-run payload 确认步兜底。改本文件期望前先改 make_golden.py 并重跑 pytest。rmse_192（2026-07-16 起的默认考核口径，每行全 192 点 RMSE）：金标准的窗几何（每窗完整含崩坏段）把 z 轴洗平（f_blame z_max≈0.43 点不了名），但全局 ρ=1.0（M1 行误差恰为 0.6×特征误差）与翻新轴（M3 点名 f_jumpy ρ≈1.0）都完好——断言只钉这两路稳健信号。",
   "planted": {
     "blamed_feature": "f_blame",
     "decoy_feature": "f_decoy",
@@ -31,10 +31,14 @@
       ]
     },
     "1": {
-      "desc": "坏行定位：M1/ensemble 两口径各恰 1 个坏行落在埋点时间戳；M3 的坏行来自 f_jumpy 跳变（ultra_short 4 个、short 0 个——跳变结构逐日相同，short 口径全行等误差）",
+      "desc": "坏行定位：M1/ensemble 两口径各恰 1 个坏行落在埋点时间戳；M3 的坏行来自 f_jumpy 跳变（ultra_short 4 个、short 0 个——跳变结构逐日相同，short 口径全行等误差）；rmse_192（默认考核口径 = 每行全 192 点 RMSE、全行参与）只断 n_rows/mean——金标准每个窗都完整包住崩坏段，行误差大量并列，n_bad/worst 是破位人为产物不可断言",
       "inputs": ["golden_test.parquet", "golden_predict.parquet"],
-      "args": ["--test", "golden_test.parquet", "--predict", "golden_predict.parquet"],
+      "args": ["--test", "golden_test.parquet", "--predict", "golden_predict.parquet",
+               "--metrics", "ultra_short,short,rmse_192"],
       "expect": [
+        {"file": "bad_rows_summary.json", "path": "metrics.rmse_192.pred_M1.n_rows", "op": "eq", "value": 40},
+        {"file": "bad_rows_summary.json", "path": "metrics.rmse_192.pred_M1.mean_error", "op": "between", "value": [5.5, 7.0]},
+        {"file": "bad_rows_rmse_192_pred_M1.csv", "op": "exists"},
         {"file": "bad_rows_summary.json", "path": "metrics.ultra_short.pred_M1.n_rows", "op": "eq", "value": 40},
         {"file": "bad_rows_summary.json", "path": "metrics.ultra_short.pred_M1.n_bad", "op": "eq", "value": 1},
         {"file": "bad_rows_summary.json", "path": "metrics.ultra_short.pred_M1.worst_timestamp", "op": "eq", "value": "2025-01-02 09:00:00"},
@@ -55,7 +59,9 @@
       "inputs": ["golden_feature_true.parquet", "feature_pairs.json", "bad_rows_summary.json",
                  "bad_rows_ultra_short_pred_M1.csv", "bad_rows_ultra_short_pred_ensemble.csv",
                  "bad_rows_ultra_short_pred_M3.csv", "bad_rows_short_pred_M3.csv",
-                 "bad_rows_short_pred_M1.csv", "bad_rows_short_pred_ensemble.csv"],
+                 "bad_rows_short_pred_M1.csv", "bad_rows_short_pred_ensemble.csv",
+                 "bad_rows_rmse_192_pred_M1.csv", "bad_rows_rmse_192_pred_ensemble.csv",
+                 "bad_rows_rmse_192_pred_M3.csv"],
       "args": ["--feature-true", "golden_feature_true.parquet"],
       "expect": [
         {"file": "blame_summary.json", "path": "ultra_short.pred_M1.features", "op": "argmax", "field": "global_spearman", "value": "f_blame"},
@@ -76,6 +82,11 @@
         {"file": "blame_summary.json", "path": "ultra_short.pred_M1.features.f_jumpy_decoy.blamed_rows", "op": "eq", "value": 0},
         {"file": "blame_summary.json", "path": "ultra_short.pred_M3.features.f_jumpy_decoy.blamed_rows", "op": "eq", "value": 0},
         {"file": "blame_summary.json", "path": "ultra_short.pred_M3.features.f_jumpy_decoy.feature_err_mean", "op": "ge", "value": 20},
+        {"file": "blame_summary.json", "path": "rmse_192.pred_M1.features", "op": "argmax", "field": "global_spearman", "value": "f_blame"},
+        {"file": "blame_summary.json", "path": "rmse_192.pred_M1.ranking_by_spearman", "op": "first_is", "value": "f_blame"},
+        {"file": "blame_summary.json", "path": "rmse_192.pred_M1.features.f_blame.global_spearman", "op": "ge", "value": 0.9},
+        {"file": "blame_summary.json", "path": "rmse_192.pred_M1.features.f_decoy.blamed_rows", "op": "eq", "value": 0},
+        {"file": "blame_summary.json", "path": "rmse_192.pred_M1.features.f_jumpy_decoy.blamed_rows", "op": "eq", "value": 0},
         {"file": "blame_report.csv", "op": "exists"}
       ]
     },
@@ -95,6 +106,10 @@
         {"file": "revision_summary.json", "path": "metrics.ultra_short.pred_M1.stable", "op": "eq", "value": true},
         {"file": "revision_summary.json", "path": "metrics.ultra_short.pred_ensemble.stable", "op": "eq", "value": true},
         {"file": "revision_summary.json", "path": "metrics.short.pred_M3.named", "op": "eq", "value": []},
+        {"file": "revision_summary.json", "path": "metrics.rmse_192.pred_M3.named", "op": "contains", "value": "f_jumpy"},
+        {"file": "revision_summary.json", "path": "metrics.rmse_192.pred_M3.features.f_jumpy.churn_spearman", "op": "ge", "value": 0.9},
+        {"file": "revision_summary.json", "path": "metrics.rmse_192.pred_M3.features.f_jumpy_decoy.named", "op": "eq", "value": false},
+        {"file": "revision_summary.json", "path": "metrics.rmse_192.pred_M1.stable", "op": "eq", "value": true},
         {"file": "revision_summary.json", "path": "features.f_blame.jumpiness_full192", "op": "le", "value": 1e-06},
         {"file": "revision_summary.json", "path": "features.f_jumpy.jumpiness_full192", "op": "ge", "value": 1.0},
         {"file": "revision_report.csv", "op": "exists"}

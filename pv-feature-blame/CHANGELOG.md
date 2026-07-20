@@ -1,5 +1,20 @@
 # CHANGELOG —— pv-feature-blame
 
+## 2026-07-16 口径切换 rmse_192 + 标准调用模板
+
+- 用户定口径：**评估功率预测差的口径改为每行全 192 点 RMSE（`rmse_192`），全部行参与，
+  不再默认跑 ultra_short/short**（两者保留可选，config.metrics 多选）。贯穿点：
+  fb_common（metric_slices + row_errors 新分支）、find_bad_rows 默认值、
+  counterfactual_api.row_error_of 改为经 metric_slices 泛化（Stage 4 与 Stage 1 同口径，
+  版本漂移闸前提）、feature_revision/neighbor-swap 自动获得 rmse_192 分节。
+- 标准调用 prompt 模板固化到 `references/prompt-template.md`（槽位 → config 映射表；
+  用户给 FastAPI 示例代码时照示例填 adapter.py，dry-run 门控不变），SKILL.md Step 1 指过去。
+- 金标准扩三口径（stage 1 显式 `--metrics ultra_short,short,rmse_192`）：rmse_192 下
+  金标准窗几何把 z 轴洗平（每窗完整含崩坏段 → 行间特征误差近常数），但全局 ρ=1.0
+  （M1 行误差恰为 0.6×f_blame 误差）与翻新轴（M3 点名 f_jumpy ρ≈1.0、诱饵 ρ≈−0.02）
+  完好——断言只钉稳健信号，n_bad/worst 并列破位不断言。新增单测：rmse_192 行级化、
+  counterfactual row_error_of 与 fb.row_errors 三口径一致。全仓 pytest 102 绿。
+
 ## 2026-07-16 v2：反事实预算阶梯（联合致坏）+ 预报翻新跳变分析
 
 - 来源：用户指出两个 v1 盲区——(1) 联合致坏：多特征共同致坏且可能冗余结构（单换一个修不好、

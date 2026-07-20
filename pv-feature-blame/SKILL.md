@@ -35,8 +35,10 @@ description: 光伏功率预测的「预测特征质量归因」——当输入�
 - **硬规则**：feature_true 没给 → AskUserQuestion 索要；用户明确说"没有"→ 写
   `feature_true_status="user_confirmed_missing"` 走降级（窗口重叠重建真值，见
   references/blame-methods.md，证据自动降一级）。**绝不静默降级。**
-- 口径：坏行按两口径各自找——`ultra_short` = 每行第 16 点误差；`short` = 09:00 行的
-  [59:155] 切片 RMSE。常量 import 自 `pv-result-analysis/scripts/data_utils.py`，绝不本地重定义。
+- 口径：坏行按 config.metrics 里的口径各自找——默认 **`rmse_192`** = 每行全 192 点 RMSE
+  （全行参与，2026-07 起的考核口径）；可选 `ultra_short` = 每行第 16 点误差、`short` =
+  09:00 行的 [59:155] 切片 RMSE。常量 import 自 `pv-result-analysis/scripts/data_utils.py`，
+  绝不本地重定义。
 
 ## Step 0.5：载入项目上下文与实验线（首次问一次，之后自动复用）
 
@@ -60,8 +62,11 @@ blame_report.csv / FINDINGS.md 等产物定位第一个未完成阶段。
 
 ## Step 1：收集路径写 blame_config.json（字段说明见 scripts/fb_common.py 头部）
 
-三件套路径 + 口径/阈值参数（top_pct 默认 10：坏行 = 高于均值且误差进 top 10%，数据量小时
-跟用户确认要不要调）。**环境**：`python3 -c "import pandas,numpy,scipy,pyarrow"`，缺则
+用户通常按 `references/prompt-template.md` 的标准模板发起——字段直接映射 config
+（三件套路径 / 模型列 → --models / 口径默认 rmse_192 / top_pct / API 地址与契约 / 实验线），
+缺的字段才问。用户给了 FastAPI 示例代码时：照示例填 adapter.py 的 payload/响应契约，
+仍必须 --dry-run 给用户过目。top_pct 默认 10：坏行 = 高于均值且误差进 top 10%，数据量小时
+跟用户确认要不要调。**环境**：`python3 -c "import pandas,numpy,scipy,pyarrow"`，缺则
 `pip install -r 结果分析skill/requirements.txt`。
 
 ## 六个阶段（每阶段一个脚本，产物落盘自足，可断点续跑）
