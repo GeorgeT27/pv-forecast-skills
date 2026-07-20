@@ -41,21 +41,25 @@ import argparse, json
 ap = argparse.ArgumentParser()
 ap.add_argument("--feature-true")
 a, _ = ap.parse_known_args()
+FEATS = ("f_blame", "f_decoy", "f_good", "ghi", "f_jumpy", "f_jumpy_decoy",
+         "f_sys_bias", "f_res_culprit", "f_irreducible")
 def feats(top):
     out = {}
-    for f in ("f_blame", "f_decoy", "f_good", "ghi"):
+    for f in FEATS:
         out[f] = {"global_spearman": 0.95 if f == top else 0.1,
                   "feature_err_mean": 2.0 if f in ("f_blame", "f_decoy") else 0.0,
-                  "blamed_rows": 1 if f == top else 0, "z_max": 3.0}
+                  "blamed_rows": 1 if f == top else 0, "z_max": 3.0,
+                  "global_spearman_raw": 0.1, "feature_err_raw_mean": 1.0,
+                  "sys_frac": 0.0, "stability_lambda": 0.0, "reducibility_frac": 1.0}
     return out
 summary = {}
 for metric in ("ultra_short", "short", "rmse_192"):
-    for model in ("pred_M1", "pred_ensemble"):
+    for model in ("pred_M1", "pred_ensemble", "pred_M3", "pred_M4res"):
         summary.setdefault(metric, {})[model] = {
             "n_rows": 40, "n_bad": 1, "features": feats("f_decoy"),   # 放水：点名了诱饵
-            "ranking_by_spearman": ["f_decoy", "f_blame", "f_good", "ghi"],
+            "ranking_by_spearman": ["f_decoy"] + [f for f in FEATS if f != "f_decoy"],
             "collinearity_clusters": []}
-json.dump(summary, open("blame_summary.json", "w"))
+json.dump({"params": {"decomp": "on"}, **summary}, open("blame_summary.json", "w"))
 open("blame_report.csv", "w").write("model,metric\n")
 '''
 
