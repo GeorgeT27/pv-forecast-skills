@@ -19,6 +19,12 @@
       "source": "auto"
     },
     {
+      "feature": "f_irreducible",
+      "pred_col": "f_irreducible_pred",
+      "label_col": "f_irreducible_true",
+      "source": "auto"
+    },
+    {
       "feature": "f_jumpy",
       "pred_col": "f_jumpy_pred",
       "label_col": "f_jumpy_true",
@@ -28,6 +34,18 @@
       "feature": "f_jumpy_decoy",
       "pred_col": "f_jumpy_decoy_pred",
       "label_col": "f_jumpy_decoy_true",
+      "source": "auto"
+    },
+    {
+      "feature": "f_res_culprit",
+      "pred_col": "f_res_culprit_pred",
+      "label_col": "f_res_culprit_true",
+      "source": "auto"
+    },
+    {
+      "feature": "f_sys_bias",
+      "pred_col": "f_sys_bias_pred",
+      "label_col": "f_sys_bias_true",
       "source": "auto"
     },
     {
