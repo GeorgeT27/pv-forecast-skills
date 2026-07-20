@@ -27,7 +27,7 @@ PROGRESS_PATH = "PROGRESS.md"
 STAGE_NAMES = {
     0: "schema 探查与对齐守卫（probe_schema.py → probe_schema.json + feature_pairs.json）",
     1: "坏行定位·每口径×每模型（find_bad_rows.py → bad_rows_summary.json + CSV）",
-    2: "特征归因·真值误差两关（feature_blame.py）+ 翻新跳变两关（feature_revision.py，免 API）",
+    2: "特征归因·先剥系统偏差（feature_decompose.py=Stage 1.5）再 ε_res 两关点名（feature_blame.py）+ 翻新跳变两关（feature_revision.py，免 API）",
     3: "现象清单（**停顿**：主 agent 汇报现象，问用户是否做反事实 → FINDINGS.md）",
     4: "反事实确认·可选（counterfactual_api.py + adapter.py + FastAPI → counterfactual_summary.json）",
     5: "结论（反驳门 + CONCLUSION.md）",
@@ -69,6 +69,7 @@ def scan():
         "bad_rows": _exists("bad_rows_summary.json"),
         "blame": _exists("blame_report.csv") and _exists("blame_summary.json"),
         "revision": _exists("revision_summary.json"),
+        "decomp": _exists("feature_decomp.json"),
         "findings_done": "现象" in findings,
         "counterfactual": _exists("counterfactual_summary.json"),
         "concluded": _exists("CONCLUSION.md"),
@@ -79,6 +80,10 @@ def revision_enabled(cfg):
     return (cfg.get("revision") or {}).get("enabled", True) is not False
 
 
+def decompose_enabled(cfg):
+    return (cfg.get("decompose") or {}).get("enabled", True) is not False
+
+
 def stage_done(stage, ev, cfg):
     if stage == 0:
         pairs = ev["pairs"] or {}
@@ -86,7 +91,8 @@ def stage_done(stage, ev, cfg):
     if stage == 1:
         return ev["bad_rows"]
     if stage == 2:
-        return ev["blame"] and (ev["revision"] or not revision_enabled(cfg))
+        return (ev["blame"] and (ev["revision"] or not revision_enabled(cfg))
+                and (ev["decomp"] or not decompose_enabled(cfg)))
     if stage == 3:
         return ev["findings_done"]
     if stage == 4:
@@ -113,7 +119,10 @@ def prereqs(stage, cfg, ev):
                 ("真值列滚动窗一致性通过（>0 = 窗口构造 bug；predict/预报特征行间差是预期物理，不进闸）", wc_ok),
                 ("label 交叉核验 ≥0.99 或无可核材料（核不上 = 对齐错位/label 有假，先排除）", cross_ok)]
     if stage == 2:
-        return [("bad_rows_summary.json 在（Stage 1）", ev["bad_rows"]),
+        return [("feature_decomp.json 在（Stage 1.5 feature_decompose.py；不想剥系统偏差可"
+                 "在 config 设 decompose.enabled=false）",
+                 ev["decomp"] or not decompose_enabled(cfg)),
+                ("bad_rows_summary.json 在（Stage 1）", ev["bad_rows"]),
                 ("feature_pairs.json 在（Stage 0）", bool((ev["pairs"] or {}).get("pairs")))]
     if stage == 3:
         return [("blame_summary.json 在（Stage 2）", ev["blame"])]
@@ -175,6 +184,10 @@ def main():
     elif ft_mode == "missing":
         print("  ⛔ feature_true 未提供且用户未确认缺失 —— 先 AskUserQuestion 向用户要，")
         print("     确实没有则写 config.feature_true_status=\"user_confirmed_missing\" 再继续。")
+    if ev["blame"] and not ev["decomp"] and decompose_enabled(cfg):
+        print("  ℹ 旧版产物：blame 在但缺 feature_decomp.json（v3 起点名基于 ε_res）。")
+        print("    补跑 feature_decompose.py + 重跑 feature_blame.py 即升级；不需要可设"
+              " decompose.enabled=false。")
     if ev["blame"] and not ev["revision"] and revision_enabled(cfg):
         print("  ℹ 检测到旧版产物：blame 归因在但缺 revision_summary.json（v2 起 Stage 2 含翻新")
         print("    跳变分析）。补跑 feature_revision.py（免 API，本地即可）即恢复；不需要可在")
