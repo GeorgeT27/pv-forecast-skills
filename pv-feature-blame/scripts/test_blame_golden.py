@@ -16,7 +16,8 @@ REPO = os.path.dirname(SKILL)
 GATE = os.path.join(REPO, "ts-diagnose", "scripts", "gen_gate.py")
 PLAYBOOK = os.path.join(SKILL, "SKILL.md")   # 路径形式：golden/ 解析到本技能目录下
 
-STAGES = [("0", "probe_schema.py"), ("1", "find_bad_rows.py"), ("2", "feature_blame.py"),
+STAGES = [("0", "probe_schema.py"), ("1", "find_bad_rows.py"),
+          ("decomp", "feature_decompose.py"), ("2", "feature_blame.py"),
           ("revision", "feature_revision.py"), ("4", "cf_logic.py")]
 
 
