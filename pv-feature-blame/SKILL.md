@@ -23,6 +23,9 @@ description: 光伏功率预测的「预测特征质量归因」——当输入�
    实测 Δ=0 但最小修复集 = 两特征）。断「特征无罪」前先过 Stage 4 的 minimal-set。
 5. **跳变大 ≠ 有罪**——相邻行是同一物理时刻的两次起报，预报翻新跳变是预期物理且文献实证
    跳变与预报误差只有弱相关。点名「翻新致不稳」须过 churn 两关 + neighbor-swap 反事实。
+6. **稳定的系统偏差 ≠ 有罪**——功率模型在有偏预报上训练会学会补偿它（共适应）；点名基于
+   剥掉 ε_sys 后的波动 ε_res（Stage 1.5），sys_frac 高的特征"修了"对固定模型可能有害。
+   白噪声 ε_res 也不点名（可约性闸）——上游改不了的误差点名是废话。
 
 ## 数据契约（时间戳语义与主技能一致：每行 = 序列窗口，相邻行 15 分钟）
 
@@ -75,10 +78,10 @@ blame_report.csv / FINDINGS.md 等产物定位第一个未完成阶段。
 |------|--------|-------------|
 | **0 探查** | 时间戳列/模型列/特征对发现 + 对齐 + 窗一致性 + 真值交叉核验；unmapped 列问用户后写回 | `probe_schema.py` → `probe_schema.json` + `feature_pairs.json` |
 | **1 坏行** | 每口径×每模型定位坏行（>均值 且 top N%），**全量排名**落盘 | `find_bad_rows.py` → `bad_rows_<口径>_<模型>.csv` + `bad_rows_summary.json` |
-| **2 归因** | 双轴：真值误差两关（z + 全局 Spearman）点名 + 共线簇；**翻新跳变两关**（jumpiness + churn 相关）点名「翻新致不稳」（免 API，默认跑） | `feature_blame.py` → `blame_report.csv` + `blame_summary.json`；`feature_revision.py` → `revision_report.csv` + `revision_summary.json` |
+| **2 归因** | 三步：**剥系统偏差**（feature_decompose.py：稳健加性回归 ε_sys→ε_res+可约性，Stage 1.5）→ ε_res 两关（z + 全局 Spearman）点名 + 可约性闸 + 共线簇 → 翻新跳变两关（免 API） | `feature_decompose.py` → `feature_decomp.json` + `eps_res_*.npy`；`feature_blame.py` → `blame_report.csv` + `blame_summary.json`；`feature_revision.py` → `revision_report.csv` + `revision_summary.json` |
 | **3 现象** | **停顿**：主 agent 把坏行清单+被点名特征+翻新画像报给用户，问要不要做反事实 | `FINDINGS.md`（含"现象"） |
 | **4 反事实** | 门控·可选·**预算阶梯**：`oracle`（全换测缺口 G，防冤枉）→ `per-feature`/`all-blamed`（边际）→ `minimal-set`（最小修复集，抓联合致坏）→ `lattice`（最差行 Shapley+交互）→ `neighbor-swap`（翻新致不稳仲裁）；首跑必 `--dry-run` 给用户确认计划表+payload | `counterfactual_api.py`（决策数学在 `cf_logic.py`，已过闸）+ `adapter.py` → `counterfactual_results.csv` + `counterfactual_summary.json` |
-| **5 结论** | 反驳门（六条，见 references/blame-discipline.md）+ 升级判定 | `CONCLUSION.md` |
+| **5 结论** | 反驳门（十条，见 references/blame-discipline.md）+ 升级判定 | `CONCLUSION.md` |
 
 ## 质量闸（改脚本后必须重过闸才碰真实数据）
 
@@ -127,6 +130,11 @@ JSON/CSV、只写自己的产物分片。parquet 内容与 payload 明细永不�
 - ❌ 看到某特征翻新跳变大就点名（文献：跳变与误差弱相关；须 churn 两关 + neighbor-swap 仲裁）。
 - ❌ 对 192 点 list 做跨行分布统计不先重建物理序列（窗口重叠 671/672，同一物理点重复几百次）。
 - ❌ 把 blame_report 的相关性结论直接写成"已证实"（相关 ≠ 因果，反事实才是仲裁）。
+- ❌ 在原始 ε 上点名不剥系统偏差（冤枉被模型吃掉的稳定偏差——金标准 f_sys_bias 专门埋了
+  这个陷阱：raw Spearman 高但剥后必须洗清；且 z/ρ 尺度不变，光靠塌 ε_res 量级挡不住，必须
+  过 sys_frac 代码闸）。
+- ❌ 点名 reducibility_frac < 0.1 的白噪声特征（上游改不了；金标准 f_irreducible 双关全过、
+  唯可约性闸挡得住）。
 
 ## 运行后回顾
 
