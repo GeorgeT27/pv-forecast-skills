@@ -537,7 +537,7 @@ git commit -m "feat(pv-feature-blame): Stage 1.5 feature_decompose——稳健�
 
 ---
 
-### Task 3: golden 新埋点（f_sys_bias / f_res_culprit / f_irreducible + pred_M4res）
+### Task 3: golden 新埋点（f_sys_bias / f_res_culprit / f_irreducible + pred_M4res + 反退化 u 项）
 
 **Files:**
 - Modify: `<SKILL>/golden/make_golden.py`
@@ -547,7 +547,34 @@ git commit -m "feat(pv-feature-blame): Stage 1.5 feature_decompose——稳健�
 - Consumes: Task 2 的 feature_decompose.py。
 - Produces: Task 4/5 的 golden 输入文件全套。
 
+**⚠️ 反退化设计（Task 2 消融发现的结构问题，本任务的第一要务）**：若某特征的真值是设计矩阵
+可表示的函数（如纯 ≤3 阶钟点谐波），则 `ε ≡ 1·pred − true(hod)` 恒可被加性回归精确表示——
+只要跨期稳定，**整条 ε 会被当 ε_sys 剥光**（含波动/跳变），这是合成世界"真值可由协变量确定"
+的退化，真实数据不存在。解法：**每个特征的真值函数都加一个不可公度周期项
+`u(t) = amp·sin(2π·n(t)/P + φ)`**，P 取素数步长（89/113/131/151/173/…，非 96 的因倍数，
+≤3 阶日谐波与 ≤2 阶年谐波都表示不了），每特征 P/φ 互不相同（防跨特征 pred 代理）。
+关键不变量：ε = pred − true 不变（u 同时进 true 与 pred）、翻新跳变 J 不变（同一物理 t 相减
+u 消掉）、模型行误差不变（模型公式只吃 y/d/w/v/A）——**v1/v2 全部既有断言不受扰**，
+只有分解行为回到真实：吸收系数 β* ≈ var(扰动)/(var(扰动)+var(u))，amp 取 25 使 β* 小。
+f_sys_bias 不受影响：乘性捕获走 `ε=(0.3/1.3)·pred` 恒等式，无需表示真值。
+
 - [ ] **Step 1: make_golden.py 加埋点函数（在 `s_period4` 之后追加）**
+
+先加反退化 helper 与注册表：
+
+```python
+# ---- 反退化项：真值不可由设计矩阵表示（见 plan Task 3 首注） ----
+U_REG = {"f_blame": (89, 0.3), "f_decoy": (113, 1.1), "f_good": (131, 2.0),
+         "ghi": (151, 0.7), "f_jumpy": (173, 1.7), "f_jumpy_decoy": (197, 2.6),
+         "f_sys_bias": (211, 0.9), "f_res_culprit": (233, 1.9),
+         "f_irreducible": (251, 0.2)}
+
+
+def u_incom(name, t, amp=25.0):
+    P, phi = U_REG[name]
+    n = int((t - EPOCH) / FREQ)
+    return amp * math.sin(2 * math.pi * n / P + phi)
+```
 
 ```python
 # ------------------------------------------------- ε 分解埋点（v3；全部纯 f(物理时间)）
@@ -560,14 +587,16 @@ def daytime(t):
 
 
 def f_sys_bias_true(t):                     # 幅度逐日增长：per-row 误差才有跨行排名信号
-    return (20.0 + 4.0 * dayidx(t)) * daytime(t)
+    return (20.0 + 4.0 * dayidx(t)) * daytime(t) + 30.0 + u_incom("f_sys_bias", t, 10.0)
+# （+30 抬底、u 幅取 10：保持真值为正，乘性偏差 0.3·true 仍逐日增长主导）
 # pred = 1.3×true：乘性系统偏差（报得越高越偏高）。不进任何模型预测 =「模型已补偿」。
 # 陷阱设计：raw 误差逐日增长、与 pred_M4res 行误差 raw-Spearman 高 → 旧逻辑必冤枉；
-# own-pred 线性精确捕获 ε=0.3·true 且跨期稳定 → λ≈1、ε_res≈0 → 剥后必不点名。
+# own-pred 线性精确捕获 ε=(0.3/1.3)·pred（恒等式，与 u 无关）且跨期稳定 → λ≈1、
+# ε_res≈0 → 剥后必不点名。
 
 
 def f_res_culprit_true(t):
-    return 45.0 + 5.0 * math.sin(2 * math.pi * hour_of(t) / 24.0)
+    return 45.0 + 5.0 * math.sin(2 * math.pi * hour_of(t) / 24.0) + u_incom("f_res_culprit", t)
 
 
 def w_culprit(t):                           # period-16（4h）波动：≤3 阶钟点谐波装不下
@@ -577,23 +606,28 @@ def w_culprit(t):                           # period-16（4h）波动：≤3 阶
 
 
 def f_irreducible_true(t):
-    return 35.0 + 5.0 * math.cos(2 * math.pi * hour_of(t) / 24.0)
+    return 35.0 + 5.0 * math.cos(2 * math.pi * hour_of(t) / 24.0) + u_incom("f_irreducible", t)
 
 
 def v_irred(t):                             # period-4 近奈奎斯特：lag-1=cos(π/2)=0 → 不可约
     n = int((t - EPOCH) / FREQ)
     return (6.0 + 2.0 * dayidx(t)) * math.sin(math.pi * n / 2.0 + 0.7)
 # 也驱动 pred_M4res（z/ρ 双关都过）→ 唯一挡它的是可约性闸——证明闸有牙。
+# 注意：ε_res ≈ (1−β)v − β·u 混入少量平滑 u → 可约性非严格 0；断言按实测留余量，
+# 必须 < 0.1 闸线且与 f_res_culprit（≥0.5）拉得开；不达标先调大 u 幅或 v 幅再看。
 ```
 
-- [ ] **Step 2: f_jumpy_true 振幅 5→25**
+- [ ] **Step 2: 全部既有真值函数加 u 项（反退化，见 Task 3 首注）**
 
-```python
-def f_jumpy_true(t):
-    return 60.0 + 25.0 * math.sin(2 * math.pi * hour_of(t) / 24.0 + 2.0)
-```
+对 `f_blame_true / f_decoy_true / f_good_true / ghi_true / f_jumpy_true / f_jumpy_decoy_true`
+各在 return 表达式末尾追加 `+ u_incom("<name>", t)`（ghi_true 用 `u_incom("ghi", t, 50.0)`
+保持 5% 量级；其余默认 amp=25）。
 
-理由（写进该函数上方注释）：`ε_jumpy = s(T)·A(t)` 不变（跳变/churn/M3 行误差全不受扰）；但真值日变幅 25 使 pred 的 ±A 两支值域重叠——own-pred 样条无法按值分离 ε 符号，防止回归把翻新跳变误吸成 ε_sys（这是对"低 df + 值域重叠 → 偷不走波动"的真实性检验）。
+**不变量核对（写进 commit message）**：ε = pred − true 逐点不变（u 同进 true 与 pred）；
+翻新跳变 J[j] 不变（同一物理 t 相减 u 消掉）；四个模型行误差不变（模型公式只吃
+y/d_blame/w_culprit/v_irred/A_jump）；窗一致性不变（u 是纯 f(t)）。因此 v1/v2 的
+stage 0/1/2/revision 全部既有断言必须逐字保持通过——重生成后若有任何旧断言变化，
+说明改动越界，回查。
 
 - [ ] **Step 3: main() 循环里追加第三组特征与新模型列**
 
@@ -645,7 +679,7 @@ Expected: probe 报 4 模型、9 特征对、mystery_x unmapped；find_bad_rows 
 2. `f_res_culprit`: `sys_frac ≤ 0.3`、`reducibility ≥ 0.5`、`res_var_back > 2×res_var_front`（波动的逐日增长结构保全）；
 3. `f_irreducible`: `reducibility ≤ 0.05`；
 4. `f_blame`: `stability_lambda ≤ 0.3`（day2 一次性崩坏非稳定偏差 → 不剥）且其 ε_res≈raw；
-5. `f_jumpy`: `sys_frac ≤ 0.4`（值域重叠防吸收生效）；
+5. `f_jumpy`: `sys_frac ≤ 0.4`（u 项反退化生效——无 u 时 ε≡pred−true(hod) 会被剥光）；
 6. `skipped_unpaired` 含 `mystery_x`、`n_features == 9`；
 7. `bad_rows_summary.json` 里 pred_M1/ensemble/M3 三模型的全部数值与旧版一致（新特征列/新模型不扰动旧模型行误差）；pred_M4res 的 rmse_192 worst_timestamp = day7 或 day8 的 09:00 行。
 
@@ -705,7 +739,7 @@ git commit -m "feat(pv-feature-blame): golden v3 埋点——f_sys_bias(乘性�
     },
 ```
 
-数值容差按 Task 3 Step 6 实测值校准（约定见「期望值冻结」节）；波动保全的 `res_var_back/res_var_front ≥ 2` 若 DSL 无除法运算，改为分别断言 `res_var_front le <实测上界>` + `res_var_back ge <实测下界>`（两界从实跑取，间隔 ≥2×）。
+数值容差按 Task 3 Step 6 实测值校准（约定见「期望值冻结」节）；`f_irreducible.reducibility` 的 0.05 是模板值——实测因 β·u 混入可能到 ~0.08，按实测+余量收，硬边界 < 0.1 闸线；波动保全的 `res_var_back/res_var_front ≥ 2` 若 DSL 无除法运算，改为分别断言 `res_var_front le <实测上界>` + `res_var_back ge <实测下界>`（两界从实跑取，间隔 ≥2×）。
 
 - [ ] **Step 3: test_blame_golden.py STAGES 加一行**
 
@@ -831,7 +865,7 @@ test_blame_golden.py 的 `BAD_BLAME`：特征元组扩成 9 个（加 f_jumpy/f_
 
 - [ ] **Step 5: manifest stage "2" 期望更新**
 
-- **旧断言处理**：f_blame/f_decoy/f_good 各条**原样保留**（f_blame λ≈0 → ε_res≈raw，数值应基本不动）；f_jumpy×M3 的 `global_spearman between [0.15, 0.45]` 按实跑值重校（值域重叠下吸收有限，预计仍在带内或轻微下移——若移出，加宽下界到实测−0.05 并在 manifest note 里记一句"ε_res 下真值误差路径进一步减弱，翻新轴补位"）。
+- **旧断言处理**：f_blame/f_decoy/f_good 各条**原样保留**（f_blame λ≈0 → ε_res≈raw，数值应基本不动）；f_jumpy×M3 的 `global_spearman between [0.15, 0.45]` 按实跑值重校（真值含 u 项后 own-pred 吸收被压到 β*≈var(sA)/(var(sA)+var(u))，预计仍在带内或轻微下移——若移出，加宽下界到实测−0.05 并在 manifest note 里记一句"ε_res 下真值误差路径进一步减弱，翻新轴补位"）。
 - **新增断言**：
 
 ```json
