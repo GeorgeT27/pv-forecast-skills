@@ -82,7 +82,7 @@
       ]
     },
     "2": {
-      "desc": "特征归因（Task 4 仍是旧逻辑，未接 ε_res——见 Task 5）：f_blame 必须四路被点名且全局 ρ 榜首；f_decoy 误差虽大（>0.9）必须零点名；f_good 零误差；f_jumpy 对 M1 零点名（零耦合），对 M3 是 ρ=0.28<0.3 抓不牢、且零点名——真值误差路径的盲区，revision 轴补位；f_jumpy_decoy 误差最大（25）必须全程零点名。注：Task 3 新增 f_sys_bias/f_res_culprit/f_irreducible 三特征后，f_sys_bias 在 ultra_short×pred_M3 的 global_spearman(0.535) 反超 f_jumpy(0.28)——两者与 pred_M3 无因果耦合（pred_M3 只吃 f_jumpy 的 A(t) 项），是两条独立日增趋势序列的虚假相关，非回归；故不再断言 f_jumpy 是该组合的 ρ 榜首，只断其 ρ 区间与零点名（blamed_rows=0，两条路径都没被误点名）",
+      "desc": "特征归因（Task 4 仍是旧逻辑，未接 ε_res——见 Task 5）：f_blame 必须四路被点名且全局 ρ 榜首；f_decoy 误差虽大（>0.9）必须零点名；f_good 零误差；f_jumpy 对 M1 零点名（零耦合），对 M3 是 ρ=0.28<0.3 抓不牢、且零点名——真值误差路径的盲区，revision 轴补位；f_jumpy_decoy 误差最大（25）必须全程零点名。注：Task 3 新增 f_sys_bias/f_res_culprit/f_irreducible 三特征后，f_sys_bias 在 ultra_short×pred_M3 的 global_spearman(0.535) 反超 f_jumpy(0.28)——两者与 pred_M3 无因果耦合（pred_M3 只吃 f_jumpy 的 A(t) 项），f_sys_bias 与 pred_M3 行误差的伪相关 ρ=0.535 源自 day1 日内行共享 daytime 日内包络（跨日行的 M3 行误差恒等、零秩贡献），零因果耦合；故不再断言 f_jumpy 是该组合的 ρ 榜首，只断其 ρ 区间与零点名（blamed_rows=0，两条路径都没被误点名）。ε_res 化（Task 5）后 f_sys_bias 的特征误差应塌缩，届时评估恢复 ultra_short.pred_M3 argmax==f_jumpy 断言",
       "inputs": ["golden_feature_true.parquet", "feature_pairs.json", "bad_rows_summary.json",
                  "bad_rows_ultra_short_pred_M1.csv", "bad_rows_ultra_short_pred_ensemble.csv",
                  "bad_rows_ultra_short_pred_M3.csv", "bad_rows_short_pred_M3.csv",
