@@ -104,13 +104,22 @@ Stage 3/4/5：Stage 4 反事实改"只换 ε_res"（§7），其余不变
 
 ## 4. Stage 2 点名改动（最小侵入，复用现有两关）
 
-`feature_blame.py` 改 3 处，其余（z/Spearman/共线/blame_score/top_k）逻辑不动：
+`feature_blame.py` 改 4 处，其余（z/Spearman/共线/blame_score/top_k）逻辑不动：
 1. **误差源替换**：`err_mats[feat]` 从 `pred−label` 改为**读 Stage 1.5 的 ε_res 矩阵**
    （`--use-residual` 默认开；缺 decomp 产物则回退原 ε 并在摘要标 `decomp=off`）。
 2. **可约性闸**：点名条件追加 `reducibility_frac ≥ reducibility_min`；不过则 `blamed=False` 且
    `note="irreducible"`。
-3. **报告三栏**：新增 `feature_err_raw / feature_err_sys / feature_err_res / reducibility_frac`，
-   让人看清"多少误差是系统性的、剥掉后还剩多少、可不可约"。z 与 Spearman 都基于 ε_res。
+3. **系统偏差门（代码闸，实现期新增——见下方 ⚠）**：点名条件追加 `sys_frac < sys_frac_max`
+   （`--sys-frac-max` 默认 0.85）；不过则 `blamed=False`、`note="systematic"`。
+4. **报告列**：新增 `feature_err_raw / feature_err_sys / reducibility_frac`（`feature_err` 在
+   `decomp=on` 时**即 ε_res**，不再单列 `feature_err_res`）+ summary 加 `global_spearman_raw`
+   对照。z 与 Spearman 都基于 ε_res。
+
+> ⚠ **实现期发现（2026-07-20，golden 验证暴露）**：只把误差源换成 ε_res **不足以**让被模型
+> 补偿的系统偏差特征洗清——`z=(fe−μ)/σ` 与 Spearman 都是**尺度不变**的，f_sys_bias 的 ε_res
+> 虽塌了 40× 量级（金标准实测 11.83→0.27）但**秩结构不塌**，残影伪相关照过两关点名（raw/res
+> 都点名 3 行，调 α 无效）。所以「系统偏差高的不点名」必须是**显式代码闸**（sys_frac 门），
+> 不能指望 ε_res 化自然实现。这把 §5 原本只写成「人读纪律」的系统偏差门提升为 blamed 条件。
 
 **共线簇**改到 ε_res 向量上算——剥掉公共系统偏差后，虚假共线可能消解，真残差共线才留下。
 
@@ -119,10 +128,13 @@ Stage 3/4/5：Stage 4 反事实改"只换 ε_res"（§7），其余不变
 ## 5. 报告与结论纪律改动
 
 - `blame_summary.json` 每特征加：`sys_frac`（ε_sys 方差占比）、`reducibility_frac`、
-  `stability_lambda`（跨期收缩系数）。
-- `references/blame-discipline.md` 反驳门加两条：
-  - **⑦ 系统偏差门**：ε_sys 占比高（如 >70%）的特征，即便 ε 大也**不得升"假设"**，注明
-    "疑似模型已补偿，需重训才验证"。
+  `stability_lambda`（跨期收缩系数）、`global_spearman_raw`（剥前对照）。
+- `references/blame-discipline.md` 反驳门加两条（**⑦已被 §4 的代码闸落实**：sys_frac ≥
+  `sys_frac_max`（默认 0.85）的特征在 Stage 2 直接 `blamed=False`、note=systematic；纪律层
+  仍保留，供人读时理解「为什么它不该点名」）：
+  - **⑦ 系统偏差门**：ε_sys 占比高（`sys_frac ≥ sys_frac_max`）的特征，即便 raw ε 大也
+    **不点名 / 不得升"假设"**，注明"疑似模型已补偿，需重训才验证"。对照 `global_spearman_raw`
+    可见「剥前会冤枉、剥后洗清」。
   - **⑧ 可约性门**：`irreducible` 特征只描述不点名。
 - `SKILL.md` 常见错误加：❌ 在原始 ε 上点名不剥系统偏差（冤枉被模型吃掉的稳定偏差）。
 
@@ -134,7 +146,7 @@ Stage 3/4/5：Stage 4 反事实改"只换 ε_res"（§7），其余不变
 |---|---|
 | `scripts/feature_decompose.py` | **新**：Stage 1.5，产 `eps_res_*` + `feature_decomp.json` |
 | `scripts/fb_common.py` | 加 `fit_bias_field()`（稳健加性回归）、`stability_shrink()`、`reducibility_frac()`、cyclic/样条基构造 + 时间切分工具；config 加 `decompose` 块 |
-| `scripts/feature_blame.py` | 改 §4 三处 |
+| `scripts/feature_blame.py` | 改 §4 四处（含系统偏差代码闸 `--sys-frac-max`） |
 | `scripts/run_orient.py` | 阶段表插 Stage 1.5，前置校验 `feature_decomp.json` |
 | `references/blame-methods.md` | 加"ε_sys/ε_res 分解 + 可约性"节 |
 | `references/blame-discipline.md` | 加反驳门 ⑦⑧ |
