@@ -29,7 +29,8 @@
                 "embargo": "48h",               # 前/后段稳定性切分的重叠窗隔离（=192 步）
                 "max_orders_hod": 3, "max_orders_doy": 2, "n_knots": 4,   # df 上限
                 "alpha": 1e-3, "fit_cap": 400000,   # 岭系数 / 拟合点数上限（等距抽样）
-                "reducibility_min": 0.1},       # Stage 2 可约性闸：低于此不点名
+                "reducibility_min": 0.1,        # Stage 2 可约性闸：低于此不点名
+                "sys_frac_max": 0.85},          # 系统偏差门：sys_frac ≥ 此值不点名（模型已补偿的稳定偏差）
   "api": {"endpoint": "【待补】", "confirmed": false,
           "neighbor_swap_confirmed": false,   # neighbor-swap 模式单独确认（拼接序列可能被服务端拒）
           "timeout_s": 30, "batch_size": 8}

@@ -216,7 +216,9 @@ def main():
 
     pd.DataFrame(report_rows).to_csv(args.out, index=False)
     fb.dump_json(args.summary, {"params": {"z_hi": args.z_hi, "spearman_min": args.spearman_min,
-                                           "top_k": args.top_k, "decomp": decomp_mode},
+                                           "top_k": args.top_k, "decomp": decomp_mode,
+                                           "reducibility_min": args.reducibility_min,
+                                           "sys_frac_max": args.sys_frac_max},
                                 "features": [p["feature"] for p in pairs], **summary})
 
     print(f"[feature_blame] 特征 ×{len(pairs)}   z_hi={args.z_hi} ρ_min={args.spearman_min} "
