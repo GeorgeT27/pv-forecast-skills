@@ -58,9 +58,34 @@ python3 row_analysis.py --model pred_M1 --worst                        # 该模�
 - **核心**：排在最上、`z` 最大的特征，就是这行最反常的可疑元凶。
   注意「一贯就很坏」的特征 `z≈0` 不会被点（它没变反常），这正是「跟自身历史比」的意义。
 
+## 另一套：每站预测 vs 真实曲线（`station_power_rmse.py`，不同数据契约）
+
+用于「宽表 input + `dtime×station` 预测表」这套输入，**每站产出若干张两线对比图**：
+
+- **Power**：预测功率（predict 表 `dtime×站列`）vs 真实功率（input 的 `observe_power_future`，list）。
+- **特征**：预测 vs 真值，二者都在 input 宽表里（list 列）。默认 1 张 `GHI`
+  = `GHI_SOLARGIS_predict` vs `GHI_real_future`；`--feature-pairs` 可加更多
+  （`GHI_real_future` 是这些预测量的公共真值 label）。
+
+**时间对齐**：input 某行 `timestamp_win=T`，任意 list 列第 k 个元素时间 = `T+15min×(k+1)`
+（首元素=T+15min）。同站各窗摊平、按绝对时间 groupby 去重成连续序列；power 的预测再与
+predict 表 `dtime` 对齐。
+
+**鲁棒**：每张图独立成败——某列缺失或**某站**该列全空 → 只跳那一张并告警，power 与其它图照出，绝不整体报错。
+
+```bash
+python3 station_power_rmse.py --input input.parquet --predict predict.parquet --out-dir out \
+  [--drop-night --night-end-hour 5]   # 去掉每天 00:00–05:00（RMSE 也按去掉后算）
+  [--tick-hours 1]                     # x 轴每几小时一个刻度（长跨度可调大防糊）
+  [--feature-pairs "GHI_SOLARGIS_predict:GHI_real_future:GHI,ssrd_pos_1_predict:GHI_real_future:ssrd1"]
+```
+产物：`out/` 下每站 `station_<名>_Power.png` / `station_<名>_<特征>.png`（图宽随点数自适应、
+标题含站名+起始时间戳）+ `station_power_rmse.csv` + `station_feature_rmse.csv`。
+
 ## 组件
 
-- `rd_common.py` —— 读表 / 配对 / RMSE / 统计块 / 偏离度（两脚本共用）。
+- `rd_common.py` —— 读表 / 配对 / RMSE / 统计块 / 偏离度（单行诊断两脚本共用）。
 - `build_baseline.py` —— 生成 `baseline.json`。
 - `row_analysis.py` —— 单行诊断。
-- `test_row_diagnostic.py` —— 自造确定性小数据的单测（`python3 -m pytest`）。
+- `station_power_rmse.py` —— 每站预测 vs 真实曲线（宽表契约，独立自包含）。
+- `test_row_diagnostic.py` / `test_station_power_rmse.py` —— 自造确定性小数据的单测（`python3 -m pytest`）。
