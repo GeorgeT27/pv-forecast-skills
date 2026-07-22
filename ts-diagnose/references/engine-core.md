@@ -16,6 +16,12 @@ python3 "<ENGINE>/scripts/orient.py" --goto 3                        # 直达校
 
 **Step 0.5（可选）**：orient 发现 project-context 时会列出实验线——AskUserQuestion 问用户是否用某条预填；同意则把实验线 json 路径写进 `config.experiment_line`，orient 自动合并已填字段（【待补】不搬、已填不覆盖），对应问题标 ✓实验线。运行中补齐的【待补】路径按仓库纪律**补写回实验线 json**。
 
+**Step 0.75：材料盘点（playbook 声明了 materials 时）**：orient 报「必需材料未就绪」→
+按 `references/intake.md` 盘点：一次多选 AskUserQuestion（checklist + 「还有别的吗」
+开放项）→ 逐材料追问模板补齐路径/格式/schema（y 列、时间列、id 列——猜错污染全部下游，
+必问）→ 落 `config.materials`（status 三值；用户确认没有 = absent-confirmed，required
+材料降级须用户再确认后写 degraded_ok）。材料状态驱动 `material:` DSL（变体/前置/skip_if）。
+
 ## 提问纪律（一等公民——本引擎与专用技能的最大差异）
 
 引擎面向没见过的任务，**不许用假设填补不确定**。细则见 `question-discipline.md`，硬规则：
@@ -33,6 +39,11 @@ python3 "<ENGINE>/scripts/orient.py" --goto 3                        # 直达校
 - **生成闸**：playbook 的 `golden/manifest.json` 覆盖到的阶段，脚本必须先过 `scripts/gen_gate.py`（静态检查 + 在结果已知的金标准输入上跑一遍），PASS 才许碰真实数据；FAIL → 改脚本不改期望。闸报告落工作目录 `gate_reports/`。
 - **事实阶段 ⏸**：playbook 标 `pause_after` 的事实提取阶段产「现象清单」（观察+数字+来源，**禁机制语言**），完成后停下向用户汇报，等用户点名要深挖的项再进结论阶段。
 - **上下文三分支**：playbook 声明的外部上下文（contexts）absent 时必须先问用户（要不要先建立/嵌入跑），linked 时核验 marker 文件才消费，declined 时结论注明缺失。
+- **嵌入执行 provider skill**：context 声明了 `provider_skill` 且 orient 给出嵌入提示 →
+  AskUserQuestion 问用户要不要现在生产（列大致成本）。同意 → **主 agent 内联读该技能的
+  SKILL.md 完整执行**（保留提问权；不经 subagent——subagent 无提问权），产物落盘、按
+  marker_files 核验、写回 config 的 workdir_key/status_key=linked，PROGRESS.md 记
+  「嵌入执行 <skill> 开始/完成」两行，回来重跑 orient 继续主流程。拒绝 → status_key=declined。
 - **subagent 编排**：重活（大日志解析、批量计算、逐产物事实提取）外包，brief 模板见 `subagent-briefs.md`；分片各写各的 `--out`，主 agent 合并；`diagnose_config/diagnose_state/PROGRESS/FINDINGS` 只由主 agent 写。
 - **上下文预算**：产物自足（json 带完整数字与形状描述），判读读 json 不读 PNG、不读原始大文件；每阶段落盘可断点续跑。
 
@@ -56,6 +67,10 @@ python3 "<ENGINE>/scripts/orient.py" --goto 3                        # 直达校
 - ❌ 上下文 [absent] 不问用户就开跑，或 linked 时不核验 marker 就消费。
 - ❌ 用户的任务其实命中专用技能（见 SKILL.md 路由优先级与 description 负面清单）却用引擎从头问一遍。
 - ❌ 忘了把运行中补齐的实验线【待补】路径写回 project-context（下次还得问）。
+- ❌ orient 报「必需材料未就绪」却跳过盘点直接开工，或材料 unknown 时按"大概有"处理
+  （unknown ≠ absent-confirmed：前者必须问，后者才允许走确认过的降级）。
+- ❌ 嵌入执行 provider skill 时丢给 subagent（其流程含必须用户裁决的问题），或跑完
+  不写 marker/config 回填就继续（下次 orient 仍报 absent，白跑）。
 
 ## 运行后回顾（每次实跑收尾必做）
 
