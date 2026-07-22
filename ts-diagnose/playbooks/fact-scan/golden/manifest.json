@@ -1,0 +1,18 @@
+{
+  "playbook": "fact-scan",
+  "note": "精简金标准：体检=复用 chartbook 预写脚本，此处钉两张代表图（分解类+对比类）的关键数字；各图本体由 chartbook 自带 golden 闸住。改期望先改 make_golden.py。",
+  "planted": {"a_bad_month": "2024-02", "oracle_mean": 1.25},
+  "stages": {
+    "1": {
+      "desc": "代表图关键数字：A 的 argmax 单元格与 oracle 均值",
+      "inputs": ["predictions.csv"],
+      "args": ["--pred", "predictions.csv", "--out-eb", "error-breakdown.json", "--out-og", "oracle-gap.json"],
+      "expect": [
+        {"file": "error-breakdown.json", "path": "models.A.argmax_cell.month", "op": "eq", "value": "2024-02"},
+        {"file": "error-breakdown.json", "path": "models.A.argmax_cell.rmse", "op": "between", "value": [1.99, 2.01]},
+        {"file": "oracle-gap.json", "path": "mean_rmse.oracle", "op": "between", "value": [1.24, 1.26]},
+        {"file": "oracle-gap.json", "path": "oracle_pick_share.A", "op": "between", "value": [0.45, 0.55]}
+      ]
+    }
+  }
+}
