@@ -177,3 +177,14 @@ def test_merge_profile_materials_absent_key():
     cfg = {}
     res = ec.merge_profile(cfg, prof, "2026-07-22")
     assert res["merged_materials"] == []
+
+
+# ---------------------------------------------------------------- intake.md 交叉校验
+def test_intake_doc_covers_all_material_ids():
+    doc = os.path.join(os.path.dirname(SCRIPTS_DIR), "references", "intake.md")
+    text = open(doc, encoding="utf-8").read()
+    for mid in ec.MATERIAL_IDS:
+        assert f"## `{mid}`" in text, f"intake.md 缺材料 '{mid}' 的小节"
+    for kw in ("absent-confirmed", "degraded_ok", "还有别的", "sample_rows",
+               "y_col", "对账"):
+        assert kw in text, f"intake.md 缺关键纪律词 '{kw}'"
