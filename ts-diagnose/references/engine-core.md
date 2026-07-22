@@ -36,6 +36,13 @@ python3 "<ENGINE>/scripts/orient.py" --goto 3                        # 直达校
 
 - **阶段由 playbook 定义**（frontmatter，规范见 `playbooks/_playbook-spec.md`）；orient 是通用求值器。推进 = 照 playbook 正文该阶段的菜谱做。
 - **分析代码运行时生成**：引擎不带分析脚本。按菜谱把脚本写进工作目录 `analysis_scripts/`，**每个脚本先过菜谱声明的验证步**（对账/合成小样/植入回收），验证结果记 PROGRESS.md——没验证记录的脚本产出不可引用，crystallize 也不快照它。
+
+  **chartbook 豁免**：chartbook（`<ENGINE>/chartbook/`）已覆盖的图**必须**直接调用其
+  预写脚本 `chartbook/scripts/chart_*.py`，禁止现场重写同类图；运行时生成只用于
+  chartbook 没有的 playbook 特有分析。现场唯一要写的画图相关代码是薄适配器
+  `analysis_scripts/adapter.py`（用户数据 → 规范长表，样例见
+  `chartbook/golden/example_adapter/`），先过对账两关（行数守恒 + 抽 3 窗核对）
+  再喂图脚本，对账记录写 PROGRESS.md。
 - **生成闸**：playbook 的 `golden/manifest.json` 覆盖到的阶段，脚本必须先过 `scripts/gen_gate.py`（静态检查 + 在结果已知的金标准输入上跑一遍），PASS 才许碰真实数据；FAIL → 改脚本不改期望。闸报告落工作目录 `gate_reports/`。
 - **事实阶段 ⏸**：playbook 标 `pause_after` 的事实提取阶段产「现象清单」（观察+数字+来源，**禁机制语言**），完成后停下向用户汇报，等用户点名要深挖的项再进结论阶段。
 - **上下文三分支**：playbook 声明的外部上下文（contexts）absent 时必须先问用户（要不要先建立/嵌入跑），linked 时核验 marker 文件才消费，declined 时结论注明缺失。

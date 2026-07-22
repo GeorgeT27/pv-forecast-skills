@@ -86,3 +86,29 @@ def test_layer1_playbooks_independent():
         for b in PLAYBOOK_IDS:
             if a != b:
                 assert b not in text, f"playbook {a} 内联引用了 {b}"
+
+
+def test_chartbook_scripts_no_cross_skill_imports():
+    """chartbook 是引擎级共享库：脚本不得引用 playbook 或任何专用技能目录。"""
+    import glob
+    forbidden = ("pv-result-analysis", "pv_result_analysis",
+                 "pv-feature-blame", "pv-station-influence",
+                 "pv-model-analysis", "playbooks/")
+    scripts = glob.glob(os.path.join(ENGINE_DIR, "chartbook", "scripts", "*.py"))
+    assert scripts, "chartbook/scripts 不应为空"
+    for path in scripts:
+        text = open(path, encoding="utf-8").read()
+        for bad in forbidden:
+            assert bad not in text, f"{os.path.basename(path)} 引用了 {bad}"
+
+
+def test_chartbook_recipes_have_scripts():
+    """每个 recipe 必有同名预写脚本（chart_<蛇形id>.py）。"""
+    import glob
+    recipes = glob.glob(os.path.join(ENGINE_DIR, "chartbook", "recipes", "*.md"))
+    assert len(recipes) >= 9, "A-C 组 9 个 recipe 应已就位"
+    for path in recipes:
+        rid = os.path.splitext(os.path.basename(path))[0]
+        script = os.path.join(ENGINE_DIR, "chartbook", "scripts",
+                              f"chart_{rid.replace('-', '_')}.py")
+        assert os.path.exists(script), f"recipe {rid} 缺预写脚本"
