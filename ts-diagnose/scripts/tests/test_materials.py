@@ -64,6 +64,18 @@ def test_frontmatter_rejects_required_optional_overlap(tmp_path):
             tmp_path, "materials:\n  required: [predict]\n  optional: [predict]\n")
 
 
+def test_frontmatter_rejects_materials_not_a_dict(tmp_path):
+    """materials: [predict, truth]（列表而非 dict）→ 须报清晰错，而非 AttributeError。"""
+    with pytest.raises(ValueError, match="_playbook-spec.md"):
+        fm_with_materials(tmp_path, "materials: [predict, truth]\n")
+
+
+def test_frontmatter_rejects_required_not_a_list(tmp_path):
+    """required: predict（字符串而非 list）→ 否则会被当成字符逐个遍历，须报清晰错。"""
+    with pytest.raises(ValueError, match="_playbook-spec.md"):
+        fm_with_materials(tmp_path, "materials:\n  required: predict\n")
+
+
 # ---------------------------------------------------------------- 阻塞
 def test_blocking_materials(tmp_path):
     fm = fm_with_materials(
@@ -83,6 +95,12 @@ def test_blocking_materials(tmp_path):
     # 全 unknown → required 逐个报 unknown
     assert ec.blocking_materials(fm, {}) == [
         ("predict", "unknown"), ("truth", "unknown"), ("training_log", "unknown")]
+    # degraded_ok 须严格是 True（is 判等），字符串 "false" 是 truthy 但不是豁免 → 仍阻塞
+    cfg3 = {"materials": {
+        "predict": {"status": "present"},
+        "truth": {"status": "absent-confirmed", "degraded_ok": "false"},
+        "training_log": {"status": "present"}}}
+    assert ec.blocking_materials(fm, cfg3) == [("truth", "absent")]
 
 
 def test_existing_playbooks_still_load():
@@ -157,6 +175,34 @@ def test_frontmatter_rejects_bad_trigger_material(tmp_path):
         ec.load_frontmatter(str(p))
 
 
+def test_frontmatter_rejects_trigger_material_not_in_declared_materials(tmp_path):
+    """playbook 声明了 materials 但 context 的 trigger_material 不在 required/optional 里
+    → 该材料状态永远不会被盘点，embed hint 永远不触发，须在加载期就报错。"""
+    p = tmp_path / "pb.md"
+    p.write_text("---\nid: x\nname: x\ngoal: x\n"
+                 "materials:\n  required: [predict]\n"
+                 "stages:\n"
+                 "  - id: 0\n    name: a\n    done_when: {artifacts: ['a.json']}\n"
+                 "contexts:\n"
+                 "  - id: c\n    name: c\n    workdir_key: w\n    status_key: s\n"
+                 "    trigger_material: model_code\n---\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="materials.required/optional"):
+        ec.load_frontmatter(str(p))
+
+
+def test_frontmatter_no_materials_key_trigger_material_still_loads(tmp_path):
+    """playbook 完全没有 materials 键（legacy/partial playbook）→ trigger_material
+    不做"须属已声明材料集"的校验，只做合法材料 id 校验（旧行为不变）。"""
+    p = tmp_path / "pb.md"
+    p.write_text("---\nid: x\nname: x\ngoal: x\nstages:\n"
+                 "  - id: 0\n    name: a\n    done_when: {artifacts: ['a.json']}\n"
+                 "contexts:\n"
+                 "  - id: c\n    name: c\n    workdir_key: w\n    status_key: s\n"
+                 "    trigger_material: model_code\n---\n", encoding="utf-8")
+    fm = ec.load_frontmatter(str(p))
+    assert fm["contexts"][0]["trigger_material"] == "model_code"
+
+
 # ---------------------------------------------------------------- profile 固化
 def test_merge_profile_materials():
     prof = {"profile_version": ec.PROFILE_VERSION, "playbook": "x",
@@ -170,6 +216,19 @@ def test_merge_profile_materials():
     assert cfg["materials"]["predict"]["status"] == "present"
     assert cfg["materials"]["predict"]["source"] == "profile"
     assert cfg["materials"]["truth"]["status"] == "absent-confirmed"  # 原样保留
+
+
+def test_merge_profile_materials_strips_degraded_ok():
+    """degraded_ok 是每次运行的用户降级豁免，不得由 profile 固化带入——
+    merge 时强制剥除，即便 profile 条目里带了它。"""
+    prof = {"profile_version": ec.PROFILE_VERSION, "playbook": "x",
+            "materials": {
+                "training_log": {"status": "absent-confirmed", "degraded_ok": True}}}
+    cfg = {}
+    res = ec.merge_profile(cfg, prof, "2026-07-22")
+    assert res["merged_materials"] == ["training_log"]
+    assert "degraded_ok" not in cfg["materials"]["training_log"]
+    assert cfg["materials"]["training_log"]["status"] == "absent-confirmed"
 
 
 def test_merge_profile_materials_absent_key():

@@ -110,6 +110,16 @@ def _validate_frontmatter(fm, md_path):
     if len(fm.get("evidence_lines") or []) >= 2 and not fm.get("upgrade_rule"):
         raise ValueError(f"{md_path} 有 ≥2 条 evidence_lines 但缺 upgrade_rule")
     mats = fm.get("materials") or {}
+    if not isinstance(mats, dict):
+        raise ValueError(
+            f"{md_path} materials 须为 dict（形如 {{required: [...], optional: [...]}}）"
+            f"，实际是 {type(mats).__name__}（见 _playbook-spec.md）")
+    for key in ("required", "optional"):
+        v = mats.get(key)
+        if v is not None and not isinstance(v, list):
+            raise ValueError(
+                f"{md_path} materials.{key} 须为 list，实际是 {type(v).__name__}"
+                f"（见 _playbook-spec.md）")
     req, opt = list(mats.get("required") or []), list(mats.get("optional") or [])
     for mid in req + opt:
         if mid not in MATERIAL_IDS:
@@ -119,12 +129,18 @@ def _validate_frontmatter(fm, md_path):
     overlap = set(req) & set(opt)
     if overlap:
         raise ValueError(f"{md_path} 材料 {sorted(overlap)} 既是 required 又是 optional")
+    has_materials_key = "materials" in fm
     for cx in fm.get("contexts") or []:
         trig = cx.get("trigger_material")
         if trig and trig not in MATERIAL_IDS:
             raise ValueError(
                 f"{md_path} context '{cx.get('id')}' 的 trigger_material='{trig}' "
                 f"不是合法材料 id（见 MATERIAL_IDS）")
+        if trig and has_materials_key and trig not in req + opt:
+            raise ValueError(
+                f"{md_path} context '{cx.get('id')}' 的 trigger_material='{trig}' "
+                f"未声明在 materials.required/optional 里——其状态永远无法盘点，"
+                f"embed hint 永远不会触发，须补进 materials.required/optional")
 
 
 def find_playbook(name):
@@ -348,7 +364,7 @@ def blocking_materials(fm, cfg):
             out.append((mid, "unknown"))
         elif s == "absent-confirmed":
             rec = ((cfg or {}).get("materials") or {}).get(mid) or {}
-            if not rec.get("degraded_ok"):
+            if rec.get("degraded_ok") is not True:
                 out.append((mid, "absent"))
     return out
 
@@ -462,7 +478,10 @@ def merge_profile(cfg, prof, date_stamp):
         mats = cfg.setdefault("materials", {})
         for mid, rec in prof["materials"].items():
             if mid in MATERIAL_IDS and mid not in mats and isinstance(rec, dict):
-                mats[mid] = {**rec, "source": "profile", "date": date_stamp}
+                merged_rec = {**rec, "source": "profile", "date": date_stamp}
+                # degraded_ok 是每次运行的用户降级豁免，不得由固化 profile 带入——强制剥除。
+                merged_rec.pop("degraded_ok", None)
+                mats[mid] = merged_rec
                 merged_mats.append(mid)
     if version_ok:
         qs = cfg.setdefault("questions", {})

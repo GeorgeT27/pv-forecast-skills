@@ -95,3 +95,11 @@ def test_legacy_playbook_no_materials_section(tmp_path):
                  str(tmp_path / "diagnose_config.json"))
     out = run_orient(tmp_path)
     assert "材料盘点" not in out
+
+
+def test_goto_still_gated_when_materials_unknown(tmp_path):
+    """--goto 直达阶段不得绕过材料闸：全部材料 unknown 时，即便 --goto 0（demo playbook
+    唯一阶段），仍要报未就绪、不许开工。"""
+    out = run_orient(setup_pb(tmp_path), "--goto", "0")
+    assert "⚠ 必需材料未就绪" in out
+    assert "可开工" not in out
