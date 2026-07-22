@@ -195,7 +195,8 @@ bridge_hooks: >                      # 桥接钩子：形状描述符 → 架构
 2. JSON 预置 `bridge_hooks` 相关的形状描述符字段，让 pv-model-analysis 的桥接假设
    （H-ID）能直接对上号。
 3. 每个 recipe 带验证步（合成植入回收）；被 playbook golden 覆盖到的照常走 gen_gate。
-4. 画图脚本按引擎纪律运行时生成进工作目录 `analysis_scripts/`，recipe 是菜谱不是现成脚本。
+4. 图脚本预写在 `chartbook/scripts/`（本节预写决策）；运行时生成进 `analysis_scripts/` 的
+   只有薄适配器 `adapter.py`（用户数据 → 规范长表），不含任何画图代码。
 
 ### v1 recipe 集（五组；A-C 组核心先行，D-E 组按材料驱动同轮实现、批次靠后）
 
