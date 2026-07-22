@@ -90,3 +90,36 @@ def test_existing_playbooks_still_load():
     for pid in ("training-sufficiency", "robustness", "feature-importance"):
         fm = ec.load_frontmatter(ec.find_playbook(pid))
         assert ec.materials_of(fm) == ([], [])
+
+
+# ---------------------------------------------------------------- material: DSL
+def test_material_dsl(tmp_path):
+    fm = fm_with_materials(tmp_path, "materials:\n  required: [predict]\n"
+                                     "  optional: [model_code]\n")
+    cfg = {"materials": {"predict": {"status": "present"},
+                         "model_code": {"status": "absent-confirmed"}}}
+    ctx = {"cfg": cfg, "fm": fm, "state": {}}
+    assert ec.check("material:predict", ctx) is True
+    assert ec.check("material:model_code", ctx) is False      # absent ≠ present
+    assert ec.check("material:training_log", ctx) is False    # unknown ≠ present
+    assert ec.check("not material:model_code", ctx) is True
+    with pytest.raises(ValueError, match="未知材料"):
+        ec.check("material:predikt", ctx)
+
+
+def test_material_dsl_drives_variant(tmp_path):
+    """材料驱动变体解锁：有 model_code 才激活机制归因类阶段（spec §2 orient 改动）。"""
+    p = tmp_path / "pb.md"
+    p.write_text("---\nid: x\nname: x\ngoal: x\n"
+                 "materials:\n  required: [predict]\n  optional: [model_code]\n"
+                 "stages:\n"
+                 "  - id: 0\n    name: a\n    done_when: {artifacts: ['a.json']}\n"
+                 "  - id: 1\n    name: b\n    done_when: {artifacts: ['b.json']}\n"
+                 "variants:\n"
+                 "  - id: model-side\n    when: 'material:model_code'\n"
+                 "    unlocks_stages: [1]\n---\n", encoding="utf-8")
+    fm = ec.load_frontmatter(str(p))
+    ctx = {"cfg": {}, "fm": fm, "state": {}}
+    assert ec.variant_active(fm, ctx) == {"model-side": False}
+    ctx["cfg"] = {"materials": {"model_code": {"status": "present"}}}
+    assert ec.variant_active(fm, ctx) == {"model-side": True}

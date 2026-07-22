@@ -196,6 +196,11 @@ def check(expr, ctx):
             raise ValueError(f"DSL 引用了未声明的问题 '{qid}'")
         code, _ = question_status(q, ctx)
         return code != "unanswered"
+    if expr.startswith("material:"):
+        mid = expr[len("material:"):]
+        if mid not in MATERIAL_IDS:
+            raise ValueError(f"DSL 引用了未知材料 id '{mid}'（合法集见 MATERIAL_IDS）")
+        return material_status(ctx["cfg"], mid) == "present"
     raise ValueError(f"未知 DSL 表达式：{expr}")
 
 
