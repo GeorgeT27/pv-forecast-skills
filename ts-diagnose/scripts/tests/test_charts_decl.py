@@ -83,3 +83,14 @@ def test_orient_prints_chart_availability(tmp_path):
     out = proc.stdout
     assert "✓可画" in out and "error-breakdown" in out
     assert "✗缺材料" in out and "feature-error-conditional" in out
+
+
+def test_all_real_playbooks_frontmatter_loads():
+    """终审 I-1 守卫：全部真实 playbook 的 frontmatter 必须能过校验加载——
+    charts 声明的 recipe 改名/被删时 CI 立刻红，而不是等用户跑 orient 才炸。"""
+    import glob
+    paths = sorted(glob.glob(os.path.join(ENGINE, "playbooks", "*", "playbook.md")))
+    assert len(paths) >= 5, "五个 playbook 应已就位"
+    for p in paths:
+        fm = ec.load_frontmatter(p)
+        assert fm.get("id"), f"{p} frontmatter 无 id"
