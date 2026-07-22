@@ -265,6 +265,15 @@ orient 按 `needs_materials` 报每张图可用/不可用；材料不够的图�
 （不算失败）。robustness / training-sufficiency 后续可各自声明 `rolling-stability`
 等——复用点即在此。
 
+**画图决策不需要用户提示**（三层自动判定）：
+
+1. **该看哪些**：playbook 阶段 `charts` 声明——「这个诊断目标该画什么图」是 playbook
+   知识，不依赖用户点名；
+2. **能画哪些**：recipe `needs_materials` × intake 盘点结果，orient 自动判定；
+   缺材料的图自动跳过并在现象清单注明「因缺 <材料> 未画」，不问用户；
+3. **用户点名只是补充**：`pause_after` 停顿汇报时附「已画/跳过」清单，用户可
+   追加点图或调参数（top-N、切片粒度）——可选，不是流程前提。
+
 ## 5. 组件④ model-comparison playbook
 
 `playbooks/model-comparison/`（独立目录，Layer 1 纪律照旧）。
