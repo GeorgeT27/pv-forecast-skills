@@ -119,6 +119,12 @@ def _validate_frontmatter(fm, md_path):
     overlap = set(req) & set(opt)
     if overlap:
         raise ValueError(f"{md_path} 材料 {sorted(overlap)} 既是 required 又是 optional")
+    for cx in fm.get("contexts") or []:
+        trig = cx.get("trigger_material")
+        if trig and trig not in MATERIAL_IDS:
+            raise ValueError(
+                f"{md_path} context '{cx.get('id')}' 的 trigger_material='{trig}' "
+                f"不是合法材料 id（见 MATERIAL_IDS）")
 
 
 def find_playbook(name):
@@ -361,6 +367,20 @@ def context_status(cx, ctx):
                    and not os.path.exists(os.path.join(workdir, m))]
         return {"status": "linked", "workdir": workdir, "missing_markers": missing}
     return {"status": "absent"}
+
+
+def context_embed_hint(cx, cfg):
+    """absent 上下文的嵌入执行提示：声明了 provider_skill 且触发材料到位 → 文案；
+    否则 None。执行本身（读 provider 的 SKILL.md 内联跑）是主 agent 的活，见
+    engine-core「嵌入执行 provider skill」。"""
+    prov = cx.get("provider_skill")
+    if not prov:
+        return None
+    trig = cx.get("trigger_material")
+    if trig and material_status(cfg, trig) != "present":
+        return None
+    return (f"可嵌入生产：AskUserQuestion 问用户要不要现在内联执行技能「{prov}」"
+            f"生成本上下文（跑完写 marker 回填 config，纪律见 engine-core「嵌入执行」）")
 
 
 # ---------------------------------------------------------------- project-context

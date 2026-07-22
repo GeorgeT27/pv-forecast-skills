@@ -123,3 +123,35 @@ def test_material_dsl_drives_variant(tmp_path):
     assert ec.variant_active(fm, ctx) == {"model-side": False}
     ctx["cfg"] = {"materials": {"model_code": {"status": "present"}}}
     assert ec.variant_active(fm, ctx) == {"model-side": True}
+
+
+# ---------------------------------------------------------------- provider_skill
+CX = {"id": "model-profile", "name": "模型参考档案",
+      "workdir_key": "modelmap_dir", "status_key": "modelmap_status",
+      "marker_files": ["models.md"], "on_absent": "ask",
+      "provider_skill": "pv-model-analysis", "trigger_material": "model_code"}
+
+
+def test_context_embed_hint():
+    cfg_has = {"materials": {"model_code": {"status": "present"}}}
+    hint = ec.context_embed_hint(CX, cfg_has)
+    assert "pv-model-analysis" in hint and "嵌入" in hint
+    # 触发材料不 present → 不提议嵌入
+    assert ec.context_embed_hint(CX, {}) is None
+    # 无 provider_skill → 永远 None
+    cx2 = {k: v for k, v in CX.items() if k != "provider_skill"}
+    assert ec.context_embed_hint(cx2, cfg_has) is None
+    # 无 trigger_material → 只要有 provider_skill 就提议
+    cx3 = {k: v for k, v in CX.items() if k != "trigger_material"}
+    assert ec.context_embed_hint(cx3, {}) is not None
+
+
+def test_frontmatter_rejects_bad_trigger_material(tmp_path):
+    p = tmp_path / "pb.md"
+    p.write_text("---\nid: x\nname: x\ngoal: x\nstages:\n"
+                 "  - id: 0\n    name: a\n    done_when: {artifacts: ['a.json']}\n"
+                 "contexts:\n"
+                 "  - id: c\n    name: c\n    workdir_key: w\n    status_key: s\n"
+                 "    trigger_material: nope\n---\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="trigger_material"):
+        ec.load_frontmatter(str(p))
