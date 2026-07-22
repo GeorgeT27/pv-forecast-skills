@@ -21,6 +21,8 @@ import matplotlib.pyplot as plt  # noqa: E402
 REQUIRED_COLS = ("window_ts", "unit_id", "model", "horizon_step",
                  "y_true", "y_pred")
 
+FEATURE_COLS = ("window_ts", "unit_id", "feature", "horizon_step", "f_pred")
+
 
 def setup_font():
     for font in ("Arial Unicode MS", "PingFang SC", "SimHei",
@@ -42,6 +44,22 @@ def load_predictions(path):
     df = df.copy()
     df["window_ts"] = pd.to_datetime(df["window_ts"])
     df["err"] = df["y_pred"] - df["y_true"]
+    return df
+
+
+def load_features(path):
+    """features 长表：一行 = 一特征一步；f_true 可缺列（缺则补 NaN，质量分箱自动降级）。"""
+    p = Path(path)
+    df = pd.read_parquet(p) if p.suffix == ".parquet" else pd.read_csv(p)
+    missing = [c for c in FEATURE_COLS if c not in df.columns]
+    if missing:
+        raise ValueError(
+            f"features 长表缺列 {missing}；需要 {list(FEATURE_COLS)}(+可选 f_true)"
+            "（适配器契约见 chartbook/_recipe-spec.md）")
+    df = df.copy()
+    if "f_true" not in df.columns:
+        df["f_true"] = np.nan
+    df["window_ts"] = pd.to_datetime(df["window_ts"])
     return df
 
 
