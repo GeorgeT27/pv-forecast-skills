@@ -1,6 +1,6 @@
 ---
 name: pv-result-analysis
-description: 光伏功率预测（PV power forecasting）结果评估与分析。当用户需要评估模型预测结果、对比 predicted.parquet 与 true_label.parquet、运行 metric.py 计算准确率指标（ods_ultra_short / ultra_short / ods_short / short / 48hours 五种口径）、生成 M1-M4 及 ensemble 的月度指标 Excel，或诊断准确率变化（如"为什么6月预测准确率比5月下降"）时，务必使用本技能。凡是涉及光伏预测结果评估、指标计算、误差归因、月度/时段对比分析的任务，即使用户没有明确说"结果分析"，也应使用本技能。**本技能自带续跑能力**：每次进入先跑 run_orient.py 自动定位阶段、跳过已完成步骤、支持 --goto 直达某阶段——所以"指标已经算过了/接着上次分析/直接画图做相关性/现象已经看过了/做深度分析结合电站和模型解释为什么/深入归因某个现象/进 Stage 4/给主管写个总结写 executive summary/结论报告"等续跑或直达场景也都用本技能（不再需要单独的续跑技能）。路由优先级：本技能是专用技能，在上述场景内优先于泛化引擎 ts-diagnose，但让位于覆盖同场景的已固化代理技能；训练充分性/鲁棒性/变量重要性等新诊断目标不属于本技能 → ts-diagnose；预测特征（NWP/气象预报）质量归因——"哪些 feature 导致指标变差"（有 feature_true 对照、可反事实验证）→ pv-feature-blame。
+description: 光伏功率预测（PV power forecasting）结果评估与分析。当用户需要评估模型预测结果、对比 predicted.parquet 与 true_label.parquet、运行 metric.py 计算准确率指标（ods_ultra_short / ultra_short / ods_short / short / 48hours 五种口径）、生成 M1-M4 及 ensemble 的月度指标 Excel，或诊断准确率变化（如"为什么6月预测准确率比5月下降"）时，务必使用本技能。凡是涉及光伏预测结果评估、指标计算、误差归因、月度/时段对比分析的任务，即使用户没有明确说"结果分析"，也应使用本技能。**本技能自带续跑能力**：每次进入先跑 run_orient.py 自动定位阶段、跳过已完成步骤、支持 --goto 直达某阶段——所以"指标已经算过了/接着上次分析/直接画图做相关性/现象已经看过了/做深度分析结合电站和模型解释为什么/深入归因某个现象/进 Stage 4/给主管写个总结写 executive summary/结论报告"等续跑或直达场景也都用本技能（不再需要单独的续跑技能）。路由优先级：本技能是专用技能，在上述场景内优先于泛化引擎 ts-diagnose，但让位于覆盖同场景的已固化代理技能；训练充分性/鲁棒性/变量重要性等新诊断目标不属于本技能 → ts-diagnose；预测特征（NWP/气象预报）质量归因——"哪些 feature 导致指标变差"（有 feature_true 对照、可反事实验证）→ pv-feature-blame。非标准格式/每模型一个文件/任意模型集合的模型对比归因 → 用 ts-diagnose 的 model-comparison。
 ---
 
 # 光伏功率预测结果分析

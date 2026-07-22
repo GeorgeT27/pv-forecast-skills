@@ -30,7 +30,8 @@ def test_engine_is_fallback_with_negative_list():
 
 def test_engine_keeps_trigger_phrases():
     d = description_of(ENGINE_DIR)
-    for phrase in ("训练是否充分", "batch 不足", "loss 震荡", "稳不稳", "影响最大"):
+    for phrase in ("训练是否充分", "batch 不足", "loss 震荡", "稳不稳", "影响最大",
+                   "模型对比归因", "不要结论"):
         assert phrase in d, f"引擎 description 丢了触发短语「{phrase}」"
 
 
@@ -75,3 +76,19 @@ def test_feature_blame_yields_to_result_analysis_scope():
     """pv-result-analysis 的让路句：特征质量归因场景指向 pv-feature-blame。"""
     d = description_of(os.path.join(REPO_ROOT, "pv-result-analysis"))
     assert "pv-feature-blame" in d
+
+
+def test_engine_routes_model_comparison_and_fact_scan():
+    """SKILL.md 路由表（不只 description）要点名两个新 playbook 的触发短语。"""
+    text = open(os.path.join(ENGINE_DIR, "SKILL.md"), encoding="utf-8").read()
+    assert "模型对比归因" in text
+    assert "体检" in text
+    assert "不要结论" in text
+    assert "model-comparison" in text
+    assert "fact-scan" in text
+
+
+def test_result_analysis_yields_to_model_comparison_scope():
+    """pv-result-analysis 的反向让路句：非标准格式的模型对比归因指向 ts-diagnose 的 model-comparison。"""
+    d = description_of(os.path.join(REPO_ROOT, "pv-result-analysis"))
+    assert "ts-diagnose 的 model-comparison" in d

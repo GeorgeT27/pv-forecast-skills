@@ -9,7 +9,7 @@ import re
 
 ENGINE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SKILL_PATH = os.path.join(ENGINE_DIR, "SKILL.md")
-PLAYBOOK_IDS = ("training-sufficiency", "robustness", "feature-importance")
+PLAYBOOK_IDS = ("training-sufficiency", "robustness", "feature-importance", "model-comparison", "fact-scan")
 
 LINE_BUDGET = 60
 TOKEN_BUDGET = 6000
