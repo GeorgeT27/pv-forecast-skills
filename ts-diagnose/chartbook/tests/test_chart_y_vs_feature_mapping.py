@@ -1,5 +1,8 @@
 """y-vs-feature-mapping golden：前半期 y=0.5f、后半期 y=0.5f−5（物理映射整体
-位移）→ 每箱 shift 恰为 −5、mean_abs_shift=5。分箱边界取全期 pooled 保两期可比。"""
+位移）→ 每箱 shift 恰为 −5、mean_abs_shift=5。分箱边界取全期 pooled 保两期可比。
+
+f 取模 10 映射（日 1..10 与 11..20 落到同一 f 值集）⇒ 两期分箱分布逐箱相同，
+无边界稀释，每箱位移精确 −5，紧容差可回收。"""
 import sys
 from pathlib import Path
 
@@ -16,7 +19,9 @@ WINDOWS = [f"2024-01-{d:02d}" for d in range(1, 21)]   # 前 10 天 A 期、后 
 
 
 def _f(w, s):
-    return 10.0 * s + int(w[-2:])          # f 随 step 与日铺开 10..170
+    # 模 10 映射：日 1..10 与 11..20 落到同一 f 值集 ⇒ 两期分箱分布逐箱相同，
+    # 位移每箱恰为 −5（无边界稀释）
+    return 10.0 * s + ((int(w[-2:]) - 1) % 10) + 1
 
 
 def _y(w, s):
@@ -45,8 +50,8 @@ def _feat_df():
 def test_shift_recovered():
     st = cym.compute(_pred_df(), _feat_df(), split_date="2024-01-11")
     ghi = st["features"]["ghi"]
-    assert np.isclose(ghi["mean_shift"], -5.0, atol=0.7)
-    assert np.isclose(ghi["mean_abs_shift"], 5.0, atol=0.7)
+    assert np.isclose(ghi["mean_shift"], -5.0, atol=0.2)
+    assert np.isclose(ghi["mean_abs_shift"], 5.0, atol=0.2)
     assert ghi["n_a"] == 160 and ghi["n_b"] == 160
     assert len(ghi["curve_a"]) >= 5 and len(ghi["curve_b"]) >= 5
 
