@@ -35,8 +35,9 @@
 统一材料分类表。每类材料一节，含：
 
 - **id**（进 check-DSL 与 config）：`predict` / `truth` / `model_code` / `training_log` /
-  `feature_true` / `checkpoint` / `serving_api`（反事实端点）/ `experiment_config` /
-  `data_profile`（可扩展，新增类照本文件格式追加）；
+  `features`（预测特征序列，NWP 等）/ `feature_true`（特征真值对照）/ `train_y`
+  （训练期真值，漂移图用）/ `checkpoint` / `serving_api`（反事实端点）/
+  `experiment_config` / `data_profile`（可扩展，新增类照本文件格式追加）；
 - **追问模板**：在哪（路径）、什么格式（每模型一个文件还是合并、贴 2-3 行样例）、
   覆盖范围（时间/站点）；
 - **schema 追问块**（本轮新增重点）：哪列是 y-label、哪些列是 feature、时间戳列、
@@ -124,16 +125,49 @@ pv-station-influence 现有的 ask-then-embed 行为不动（它是专用技能�
 要重复 intake、占路由预算）；playbook 层互不引用的 layering 纪律不受影响——共享下沉到
 引擎层是合法的（同 references/ 地位）。
 
+### 预写 vs 现场写（关键决策：**预写**）
+
+图脚本**预先写好、随引擎提交、pytest+golden 验证**，不在跑 skill 时现场生成。理由：
+
+1. **先例已验证**：pv-result-analysis 的 fig01-fig12 就是预写的 `plots.py` + stats.json
+   自足产物，实跑多轮稳定——chartbook 是同一模式的引擎级泛化；
+2. **图是稳定复用件**：引擎「分析代码运行时生成」纪律是为**没见过的新任务**设计的；
+   chartbook 恰是各 playbook 反复消费的标准件，属于引擎机制（同 orient.py 地位），
+   预写+CI 验证一次，胜过每次现场写+现场过验证步；
+3. **token 经济**：现场写十几张图的代码极耗 token 且每次重付；预写后现场只剩三件事：
+   写**薄适配器**（几十行：用户数据 → 规范长表，由 materials.schema 驱动）、Bash 跑脚本、
+   读紧凑 JSON。**不需要 subagent**——只有数据格式极乱、适配器需反复试错解析，或
+   多站多模型大批量分片跑时，才按现有 subagent 编排纪律外包（brief 里只带 schema 与
+   样例行，不带图代码）。
+
+engine-core 的「分析代码运行时生成」纪律加一句豁免：chartbook 覆盖的图**必须**用
+chartbook 预写脚本（禁止现场重写同类图）；运行时生成只用于 chartbook 没有的
+playbook 特有分析。
+
+### 规范数据接口（脚本与用户数据解耦）
+
+所有图脚本消费统一的**规范长表**（canonical long format）：
+
+```
+predictions.parquet: window_ts | unit_id | model | horizon_step | y_true | y_pred
+features.parquet(可选): window_ts | unit_id | feature | horizon_step | f_pred | f_true(可选)
+train_y.parquet(可选): ts | unit_id | y        # 漂移图用
+```
+
+现场唯一要写的代码 = `adapter.py`：用户的任意格式（每模型一 parquet、192 点 list 列、
+宽表……）→ 规范长表，由 `materials.<id>.schema` 的答案驱动，写完先过**对账验证步**
+（行数守恒 + 抽 3 个窗口人工核对数值）再喂图脚本。
+
 ### 结构
 
 ```
 chartbook/
 ├── _recipe-spec.md          # recipe 编写规范（本节字段定义）
-└── recipes/
-    ├── horizon-degradation.md
-    ├── rolling-stability.md
-    ├── worst-points.md
-    └── worst-slice-compare.md
+├── scripts/                 # 预写图脚本（一 recipe 一脚本，CLI 契约，消费规范长表）
+│   ├── chart_common.py      # 读长表/落 json+png/形状描述符公共件
+│   └── chart_<recipe-id>.py
+├── golden/                  # 图脚本金标准（合成植入回收，pytest 驱动）
+└── recipes/<id>.md          # 每图一 recipe：适用问题/JSON schema/判读节/桥接钩子
 ```
 
 每个 recipe（frontmatter + 正文菜谱）：
@@ -163,14 +197,58 @@ bridge_hooks: >                      # 桥接钩子：形状描述符 → 架构
 3. 每个 recipe 带验证步（合成植入回收）；被 playbook golden 覆盖到的照常走 gen_gate。
 4. 画图脚本按引擎纪律运行时生成进工作目录 `analysis_scripts/`，recipe 是菜谱不是现成脚本。
 
-### v1 四张图（用户点名）
+### v1 recipe 集（五组；A-C 组核心先行，D-E 组按材料驱动同轮实现、批次靠后）
 
-| recipe | 内容 | JSON 关键字段 |
+用户点名的四张只是例子；v1 同时**收编泛化 pv-result-analysis fig01-fig12** 的通用部分
+（代码可移植改造，站点/模型维度参数化；光伏专属的 fig12 功率-辐照泛化为
+`y-vs-feature-mapping`）。零跨 skill 依赖纪律照旧：chartbook 拿的是泛化副本，
+pv-result-analysis 自己的 plots.py 不动、不被引用。
+
+**A 组：y-label 误差分解（用户强调最重要——谁、什么时候、错在哪）**
+
+| recipe | 内容（源） | JSON 关键字段 |
 |---|---|---|
-| `horizon-degradation` | 指标随 horizon 的退化速度；短期准 vs 长期失效；per-target 崩溃点 | 每模型每 horizon 指标、早/晚段斜率、交叉点、崩溃 horizon |
-| `rolling-stability` | 滚动 MAE、滚动 bias；变点检测（前后对比）；日历时段分组（月/工作日/小时） | 滚动序列（降采样）、变点列表、日历切片表 |
-| `worst-points` | 误差 top-N（默认 20）点，自动打标签：极值 / 转折点(ramp) / 高波动 | 每点时间戳、误差、标签、上下文统计 |
-| `worst-slice-compare` | 模型 A 最差月份（或最差片）上 A vs B 同期对比 | 片选择依据、片内两模型指标、逐日分解 |
+| `error-breakdown` | 分单元(站点)×日历(月/日/小时)×horizon 的误差矩阵热力图：**什么站点什么时候 RMSE 最大**（新写，核心图） | 分组指标矩阵、argmax 单元格、per-站点/per-月/per-小时边际曲线、Top-K 最差组合 |
+| `intraday-profile` | 日内时段 bias/RMSE 剖面（fig06 泛化） | 逐时段 bias/RMSE 曲线、形状描述符 |
+| `worst-points` | 误差 top-N（默认 20）点，自动打标签：极值/转折点(ramp)/高波动（fig07 泛化到点级） | 每点时间戳、单元、误差、标签、上下文统计 |
+
+**B 组：走势与稳定**
+
+| recipe | 内容（源） | JSON 关键字段 |
+|---|---|---|
+| `horizon-degradation` | 指标随 horizon 退化速度；短期准 vs 长期失效；per-单元崩溃点（fig05 泛化） | 每模型每 horizon 指标、早/晚段斜率、模型交叉点、崩溃 horizon |
+| `rolling-stability` | 滚动 MAE/bias、变点检测（前后对比）、日历时段分组（新写） | 滚动序列(降采样)、变点列表、日历切片表 |
+
+**C 组：模型对比**
+
+| recipe | 内容（源） | JSON 关键字段 |
+|---|---|---|
+| `true-vs-pred-scatter` | 真值-预测散点 slope/R² 四象限（fig01 泛化，判读纪律带过来：R² 管齐不齐、slope 管正不正） | slope、r2、分位残差 |
+| `model-error-correlation` | 模型间误差相关热力图——同质化/互补性（fig02 泛化） | 相关矩阵、最互补对 |
+| `worst-slice-compare` | 模型 A 最差月份/最差片上 A vs B 同期对比（新写） | 片选择依据、片内各模型指标、逐日分解 |
+| `oracle-gap` | 逐样本动态选最优模型的提升空间（fig09 泛化；模型≥2 时可用） | oracle 指标、各模型被选率、差距 |
+
+**D 组：feature 关联（needs_materials 含 feature；完整重要性归因仍属
+feature-importance playbook / pv-feature-blame——本组只产图级事实）**
+
+| recipe | 内容（源） | JSON 关键字段 |
+|---|---|---|
+| `feature-error-conditional` | 按 feature 值/质量分箱的条件误差：**feature 不准时对 y-label 影响大不大**（fig08 天气分型泛化） | 分箱条件指标、单调性、效应幅度 |
+| `feature-trend-overlay` | 坏片上 feature 走势与 y 误差 overlay 对照（新写） | 对齐序列(降采样)、同步性描述符 |
+| `y-vs-feature-mapping` | y 与关键 feature 的映射关系训练/测试对比（fig12 泛化） | 映射曲线、偏移描述符 |
+
+**E 组：分布漂移（needs_materials 含 train_y）**
+
+| recipe | 内容（源） | JSON 关键字段 |
+|---|---|---|
+| `train-test-drift` | 训练/测试同期分布对比——标签与 feature 漂移（fig11 泛化） | 分布分位数、漂移统计量 |
+
+### 判读库（收编 figure-diagnostics 模式）
+
+每个 recipe 正文带**判读节**：「JSON 形状描述符 → 候选机制 → 去哪张图交叉验证」，
+泛化 pv-result-analysis figure-diagnostics.md 的纪律：判读只给**候选假设**不给结论，
+结论必须回 playbook 的三道门；判读一律读 JSON 描述符（curve/trend/max_jump/
+roughness/argmax），**不 Read PNG**。
 
 ### playbook 消费方式
 
@@ -203,7 +281,7 @@ orient 按 `needs_materials` 报每张图可用/不可用；材料不够的图�
 |---|---|---|
 | 0 | 口径与对齐 | 考核口径（默认 rmse_192，可自定义）、对齐键、比哪几个模型（>2 个时问配对）——questions 声明 |
 | 1 | 总差距事实 | 对齐后逐模型指标、差距量化 + 配对检验（差距是真的还是噪声）——事实阶段 |
-| 2 | 差距分解 | charts 消费 v1 四张图；A 赢在哪些片、差距集中还是普遍——事实阶段，`pause_after: true`，产现象清单等用户点名 |
+| 2 | 差距分解 | charts 声明 A+B+C 组全部 recipe（D/E 组按材料可用性自动加入）；A 赢在哪些片、差距集中还是普遍——事实阶段，`pause_after: true`，产现象清单等用户点名 |
 | 3 | 机制归因（变体） | `when: material:model_code` 解锁；经 model-profile 上下文拿桥接假设，对照 Stage 2 的图 JSON 证据 |
 | 4 | 结论 | 三道门 + provenance 归因闸 + CONCLUSION.md 直接呈现 |
 
@@ -223,7 +301,7 @@ orient 按 `needs_materials` 报每张图可用/不可用；材料不够的图�
   （`pause_after: true` 且为终点）。无 evidence_lines、无结论三道门（因为不下结论）。
 - **衔接**：用户看完想深挖 → 切 model-comparison（或其他 playbook），materials 块与
   图 JSON 全部复用，orient 重扫自动跳过已完成部分。
-- **golden/**：断言四张图 JSON 的关键字段存在且数值正确。注意 Layer 1 零共享纪律：
+- **golden/**：断言各可用图 JSON 的关键字段存在且数值正确。注意 Layer 1 零共享纪律：
   不与 model-comparison 共享 make_golden.py，fact-scan/golden/ 自带精简版生成器
   （思路可同、代码各自独立）。
 
@@ -248,7 +326,9 @@ orient 按 `needs_materials` 报每张图可用/不可用；材料不够的图�
 |---|---|
 | orient.py materials 解析 + 盘点报告 + `material:` DSL | 新增单测（含无 materials 键的旧 playbook 兼容回归） |
 | contexts provider_skill/trigger_material 解析 | orient 单测 |
-| chartbook recipe frontmatter 规范 | 新增 test_chartbook.py：全部 recipe 过 _recipe-spec 校验（必备字段、needs_materials 合法 id、json/png 双产物声明） |
+| chartbook recipe frontmatter 规范 | 新增 test_chartbook.py：全部 recipe 过 _recipe-spec 校验（必备字段、needs_materials 合法 id、json/png 双产物声明、判读节存在） |
+| chartbook 预写图脚本 | 每个 chart_<id>.py 一套 golden（合成植入回收：已知斜率/变点/最差单元格/相关结构必须被回收），pytest 驱动；chart_common.py 单测 |
+| 规范长表 adapter 契约 | adapter 对账验证步写进 intake.md/engine-core（行数守恒 + 抽窗核对），golden 里附一个「非标格式 → 长表」示例适配 |
 | model-comparison golden | gen_gate 端到端（reference 实跑出期望值，留容差） |
 | fact-scan golden | 同上（精简版） |
 | Layer 纪律 | test_layering.py 扩展覆盖两个新 playbook 目录 + chartbook（引擎级共享合法、playbook 引用 recipe id 合法、playbook 间互引仍非法） |
