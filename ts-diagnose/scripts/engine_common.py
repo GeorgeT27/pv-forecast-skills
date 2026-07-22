@@ -13,6 +13,7 @@ import fnmatch
 import glob
 import json
 import os
+import re
 
 try:
     import yaml
@@ -107,6 +108,19 @@ def _validate_frontmatter(fm, md_path):
                 f"不在保留字表 {FINDINGS_MARKERS}（_playbook-spec.md §3）")
         if not (dw.get("artifacts") or marker or dw.get("manual")):
             raise ValueError(f"{md_path} stage {st.get('id')} done_when 三种判定至少给一种")
+        charts = st.get("charts")
+        if charts is not None:
+            if not isinstance(charts, list) or not all(
+                    isinstance(c, str) for c in charts):
+                raise ValueError(
+                    f"{md_path} stage {st.get('id')} 的 charts 必须是字符串列表"
+                    "（见 _playbook-spec.md）")
+            known = available_recipes()
+            bad = [c for c in charts if c not in known]
+            if bad:
+                raise ValueError(
+                    f"{md_path} stage {st.get('id')} 的 charts 含未知 recipe {bad}；"
+                    f"可用：{known}")
     if len(fm.get("evidence_lines") or []) >= 2 and not fm.get("upgrade_rule"):
         raise ValueError(f"{md_path} 有 ≥2 条 evidence_lines 但缺 upgrade_rule")
     mats = fm.get("materials") or {}
@@ -367,6 +381,44 @@ def blocking_materials(fm, cfg):
             if rec.get("degraded_ok") is not True:
                 out.append((mid, "absent"))
     return out
+
+
+# ---------------------------------------------------------------- charts (chartbook)
+def recipe_path(rid):
+    """chartbook recipe 的 md 文件路径（不保证存在，调用方自行判断）。"""
+    return os.path.join(ENGINE_DIR, "chartbook", "recipes", f"{rid}.md")
+
+
+def available_recipes():
+    """chartbook/recipes/*.md 的 id 列表；目录缺失 → []。"""
+    d = os.path.join(ENGINE_DIR, "chartbook", "recipes")
+    if not os.path.isdir(d):
+        return []
+    return sorted(os.path.splitext(f)[0] for f in os.listdir(d)
+                  if f.endswith(".md"))
+
+
+def recipe_materials(rid):
+    """chartbook recipe 的 needs_materials（orient 可画性判定用）。"""
+    p = recipe_path(rid)
+    if not os.path.exists(p):
+        raise ValueError(f"未知 chartbook recipe '{rid}'；可用：{available_recipes()}")
+    with open(p, encoding="utf-8") as f:
+        text = f.read()
+    m = re.match(r"^---\n(.*?)\n---", text, re.S)
+    fm = yaml.safe_load(m.group(1)) if m else {}
+    return list(fm.get("needs_materials") or [])
+
+
+def charts_report(fm, cfg):
+    """→ [(stage_id, recipe_id, missing_materials)]；missing 空 = 可画。"""
+    rep = []
+    for st in fm.get("stages") or []:
+        for rid in st.get("charts") or []:
+            missing = [mid for mid in recipe_materials(rid)
+                       if material_status(cfg, mid) != "present"]
+            rep.append((st["id"], rid, missing))
+    return rep
 
 
 # ---------------------------------------------------------------- contexts

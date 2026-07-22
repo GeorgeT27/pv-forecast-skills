@@ -115,6 +115,15 @@ def main():
     for st in fm["stages"]:
         pause = " ⏸" if st.get("pause_after") else ""
         print(f"  Stage {st['id']} {st['name']}{pause}  [{stage_tag(st, fm, ctx, cur, actives)}]")
+        if st.get("charts"):
+            for (_sid, rid, missing) in ec.charts_report(fm, cfg):
+                if _sid != st["id"]:
+                    continue
+                if missing:
+                    print(f"    📊 {rid} ✗缺材料:{','.join(missing)}"
+                          "（自动跳过，不阻塞）")
+                else:
+                    print(f"    📊 {rid} ✓可画")
     if cur is None:
         print("  全部阶段完成——可写/刷新 CONCLUSION.md，或 --goto 复核，或按"
               " references/crystallize.md 提议固化。")

@@ -21,6 +21,7 @@ stages:                           # 必填，按执行顺序；id 为整数（�
         check: "question:loss-source"
     pause_after: false            # true = 本阶段完成后强制停顿，主 agent 向用户汇报并等点名
     subagent_ok: true             # false = 必须主 agent 亲自做（如反驳门/结论）
+    charts: [horizon-degradation]     # 可选。本阶段消费的 chartbook recipe id（须存在于 chartbook/recipes/）；orient 按 needs_materials × 盘点结果逐图报可画/缺材料自动跳过
 materials:                        # 可选。本 playbook 的材料需求（intake 引擎级机制）
   required: [predict, truth]      #   unknown/absent 均阻塞开工（absent 可经用户确认降级）
   optional: [model_code]          #   不阻塞；驱动变体/图表可用性
@@ -76,7 +77,7 @@ crystallize_min_cases: 5          # 可选。固化三关之关1（多样性）�
 ## 4. 正文必备节（agent 菜谱）
 
 1. **问题框定与首要陷阱**——本目标最容易犯的归因错误（对应 pv-station-influence 的"震荡≠有罪"层级），放最前。
-2. **逐阶段菜谱**——每阶段：目标 / 输入 / **脚本菜谱**（伪代码 + 关键公式 + 落盘产物 schema + 自足 summary 要求 + **脚本验证步**）/ done 判据。分析脚本由 agent 运行时生成进工作目录 `analysis_scripts/`，每个脚本必须先过本节声明的验证步（对账 / 合成小样自检）才可信其产出——验证结果记 PROGRESS.md（crystallize 只快照有验证记录的脚本）。**golden 覆盖到的阶段另有生成闸硬规则**：先过 `scripts/gen_gate.py`（金标准算对）才许碰真实数据（§6），正文里要写出闸命令。
+2. **逐阶段菜谱**——每阶段：目标 / 输入 / **脚本菜谱**（伪代码 + 关键公式 + 落盘产物 schema + 自足 summary 要求 + **脚本验证步**）/ done 判据。分析脚本由 agent 运行时生成进工作目录 `analysis_scripts/`，每个脚本必须先过本节声明的验证步（对账 / 合成小样自检）才可信其产出——验证结果记 PROGRESS.md（crystallize 只快照有验证记录的脚本）。**golden 覆盖到的阶段另有生成闸硬规则**：先过 `scripts/gen_gate.py`（金标准算对）才许碰真实数据（§6），正文里要写出闸命令。声明了 charts 的阶段，正文菜谱写清各图的调用命令与参数（预写脚本，禁现场重写；见 engine-core chartbook 豁免）。
    结论阶段的菜谱必须包含**归因闸**：写 CONCLUSION.md 前跑 `scripts/provenance.py`，末尾附 Provenance 块（代码 hash + 数据 hash + 金标准自检），见引擎 references/conclusion-reporting.md。
 3. **证据升级规则**——哪些证据组合能把结论从"现象"升"假设"升"已证实"；每条规则必须映射到结论三道门之一（references/mechanisms.md）。
 4. **停顿点与汇报**——`pause_after` 阶段完成后向用户汇报什么、请用户点名什么。
