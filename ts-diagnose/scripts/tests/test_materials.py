@@ -155,3 +155,25 @@ def test_frontmatter_rejects_bad_trigger_material(tmp_path):
                  "    trigger_material: nope\n---\n", encoding="utf-8")
     with pytest.raises(ValueError, match="trigger_material"):
         ec.load_frontmatter(str(p))
+
+
+# ---------------------------------------------------------------- profile 固化
+def test_merge_profile_materials():
+    prof = {"profile_version": ec.PROFILE_VERSION, "playbook": "x",
+            "materials": {
+                "predict": {"status": "present", "layout": "per-model",
+                            "schema": {"y_col": "power"}},
+                "truth": {"status": "present"}}}
+    cfg = {"materials": {"truth": {"status": "absent-confirmed", "source": "user"}}}
+    res = ec.merge_profile(cfg, prof, "2026-07-22")
+    assert res["merged_materials"] == ["predict"]          # truth 已有，不覆盖
+    assert cfg["materials"]["predict"]["status"] == "present"
+    assert cfg["materials"]["predict"]["source"] == "profile"
+    assert cfg["materials"]["truth"]["status"] == "absent-confirmed"  # 原样保留
+
+
+def test_merge_profile_materials_absent_key():
+    prof = {"profile_version": ec.PROFILE_VERSION, "playbook": "x"}
+    cfg = {}
+    res = ec.merge_profile(cfg, prof, "2026-07-22")
+    assert res["merged_materials"] == []

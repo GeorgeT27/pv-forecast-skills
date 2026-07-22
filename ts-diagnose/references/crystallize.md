@@ -19,6 +19,7 @@
 2. **触发词**：用户会怎么说这件事？要 3–5 条**用户原话**（决定 description 的召回）；
 3. **路径分层**：本次 config 里哪些路径/字段是跨次稳定的（进 profile config_defaults 或引用实验线）、哪些每次会变（**不进 profile**，留给下次问）；
 4. **问答固化范围**：questions 块里哪些答案跨次成立（schema/结构/判据通常成立；样例行若来自会轮换的日志则不固化）；
+- **materials 同为固化原料**：config.materials 里跨次稳定的条目（layout/schema——路径通常每次不同，别固化具体路径）搬进 profile.yaml 的 `materials:` 块，结构同 config 条目；orient --profile 时只补缺合并，source 记 `profile`。
 5. **入库**：新技能目录是否提交 git 主仓（profile 含项目路径事实，仓库公开时需用户知情——同 project-context 先例）。
 
 ## 2. 生成薄技能 `<仓库根>/<new-skill>/`
@@ -78,6 +79,8 @@ config_defaults:              # 只放跨次稳定且不属于实验线的字段
 questions:                    # 已固化问答（source 会标 profile；answer 存原话）
   loss-source: {answer: "<原话>", date: 2026-07-14}
   unit-structure: {answer: "<原话>", date: 2026-07-14}
+materials:                    # 跨次稳定的材料条目（layout/schema；路径每次不同别固化）
+  predict: {status: "present", layout: "per-model", schema: {y_col: "power"}}
 scripts:                      # 快照清单（审计：从哪来、何时验证过、对应哪个阶段）
   - {file: extract_loss.py, from_run: "<工作目录>", validated: 2026-07-14, stage: 1}
 ```

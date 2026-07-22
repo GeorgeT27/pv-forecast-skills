@@ -457,6 +457,13 @@ def merge_profile(cfg, prof, date_stamp):
             cfg.setdefault("experiment_line", path)
         else:
             exp_placeholder = True
+    merged_mats = []
+    if prof.get("materials"):
+        mats = cfg.setdefault("materials", {})
+        for mid, rec in prof["materials"].items():
+            if mid in MATERIAL_IDS and mid not in mats and isinstance(rec, dict):
+                mats[mid] = {**rec, "source": "profile", "date": date_stamp}
+                merged_mats.append(mid)
     if version_ok:
         qs = cfg.setdefault("questions", {})
         for qid, rec in (prof.get("questions") or {}).items():
@@ -465,7 +472,8 @@ def merge_profile(cfg, prof, date_stamp):
                            "source": "profile", "date": date_stamp}
                 merged_qs.append(qid)
     return {"version_ok": version_ok, "experiment_line_placeholder": exp_placeholder,
-            "merged_keys": merged_keys, "merged_questions": merged_qs}
+            "merged_keys": merged_keys, "merged_questions": merged_qs,
+            "merged_materials": merged_mats}
 
 
 def crystallize_min_cases(fm):
