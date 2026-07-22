@@ -21,6 +21,9 @@ stages:                           # 必填，按执行顺序；id 为整数（�
         check: "question:loss-source"
     pause_after: false            # true = 本阶段完成后强制停顿，主 agent 向用户汇报并等点名
     subagent_ok: true             # false = 必须主 agent 亲自做（如反驳门/结论）
+materials:                        # 可选。本 playbook 的材料需求（intake 引擎级机制）
+  required: [predict, truth]      #   unknown/absent 均阻塞开工（absent 可经用户确认降级）
+  optional: [model_code]          #   不阻塞；驱动变体/图表可用性
 variants:                         # 可选。条件变体：when 不成立 → unlocks_stages 里的阶段
   - id: grouped                   #   在 orient 中标"变体未激活（跳过，不阻塞）"
     when: "config:units_multiple"
@@ -40,6 +43,8 @@ contexts:                         # 可选。外部分析上下文（泛化 ask-
     status_key: linked_status     # config 里存状态的键：linked / declined /（空 = absent）
     marker_files: ["FINDINGS.md"] # linked 有效性核验：目录下这些文件须存在
     on_absent: ask                # absent 时主 agent 必须先问用户（orient 只打印指引）
+    provider_skill: pv-model-analysis   # 可选：谁能生产本上下文（触发嵌入执行提示）
+    trigger_material: model_code        # 可选：该材料 present 才提议嵌入（须为合法材料 id）
 evidence_lines:                   # 可选。独立证据线登记（多证据线一致性判定的依据）
   - id: composition-regression
     stage: 3
@@ -59,6 +64,7 @@ crystallize_min_cases: 5          # 可选。固化三关之关1（多样性）�
 | `artifact:<glob>` | 工作目录下该 glob 至少命中一个文件 |
 | `stage:<id>` | 该阶段已完成（done_when 判定） |
 | `question:<qid>` | 该问题已答（含 profile/默认/实验线/证据自答） |
+| `material:<id>` | config.materials 该材料 status 为 present（id 必须 ∈ engine_common.MATERIAL_IDS，拼错报错） |
 | `not <expr>` | 取反（只允许一层） |
 
 不追求图灵完备：组合逻辑写不下就拆成多条 prereq，或用 `manual`。
@@ -76,6 +82,9 @@ crystallize_min_cases: 5          # 可选。固化三关之关1（多样性）�
 4. **停顿点与汇报**——`pause_after` 阶段完成后向用户汇报什么、请用户点名什么。
 5. **subagent 拆分建议**——哪些阶段可并发、分片 `--out` 命名约定（防竞态，见 references/subagent-briefs.md）。
 6. **结论模板与本 playbook 特有反驳门条目**。
+7. **材料降级说明**（声明了 materials 时）——required 材料 absent-confirmed 时本
+   playbook 怎么降级（哪些阶段跳过/结论上限降到什么），主 agent 据此向用户描述
+   降级成本再请求 degraded_ok 确认。
 
 ## 5. golden/ 金标准基线（每个 playbook 必带）
 
