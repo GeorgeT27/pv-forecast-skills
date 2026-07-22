@@ -109,6 +109,16 @@ def _validate_frontmatter(fm, md_path):
             raise ValueError(f"{md_path} stage {st.get('id')} done_when 三种判定至少给一种")
     if len(fm.get("evidence_lines") or []) >= 2 and not fm.get("upgrade_rule"):
         raise ValueError(f"{md_path} 有 ≥2 条 evidence_lines 但缺 upgrade_rule")
+    mats = fm.get("materials") or {}
+    req, opt = list(mats.get("required") or []), list(mats.get("optional") or [])
+    for mid in req + opt:
+        if mid not in MATERIAL_IDS:
+            raise ValueError(
+                f"{md_path} materials 引用了未知材料 id '{mid}'"
+                f"（合法集见 engine_common.MATERIAL_IDS / references/intake.md）")
+    overlap = set(req) & set(opt)
+    if overlap:
+        raise ValueError(f"{md_path} 材料 {sorted(overlap)} 既是 required 又是 optional")
 
 
 def find_playbook(name):
@@ -282,6 +292,53 @@ def blocking_questions(fm, ctx, stage_id=None):
         code, _ = question_status(q, ctx)
         if code == "unanswered":
             out.append(q)
+    return out
+
+
+# ---------------------------------------------------------------- materials
+# intake 材料盘点（spec 2026-07-22 §2）。id 全集 = 引擎单一真源；
+# 分类表与追问模板在 references/intake.md（test_materials 交叉校验两边一致）。
+MATERIAL_IDS = ("predict", "truth", "model_code", "training_log", "features",
+                "feature_true", "train_y", "checkpoint", "serving_api",
+                "experiment_config", "data_profile")
+MATERIAL_STATUSES = ("present", "absent-confirmed")  # 其余一律视为 unknown
+
+
+def material_status(cfg, mid):
+    """config.materials 里该材料的状态：present / absent-confirmed / unknown。
+    无 config、无记录、status 非法 → unknown（不许静默降级：unknown 必须去问）。"""
+    rec = ((cfg or {}).get("materials") or {}).get(mid)
+    if not isinstance(rec, dict):
+        return "unknown"
+    s = rec.get("status")
+    return s if s in MATERIAL_STATUSES else "unknown"
+
+
+def materials_of(fm):
+    """playbook frontmatter 的材料声明 → (required, optional)。无声明 → ([], [])。"""
+    m = fm.get("materials") or {}
+    return list(m.get("required") or []), list(m.get("optional") or [])
+
+
+def materials_report(fm, cfg):
+    """[(mid, 'required'|'optional', status)]，orient 打印素材。"""
+    req, opt = materials_of(fm)
+    return ([(mid, "required", material_status(cfg, mid)) for mid in req]
+            + [(mid, "optional", material_status(cfg, mid)) for mid in opt])
+
+
+def blocking_materials(fm, cfg):
+    """开工阻塞的 required 材料：[(mid, 'unknown'|'absent')]。
+    absent-confirmed 且主 agent 经用户确认降级后写了 degraded_ok=true 的不算。"""
+    out = []
+    for mid in materials_of(fm)[0]:
+        s = material_status(cfg, mid)
+        if s == "unknown":
+            out.append((mid, "unknown"))
+        elif s == "absent-confirmed":
+            rec = ((cfg or {}).get("materials") or {}).get(mid) or {}
+            if not rec.get("degraded_ok"):
+                out.append((mid, "absent"))
     return out
 
 
