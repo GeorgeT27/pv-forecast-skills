@@ -132,6 +132,33 @@ def main():
             print(f"  ⚠ 上下文「{cx['name']}」[absent]：主 agent 必须先 AskUserQuestion"
                   f"（要不要先建立该上下文？做法见 playbook 正文），"
                   f"答案回填 config.{cx['status_key']}（+{cx['workdir_key']}）。")
+            hint = ec.context_embed_hint(cx, cfg)
+            if hint:
+                print(f"    {hint}")
+
+    mat_rows = ec.materials_report(fm, cfg)
+    mat_blocked = ec.blocking_materials(fm, cfg)
+    if mat_rows:
+        print("-" * 62)
+        print("  材料盘点（追问模板与 status 写法见 references/intake.md；"
+              "答案落 config.materials）：")
+        for mid, kind, st in mat_rows:
+            rec = ((cfg.get("materials") or {}).get(mid)) or {}
+            if st == "present":
+                label = "✓present"
+            elif st == "absent-confirmed":
+                label = "−absent"
+                kind = f"{kind}, 已确认降级" if rec.get("degraded_ok") else kind
+            else:
+                label = "✗未盘点·阻塞" if (mid, "unknown") in mat_blocked else "○未盘点"
+            print(f"  [{label}] {mid} ({kind})")
+        if mat_blocked:
+            print("  ⚠ 必需材料未就绪：" + ", ".join(m for m, _ in mat_blocked)
+                  + " —— 开工前先按 references/intake.md 盘点：")
+            print("    一次多选 AskUserQuestion 列全该 playbook 的材料 checklist"
+                  "（末尾带『还有别的吗』开放项），")
+            print("    再按每类的追问模板批量补齐 路径/格式/schema（y列/时间列/id列）；")
+            print("    absent-confirmed 的必需材料要走降级须经用户确认后写 degraded_ok。")
 
     qs = fm.get("questions") or []
     if qs:
@@ -158,7 +185,9 @@ def main():
         blocked_qs = ec.blocking_questions(fm, ctx, stage_id=target["id"])
         for q in blocked_qs:
             print(f"  [✗] 必答问题未答：{q['id']}（{q['why']}）")
-        if ec.prereqs_ok(pr) and not blocked_qs:
+        for mid, reason in mat_blocked:
+            print(f"  [✗] 必需材料未就绪：{mid}（{reason}）")
+        if ec.prereqs_ok(pr) and not blocked_qs and not mat_blocked:
             print(f"→ 前置齐，可开工 Stage {target['id']}。")
         elif args.goto is not None and cur is not None and args.goto != cur["id"]:
             print(f"→ 前置不齐，不能直达 Stage {args.goto}。正确入口 = Stage {cur['id']}（{cur['name']}）。")
