@@ -1,0 +1,37 @@
+{
+  "playbook": "model-comparison",
+  "note": "金标准由 make_golden.py 确定性生成（零随机）；期望值来自 reference/ 实跑留容差。Stage 0 依赖真实数据格式（适配器+对账验证步兜底）；Stage 2 的图脚本本体由 chartbook 自带 golden 闸住，此处钉的是切片证据线契约。改期望先改 make_golden.py 并重跑 pytest。",
+  "planted": {
+    "overall_better": "A",
+    "a_worst_slice": "2024-02",
+    "slice_winner_in_worst": "B",
+    "gap_concentration": 1.0
+  },
+  "stages": {
+    "1": {
+      "desc": "总差距：A 总体更好但差距未过噪声线（|z|<2），配对统计精确回收",
+      "inputs": ["predictions.csv"],
+      "args": ["--pred", "predictions.csv", "--pair", "A,B", "--out", "gap_summary.json"],
+      "expect": [
+        {"file": "gap_summary.json", "path": "ranking", "op": "first_is", "value": "A"},
+        {"file": "gap_summary.json", "path": "per_model.A", "op": "between", "value": [1.36, 1.38]},
+        {"file": "gap_summary.json", "path": "per_model.B", "op": "between", "value": [1.49, 1.51]},
+        {"file": "gap_summary.json", "path": "mean_diff", "op": "between", "value": [-0.14, -0.12]},
+        {"file": "gap_summary.json", "path": "win_rate", "op": "between", "value": [0.66, 0.68]},
+        {"file": "gap_summary.json", "path": "sign_z", "op": "between", "value": [1.05, 1.25]},
+        {"file": "gap_summary.json", "path": "sign_p", "op": "exists"}
+      ]
+    },
+    "2": {
+      "desc": "切片证据线：A 最差片 2024-02、片内 B 反超、gap 全集中",
+      "inputs": ["predictions.csv"],
+      "args": ["--pred", "predictions.csv", "--focal", "A", "--out", "worst-slice-compare.json"],
+      "expect": [
+        {"file": "worst-slice-compare.json", "path": "worst_slice", "op": "eq", "value": "2024-02"},
+        {"file": "worst-slice-compare.json", "path": "in_slice.A", "op": "between", "value": [2.49, 2.51]},
+        {"file": "worst-slice-compare.json", "path": "in_slice.B", "op": "between", "value": [1.49, 1.51]},
+        {"file": "worst-slice-compare.json", "path": "concentration_ratio", "op": "eq", "value": 1.0}
+      ]
+    }
+  }
+}

@@ -21,6 +21,8 @@ REFS = [
     ("training-sufficiency", "4", "reference/external_link.py"),
     ("robustness", "1", "reference/perturbation.py"),
     ("feature-importance", "0", "reference/correlation_screen.py"),
+    ("model-comparison", "1", "reference/stage1_gap.py"),
+    ("model-comparison", "2", "reference/stage2_slice.py"),
 ]
 
 
