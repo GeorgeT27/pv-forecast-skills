@@ -15,6 +15,7 @@ import pandas as pd
 import matplotlib
 
 matplotlib.use("Agg")
+import matplotlib.font_manager  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 
 REQUIRED_COLS = ("window_ts", "unit_id", "model", "horizon_step",
@@ -45,7 +46,7 @@ def load_predictions(path):
 
 
 def row_rmse(df):
-    """每 (model, unit_id, window_ts) 一行的全 horizon RMSE（rmse_192 口径泛化）。"""
+    """每 (model, unit_id, window_ts) 一行的全 horizon RMSE（整行全部 horizon 点的 RMSE——行级口径）。"""
     g = df.groupby(["model", "unit_id", "window_ts"])["err"]
     return (g.apply(lambda e: float(np.sqrt(np.mean(np.square(e)))))
             .rename("rmse").reset_index())
@@ -62,9 +63,9 @@ def curve_stats(y, index=None, round_to=3):
                                    if np.isfinite(val) else None)
                           for k, val in zip(idx, v)},
                 "trend": "平", "monotonic": True,
-                "max_jump_idx": str(idx[0]) if idx else None,
-                "max_jump": 0.0, "roughness": 0.0,
-                "argmax": None, "argmin": None}
+                "max_jump_idx": None, "max_jump": 0.0, "roughness": 0.0,
+                "argmax": str(idx[0]) if idx else None,
+                "argmin": str(idx[0]) if idx else None}
     diff = np.diff(v)
     j = int(np.nanargmax(np.abs(diff)))
     return {

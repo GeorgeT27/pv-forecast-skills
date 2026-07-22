@@ -73,3 +73,9 @@ def test_save_outputs_writes_json_and_png(tmp_path):
     assert (tmp_path / "demo-recipe.png").exists()
     loaded = json.loads((tmp_path / "demo-recipe.json").read_text())
     assert loaded == {"a": 1}
+
+
+def test_curve_stats_degenerate_single_point():
+    st = cc.curve_stats([5.0], index=["only"])
+    assert st["max_jump_idx"] is None and st["max_jump"] == 0.0
+    assert st["argmax"] == "only" and st["argmin"] == "only"

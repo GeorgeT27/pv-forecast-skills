@@ -94,8 +94,10 @@ def test_chartbook_scripts_no_cross_skill_imports():
     forbidden = ("pv-result-analysis", "pv_result_analysis",
                  "pv-feature-blame", "pv-station-influence",
                  "pv-model-analysis", "playbooks/")
-    scripts = glob.glob(os.path.join(ENGINE_DIR, "chartbook", "scripts", "*.py"))
-    assert scripts, "chartbook/scripts 不应为空"
+    scripts = (glob.glob(os.path.join(ENGINE_DIR, "chartbook", "scripts", "*.py"))
+               + glob.glob(os.path.join(ENGINE_DIR, "chartbook", "recipes", "*.md"))
+               + glob.glob(os.path.join(ENGINE_DIR, "chartbook", "tests", "*.py")))
+    assert scripts, "chartbook/{scripts,recipes,tests} 不应为空"
     for path in scripts:
         text = open(path, encoding="utf-8").read()
         for bad in forbidden:

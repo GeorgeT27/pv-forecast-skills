@@ -16,7 +16,7 @@ N_BANDS = 4
 
 
 def _cell_rmse(df, keys):
-    return (df.groupby(keys)["err"]
+    return (df.groupby(keys, observed=False)["err"]
             .apply(lambda e: float(np.sqrt(np.mean(np.square(e))))))
 
 
