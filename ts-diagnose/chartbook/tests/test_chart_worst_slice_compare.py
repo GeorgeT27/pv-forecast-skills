@@ -57,3 +57,58 @@ def test_main_writes_outputs(tmp_path):
                "--focal-model", "A"])
     assert (tmp_path / "worst-slice-compare.json").exists()
     assert (tmp_path / "worst-slice-compare.png").exists()
+
+
+def _df_perm():
+    """置换基线专用加密版：8 日/月——A 的 8 个坏日全在 2024-02。
+    随机重排把 8 个坏日重聚同一片的概率 ~4e-6 ⇒ perm_p 恰为 1/201，
+    判定稳不依赖种子运气（3 日/月的原构造 null 概率 1/28，太贴 0.05 线）。"""
+    windows = [f"2024-{mm:02d}-{dd:02d}" for mm in (1, 2, 3)
+               for dd in (2, 5, 8, 11, 14, 17, 20, 23)]
+
+    def err(m, u, w, s):
+        amp = 3.0 if (m == "A" and w.startswith("2024-02")) else 1.0
+        return alt(amp, s)
+
+    df = make_long(["A", "B"], ["U1"], windows, 4, err)
+    df["window_ts"] = pd.to_datetime(df["window_ts"])
+    df["err"] = df["y_pred"] - df["y_true"]
+    return df
+
+
+def test_perm_significant_on_planted():
+    st = cwsc.compute(_df_perm(), focal_model="A")
+    perm = st["perm"]
+    assert perm["stat"] == "worst_slice_gap"
+    assert perm["n_perm"] == 200 and perm["seed"] == 0
+    assert np.isclose(perm["real_stat"], 2.0)
+    assert perm["perm_p"] < 0.05
+    assert perm["null_q95"] < perm["real_stat"]
+    assert perm["verdict"] == "significant"
+
+
+def test_perm_not_significant_on_diffuse_decoy():
+    """弥散诱饵：A 各月同幅小差 → 任意重排统计量不变 → perm_p 精确 = 1.0。
+    防「逢集中必点名」——conc 描述量照算，但置换判 not-significant。"""
+    windows = [f"2024-{mm:02d}-{dd:02d}" for mm in (1, 2, 3)
+               for dd in (5, 15, 25)]
+    df = make_long(["A", "B"], ["U1"], windows, 4,
+                   lambda m, u, w, s: alt(1.2 if m == "A" else 1.0, s))
+    df["window_ts"] = pd.to_datetime(df["window_ts"])
+    df["err"] = df["y_pred"] - df["y_true"]
+    st = cwsc.compute(df, focal_model="A")
+    assert st["perm"]["verdict"] == "not-significant"
+    assert np.isclose(st["perm"]["perm_p"], 1.0)
+
+
+def test_perm_skipped_when_focal_never_behind():
+    """焦点全面领先 → 最差片无正差距 → perm 置 null、原因进 note。"""
+    st = cwsc.compute(_df(), focal_model="B")
+    assert st["perm"] is None
+    assert "perm 未做" in st["note"]
+
+
+def test_perm_disabled_flag():
+    st = cwsc.compute(_df_perm(), focal_model="A", n_perm=0)
+    assert st["perm"] is None
+    assert "n_perm=0" in st["note"]
