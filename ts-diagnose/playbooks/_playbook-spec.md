@@ -86,6 +86,11 @@ crystallize_min_cases: 5          # 可选。固化三关之关1（多样性）�
 7. **材料降级说明**（声明了 materials 时）——required 材料 absent-confirmed 时本
    playbook 怎么降级（哪些阶段跳过/结论上限降到什么），主 agent 据此向用户描述
    降级成本再请求 degraded_ok 确认。
+8. **chartbook 覆盖声明**（硬规则，弱模型压力测试教训：作者没有清单就会漏掉标准分析
+   维度——日内时段集中度整段缺席）——新写/改写 playbook 时**逐条过一遍**
+   `chartbook/recipes/` 全部 recipe：适用的进对应 stage 的 `charts:` 声明；不适用的在
+   本节列出 id + 一句跳过理由（如"需 ≥2 模型，本目标单模型"）。全部 recipe 必须出现在
+   「声明」或「跳过」之一，不许缺席。
 
 ## 5. golden/ 金标准基线（每个 playbook 必带）
 
@@ -95,11 +100,17 @@ playbooks/<id>/golden/
 ├── <输入数据文件>      # 小体量（几 KB），植入已知效应，随仓库提交
 ├── manifest.json      # 机器契约：inputs / args（各阶段脚本 CLI）/ expect（断言 DSL）
 │                      #   op ∈ eq/ge/le/between/contains/first_is/argmax/argmin/exists
+│                      #   每个 stage 条目必带 reference 字段（test_gen_gate 据此动态
+│                      #   收集过闸对象——不声明就不进 CI，会被 test_every_playbook_has_golden 抓）
 └── reference/*.py     # 按菜谱写的参考实现：CLI 契约的可执行示例 + CI 端到端被闸对象
 ```
 
 - **期望值来自 reference 实跑并留容差**；生成脚本金标准算错 → 改脚本不改期望；要改期望，
   必须连 make_golden.py 一起改并重跑 pytest（test_gen_gate.py 会用 reference 验证自洽）。
+- **植入难例形态，不只植最易检出形态**（弱模型压力测试教训：golden 只植阶跃、真实数据是
+  渐变 ramp，最大分离切分点系统性晚于起始点，闸全绿但"何时开始"答错一周）——正文 §1
+  「首要陷阱」里列的每个易误判形态，golden 至少植入一个对应难例（渐变 onset、诱饵变量、
+  集中 vs 普遍等），expect 断言必须能区分"检出效应"与"答对形态"。
 - **种子豁免边界**：「零随机」约束的是 make_golden 的数据构造；分析/图脚本内的
   **固定种子置换**允许——种子必须是显式 CLI 参数并写进产物 JSON，期望值来自
   reference 同种子实跑；改种子=改期望，须连 manifest 一起改并重跑 pytest。
@@ -124,3 +135,6 @@ playbooks/<id>/golden/
 - **显式标出事实阶段**：哪个阶段产"现象清单"（禁机制语言）要在正文写明，且该阶段 `pause_after: true`。
 - **量纲纪律**：跨模型/跨组不可比的量只比排名（Spearman），不 pool 数值。
 - 引擎级恒问五类（question-discipline.md）**不需要**在 questions 里重复声明——那是主 agent 的常备纪律；questions 只声明本目标特有的、可预知的问题。
+- **default 与菜谱同法**：questions 的 default 文案里若含判据/算法（如"相对某基线窗口"），
+  必须与对应 stage 菜谱实际用的方法一致——两套判据并存时结论可能分岔（弱模型压力测试
+  G-6）。写完 frontmatter 自查一遍：每个带方法词的 default 都能在正文菜谱找到同一方法。

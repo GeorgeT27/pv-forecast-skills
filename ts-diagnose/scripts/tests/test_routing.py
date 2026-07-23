@@ -31,7 +31,7 @@ def test_engine_is_fallback_with_negative_list():
 def test_engine_keeps_trigger_phrases():
     d = description_of(ENGINE_DIR)
     for phrase in ("训练是否充分", "batch 不足", "loss 震荡", "稳不稳", "影响最大",
-                   "模型对比归因", "不要结论"):
+                   "模型对比归因", "不要结论", "上线后", "退化"):
         assert phrase in d, f"引擎 description 丢了触发短语「{phrase}」"
 
 
@@ -86,6 +86,13 @@ def test_engine_routes_model_comparison_and_fact_scan():
     assert "不要结论" in text
     assert "model-comparison" in text
     assert "fact-scan" in text
+
+
+def test_engine_routes_deployment_drift():
+    """路由表要点名 deployment-drift 的触发短语（上线后退化/从何时开始变差）。"""
+    text = open(os.path.join(ENGINE_DIR, "SKILL.md"), encoding="utf-8").read()
+    assert "deployment-drift" in text
+    assert "退化" in text
 
 
 def test_result_analysis_yields_to_model_comparison_scope():

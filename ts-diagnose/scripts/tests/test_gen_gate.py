@@ -1,7 +1,11 @@
 """生成闸测试（硬不变量二）。
 
-端到端：三个 playbook 的 golden reference 实现必须过闸（这同时钉死 CLI 契约与
+端到端：每个 playbook 的 golden reference 实现必须过闸（这同时钉死 CLI 契约与
 期望值的自洽）；蓄意算错的脚本金标准必须 FAIL；危险副作用必须静态 FAIL。
+
+REFS 从各 playbook golden/manifest.json 的 stage 条目 `reference` 字段动态收集
+（弱模型压力测试 G-2 同族修复：硬编码清单会让新 playbook 的 reference 静默脱闸）；
+MIN_REFS 下限断言防清单静默缩水。
 """
 import json
 import os
@@ -15,17 +19,26 @@ sys.path.insert(0, SCRIPTS_DIR)
 import engine_common as ec  # noqa: E402
 import gen_gate as gg  # noqa: E402
 
-REFS = [
-    ("training-sufficiency", "2", "reference/dynamics.py"),
-    ("training-sufficiency", "3", "reference/composition.py"),
-    ("training-sufficiency", "4", "reference/external_link.py"),
-    ("robustness", "1", "reference/perturbation.py"),
-    ("feature-importance", "0", "reference/correlation_screen.py"),
-    ("model-comparison", "1", "reference/stage1_gap.py"),
-    ("model-comparison", "2", "reference/stage2_slice.py"),
-    ("model-comparison", "2-crossdim", "reference/stage2_crossdim.py"),
-    ("fact-scan", "1", "reference/scan_charts.py"),
-]
+MIN_REFS = 9  # 2026-07 五 playbook 时的 reference 数——只许增不许减
+
+
+def collect_refs():
+    out = []
+    for pid, _, _ in ec.list_playbooks():
+        man = ec.read_json(os.path.join(ec.playbook_dir(pid), "golden", "manifest.json"))
+        for stage, ent in sorted(((man or {}).get("stages") or {}).items()):
+            if ent.get("reference"):
+                out.append((pid, stage, ent["reference"]))
+    return out
+
+
+REFS = collect_refs()
+
+
+def test_refs_not_shrunk():
+    assert len(REFS) >= MIN_REFS, (
+        f"manifest reference 声明只剩 {len(REFS)} 条（下限 {MIN_REFS}）——"
+        "有人删了 reference 字段或 golden？")
 
 
 def run_gate(workdir, script, playbook, stage):
@@ -124,3 +137,7 @@ def test_every_playbook_has_golden():
             for rel in ent.get("inputs") or []:
                 assert os.path.exists(os.path.join(gdir, rel)), f"{pid} golden 缺 {rel}"
             assert ent.get("args") and ent.get("expect"), f"{pid} stage {st} 契约不完整"
+            assert ent.get("reference"), (
+                f"{pid} stage {st} 缺 reference 字段——reference 不声明就不进 CI 闸")
+            assert os.path.exists(os.path.join(gdir, ent["reference"])), \
+                f"{pid} stage {st} 的 reference 文件不存在：{ent['reference']}"

@@ -9,16 +9,64 @@
   "stages": {
     "0": {
       "desc": "相关筛查：泄漏列被隔离，排除泄漏后 top-1 必须是 x1，x2 接近 0",
-      "inputs": ["features.csv"],
-      "args": ["--data", "features.csv", "--target", "error", "--leakage", "x3", "--out", "correlation_screen.json"],
+      "inputs": [
+        "features.csv"
+      ],
+      "args": [
+        "--data",
+        "features.csv",
+        "--target",
+        "error",
+        "--leakage",
+        "x3",
+        "--out",
+        "correlation_screen.json"
+      ],
       "expect": [
-        {"file": "correlation_screen.json", "path": "n_rows", "op": "eq", "value": 100},
-        {"file": "correlation_screen.json", "path": "dropped_rows", "op": "eq", "value": 0},
-        {"file": "correlation_screen.json", "path": "leakage_flagged", "op": "contains", "value": "x3"},
-        {"file": "correlation_screen.json", "path": "ranking_nonleak", "op": "first_is", "value": "x1"},
-        {"file": "correlation_screen.json", "path": "features.x1.spearman_vs_error", "op": "between", "value": [0.8, 1.0]},
-        {"file": "correlation_screen.json", "path": "features.x2.spearman_vs_error", "op": "between", "value": [-0.3, 0.3]}
-      ]
+        {
+          "file": "correlation_screen.json",
+          "path": "n_rows",
+          "op": "eq",
+          "value": 100
+        },
+        {
+          "file": "correlation_screen.json",
+          "path": "dropped_rows",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "file": "correlation_screen.json",
+          "path": "leakage_flagged",
+          "op": "contains",
+          "value": "x3"
+        },
+        {
+          "file": "correlation_screen.json",
+          "path": "ranking_nonleak",
+          "op": "first_is",
+          "value": "x1"
+        },
+        {
+          "file": "correlation_screen.json",
+          "path": "features.x1.spearman_vs_error",
+          "op": "between",
+          "value": [
+            0.8,
+            1.0
+          ]
+        },
+        {
+          "file": "correlation_screen.json",
+          "path": "features.x2.spearman_vs_error",
+          "op": "between",
+          "value": [
+            -0.3,
+            0.3
+          ]
+        }
+      ],
+      "reference": "reference/correlation_screen.py"
     }
   }
 }

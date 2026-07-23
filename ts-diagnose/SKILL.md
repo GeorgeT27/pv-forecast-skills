@@ -1,6 +1,6 @@
 ---
 name: ts-diagnose
-description: 泛化的时序模型诊断引擎（兜底技能——仅当无匹配的专用诊断技能或已固化代理技能时使用）。当用户对时序/预测任务提出**新的诊断目标**时使用："训练是否充分/是不是 batch 不足/训练分配（chunk/fold 构成）有没有问题/为什么 loss 震荡或收敛慢"（training-sufficiency）、"结论/模型在扰动与分组切片下稳不稳"（robustness）、"哪个输入变量对误差影响最大"（feature-importance）、"为什么模型 A 比 B 好/多模型对比归因（非光伏标准评估场景）"（model-comparison）、"只想把标准分析图画一遍看现象、不要结论"（fact-scan）。**负面清单（这些场景用专用技能，不用本引擎）**：光伏预测结果评估/指标 Excel/月度归因 → pv-result-analysis；训练站负迁移归因（哪个站拖累留出站）→ pv-station-influence；从模型代码生成参考档案 → pv-model-analysis；有 feature_true 对照的预测特征质量归因（哪些 feature 导致指标变差/把特征换成真值重预测的反事实验证）→ pv-feature-blame。已固化代理技能（经 crystallize 产出、orient --profile 入口）若覆盖当前场景则优先级最高，直接用它。
+description: 泛化的时序模型诊断引擎（兜底技能——仅当无匹配的专用诊断技能或已固化代理技能时使用）。当用户对时序/预测任务提出**新的诊断目标**时使用："训练是否充分/是不是 batch 不足/训练分配（chunk/fold 构成）有没有问题/为什么 loss 震荡或收敛慢"（training-sufficiency）、"结论/模型在扰动与分组切片下稳不稳"（robustness）、"哪个输入变量对误差影响最大"（feature-importance）、"为什么模型 A 比 B 好/多模型对比归因（非光伏标准评估场景）"（model-comparison）、"模型上线后是不是退化了/误差从什么时候开始变大/漂移诊断（非光伏标准评估场景）"（deployment-drift）、"只想把标准分析图画一遍看现象、不要结论"（fact-scan）。**负面清单（这些场景用专用技能，不用本引擎）**：光伏预测结果评估/指标 Excel/月度归因 → pv-result-analysis；训练站负迁移归因（哪个站拖累留出站）→ pv-station-influence；从模型代码生成参考档案 → pv-model-analysis；有 feature_true 对照的预测特征质量归因（哪些 feature 导致指标变差/把特征换成真值重预测的反事实验证）→ pv-feature-blame。已固化代理技能（经 crystallize 产出、orient --profile 入口）若覆盖当前场景则优先级最高，直接用它。
 ---
 
 # ts-diagnose：Layer 0 路由层
@@ -22,6 +22,7 @@ description: 泛化的时序模型诊断引擎（兜底技能——仅当无匹�
 | 结论或模型在扰动、分组切片、子期下稳不稳 | `robustness` |
 | 哪个输入变量对误差/目标指标影响最大 | `feature-importance` |
 | 为什么模型 A 比 B 好/差、多模型对比归因（非光伏标准评估场景：格式不标准/每模型一个文件/任意模型集合/非光伏时序） | `model-comparison` |
+| 上线/部署后是不是退化了、误差从什么时候开始变大、漂移诊断（非光伏标准评估场景） | `deployment-drift` |
 | 只想体检/把标准分析图画一遍/看现象不要结论 | `fact-scan` |
 
 都不像 → 先跑下方 orient 看菜单再与用户确认；菜单里也没有 → 按 `playbooks/_playbook-spec.md`

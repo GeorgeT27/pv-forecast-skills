@@ -43,8 +43,13 @@ python3 "<ENGINE>/scripts/orient.py" --goto 3                        # 直达校
   `analysis_scripts/adapter.py`（用户数据 → 规范长表，样例见
   `chartbook/golden/example_adapter/`），先过对账两关（行数守恒 + 抽 3 窗核对）
   再喂图脚本，对账记录写 PROGRESS.md。
+
+  **对账两关适用于一切整形脚本**：执行中临时冒出的、菜谱没预见的数据整形/格式转换
+  脚本（宽转长、逐窗聚合、单位换算……）同样必须过对账两关再消费其产出——
+  菜谱没声明验证步 ≠ 免验证；转换口径（聚合公式、缺失处理）记 PROGRESS.md，
+  否则两次执行各自发明口径，结果不可比。
 - **生成闸**：playbook 的 `golden/manifest.json` 覆盖到的阶段，脚本必须先过 `scripts/gen_gate.py`（静态检查 + 在结果已知的金标准输入上跑一遍），PASS 才许碰真实数据；FAIL → 改脚本不改期望。闸报告落工作目录 `gate_reports/`。
-- **事实阶段 ⏸**：playbook 标 `pause_after` 的事实提取阶段产「现象清单」（观察+数字+来源，**禁机制语言**），完成后停下向用户汇报，等用户点名要深挖的项再进结论阶段。
+- **事实阶段 ⏸**：playbook 标 `pause_after` 的事实提取阶段产「现象清单」（观察+数字+来源，**禁机制语言**），完成后停下向用户汇报，等用户点名要深挖的项再进结论阶段。用户给模糊授权（"挑最强的/你看着办"）时的操作判据：**效应量最大且样本数过功效阈值**的那条现象（并列取来源产物证据线更多者），选了哪条、按什么判据，记 PROGRESS.md 一行。
 - **上下文三分支**：playbook 声明的外部上下文（contexts）absent 时必须先问用户（要不要先建立/嵌入跑），linked 时核验 marker 文件才消费，declined 时结论注明缺失。
 - **嵌入执行 provider skill**：context 声明了 `provider_skill` 且 orient 给出嵌入提示 →
   AskUserQuestion 问用户要不要现在生产（列大致成本）。同意 → **主 agent 内联读该技能的

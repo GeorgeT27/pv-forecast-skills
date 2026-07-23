@@ -4,12 +4,27 @@ Layer 0 = SKILL.md 纯路由层：命中任何 playbook 之前，进上下文的
 只有它。加载是静态文件，所以探针 = 直接度量 SKILL.md 并断言它不指示命中前加载
 其他文件、不内联任何 playbook 方法内容——超预算/越界即 fail，防引擎重新长成单体。
 """
+import glob
 import os
 import re
 
 ENGINE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SKILL_PATH = os.path.join(ENGINE_DIR, "SKILL.md")
-PLAYBOOK_IDS = ("training-sufficiency", "robustness", "feature-importance", "model-comparison", "fact-scan")
+
+# 动态发现（弱模型压力测试 G-2：硬编码元组会让新 playbook 静默脱离本文件全部守卫）。
+# MIN_PLAYBOOK_IDS 只作下限断言——防目录被误删；新增 playbook 自动进守卫，无需改这里。
+MIN_PLAYBOOK_IDS = frozenset(
+    ("training-sufficiency", "robustness", "feature-importance",
+     "model-comparison", "fact-scan"))
+PLAYBOOK_IDS = tuple(sorted(
+    os.path.basename(os.path.dirname(p))
+    for p in glob.glob(os.path.join(ENGINE_DIR, "playbooks", "*", "playbook.md"))
+    if not os.path.basename(os.path.dirname(p)).startswith("_")))
+
+
+def test_playbook_discovery_covers_min_set():
+    missing = MIN_PLAYBOOK_IDS - set(PLAYBOOK_IDS)
+    assert not missing, f"playbooks/ 目录缺已知 playbook：{sorted(missing)}"
 
 LINE_BUDGET = 60
 TOKEN_BUDGET = 6000
@@ -80,7 +95,7 @@ def test_layer0_routes_every_playbook():
 
 
 def test_layer1_playbooks_independent():
-    """三个 playbook 之间零共享内联：互不引用对方 id。"""
+    """全部 playbook 之间零共享内联：互不引用对方 id（动态发现，新增自动纳管）。"""
     for a in PLAYBOOK_IDS:
         text = _read(os.path.join(ENGINE_DIR, "playbooks", a, "playbook.md"))
         for b in PLAYBOOK_IDS:
