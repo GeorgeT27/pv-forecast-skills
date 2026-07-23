@@ -1,5 +1,6 @@
 ---
 id: feature-error-conditional
+category: input-side
 needs_materials: [predict, truth, features]
 适用问题: feature 不准的时候 y 误差变大多少？哪个 feature 的质量与误差耦合最强？
 outputs:

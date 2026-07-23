@@ -1,5 +1,6 @@
 ---
 id: worst-slice-compare
+category: model-comparison
 needs_materials: [predict, truth]
 needs_models: 2
 适用问题: 模型 A 最差的月份/片上，其他模型表现如何？差距是集中爆发还是普遍落后？该集中超出随机了吗？

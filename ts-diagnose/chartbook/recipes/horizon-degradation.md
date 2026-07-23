@@ -1,5 +1,6 @@
 ---
 id: horizon-degradation
+category: error-structure
 needs_materials: [predict, truth]
 适用问题: 短期准长期崩？退化速度谁快？哪个单元在长 horizon 崩溃？模型排序在哪个步反转？
 outputs:

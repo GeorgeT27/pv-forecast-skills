@@ -1,5 +1,6 @@
 ---
 id: feature-trend-overlay
+category: input-side
 needs_materials: [predict, truth, features]
 适用问题: 最差月份里 feature 是不是也在坏？输入质量恶化与 y 误差在时间上同步吗？
 outputs:

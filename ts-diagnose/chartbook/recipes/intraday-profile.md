@@ -1,5 +1,6 @@
 ---
 id: intraday-profile
+category: error-structure
 needs_materials: [predict, truth]
 适用问题: 误差集中在一天中的什么时段？系统性高估还是低估、集中在哪个物理时刻？
 outputs:

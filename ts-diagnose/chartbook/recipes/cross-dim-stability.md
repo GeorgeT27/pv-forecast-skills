@@ -1,5 +1,6 @@
 ---
 id: cross-dim-stability
+category: temporal-stability
 needs_materials: [predict, truth]
 needs_models: 2
 适用问题: A 比 B 好——换时间对半/换口径后方向还成立吗？（多图同源之外的正交稳定性证据）

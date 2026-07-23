@@ -1,5 +1,6 @@
 ---
 id: rolling-stability
+category: temporal-stability
 needs_materials: [predict, truth]
 适用问题: 性能随时间稳不稳？从哪天开始变差？变点前后差多少？不同日历时段有无规律？
 outputs:

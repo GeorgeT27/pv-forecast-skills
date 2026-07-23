@@ -10,10 +10,10 @@ import yaml
 CHARTBOOK = Path(__file__).resolve().parents[1]
 ENGINE_SCRIPTS = CHARTBOOK.parent / "scripts"
 sys.path.insert(0, str(ENGINE_SCRIPTS))
-from engine_common import MATERIAL_IDS  # noqa: E402
+from engine_common import MATERIAL_IDS, CATEGORY_IDS  # noqa: E402
 
 REQUIRED_KEYS = ("id", "needs_materials", "适用问题", "outputs",
-                 "json_schema", "bridge_hooks", "验证步")
+                 "json_schema", "bridge_hooks", "验证步", "category")
 
 
 def parse_recipe(text):
@@ -27,6 +27,11 @@ def check_recipe(path: Path):
     for k in REQUIRED_KEYS:
         assert k in fm, f"{path.name} 缺 frontmatter 键 {k}"
     assert fm["id"] == path.stem, f"{path.name} id 与文件名不一致"
+    assert fm["category"] in CATEGORY_IDS, \
+        f"{path.name} category 非法: {fm.get('category')}(合法集 {CATEGORY_IDS})"
+    DOMAIN_WORDS = ("weather", "station", "solar", "irradiance")
+    hit = [w for w in DOMAIN_WORDS if w in fm["id"]]
+    assert not hit, f"{path.name} id 含领域名词 {hit}(领域中立纪律见 _recipe-spec §5.6)"
     mats = fm["needs_materials"]
     assert mats and set(mats) <= set(MATERIAL_IDS), \
         f"{path.name} needs_materials 非法: {mats}"
@@ -55,4 +60,24 @@ def test_recipe_checker_has_teeth(tmp_path):
                    "  png: bad-recipe.png\njson_schema: x\nbridge_hooks: x\n"
                    "验证步: x\n---\n## 判读\n")
     with pytest.raises(AssertionError, match="needs_materials"):
+        check_recipe(bad)
+
+
+def test_recipe_checker_rejects_bad_category(tmp_path):
+    bad = tmp_path / "bad-cat.md"
+    bad.write_text("---\nid: bad-cat\ncategory: 不存在的类\n"
+                   "needs_materials: [predict]\n适用问题: x\noutputs:\n"
+                   "  json: bad-cat.json\n  png: bad-cat.png\njson_schema: x\n"
+                   "bridge_hooks: x\n验证步: x\n---\n## 判读\n")
+    with pytest.raises(AssertionError, match="category"):
+        check_recipe(bad)
+
+
+def test_recipe_checker_rejects_domain_word_id(tmp_path):
+    bad = tmp_path / "weather-regime.md"
+    bad.write_text("---\nid: weather-regime\ncategory: input-side\n"
+                   "needs_materials: [predict]\n适用问题: x\noutputs:\n"
+                   "  json: weather-regime.json\n  png: weather-regime.png\n"
+                   "json_schema: x\nbridge_hooks: x\n验证步: x\n---\n## 判读\n")
+    with pytest.raises(AssertionError, match="领域名词"):
         check_recipe(bad)

@@ -1,5 +1,6 @@
 ---
 id: true-vs-pred-scatter
+category: error-structure
 needs_materials: [predict, truth]
 适用问题: 预测系统性偏低/偏高？大值段被压低？误差是「不齐」还是「不正」？
 outputs:

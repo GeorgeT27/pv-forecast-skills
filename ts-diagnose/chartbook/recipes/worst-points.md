@@ -1,5 +1,6 @@
 ---
 id: worst-points
+category: sample-contrast
 needs_materials: [predict, truth]
 适用问题: 误差最大的 N 个点是什么性质——极值、转折点(ramp)、还是高波动时段？
 outputs:

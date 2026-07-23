@@ -1,5 +1,6 @@
 ---
 id: error-breakdown
+category: error-structure
 needs_materials: [predict, truth]
 适用问题: 什么单元(站点)什么时候 RMSE 最大？误差集中在哪些月/时段/horizon 带？
 outputs:

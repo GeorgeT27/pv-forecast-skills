@@ -344,6 +344,11 @@ MATERIAL_IDS = ("predict", "truth", "model_code", "training_log", "features",
                 "experiment_config", "data_profile")
 MATERIAL_STATUSES = ("present", "absent-confirmed")  # 其余一律视为 unknown
 
+# chartbook recipe 类别全集(呈现层归组;spec 2026-07-23 §6)。
+# recipe frontmatter 的 category 必填且 ∈ 本集(test_recipes_conform 闸)。
+CATEGORY_IDS = ("error-structure", "temporal-stability", "input-side",
+                "model-comparison", "sample-contrast", "attribution")
+
 
 def material_status(cfg, mid):
     """config.materials 里该材料的状态：present / absent-confirmed / unknown。

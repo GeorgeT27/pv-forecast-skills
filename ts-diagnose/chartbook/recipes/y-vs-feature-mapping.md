@@ -1,5 +1,6 @@
 ---
 id: y-vs-feature-mapping
+category: temporal-stability
 needs_materials: [predict, truth, features]
 适用问题: y 与关键 feature 的物理映射关系变了吗？（组件衰减/扩容/限电类整体位移）
 outputs:

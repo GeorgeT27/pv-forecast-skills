@@ -1,5 +1,6 @@
 ---
 id: train-test-drift
+category: temporal-stability
 needs_materials: [predict, truth, train_y]
 适用问题: 测试期标签分布还像训练期吗？哪些月漂了、漂多少？
 outputs:
