@@ -100,6 +100,9 @@ playbooks/<id>/golden/
 
 - **期望值来自 reference 实跑并留容差**；生成脚本金标准算错 → 改脚本不改期望；要改期望，
   必须连 make_golden.py 一起改并重跑 pytest（test_gen_gate.py 会用 reference 验证自洽）。
+- **种子豁免边界**：「零随机」约束的是 make_golden 的数据构造；分析/图脚本内的
+  **固定种子置换**允许——种子必须是显式 CLI 参数并写进产物 JSON，期望值来自
+  reference 同种子实跑；改种子=改期望，须连 manifest 一起改并重跑 pytest。
 - 覆盖不了的阶段（依赖真实记录源格式/真实模型入口）在 manifest note 写明原因，
   由菜谱声明的对账/植入回收验证步兜底。
 
