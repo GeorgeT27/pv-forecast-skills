@@ -70,3 +70,35 @@ bridge_hooks: >                    # 必填，形状描述符 → 架构假设�
    test_recipes_conform 闸)。领域语义只允许运行时经 intake 背景(data_profile)
    注入呈现层——如给聚类簇起领域名。周期性假设图(如 intraday-profile)须在
    recipe 内标注"周期性数据专用",orient 按 data_profile 判断适用。
+
+## 6. 模型访问契约(predict adapter;attribution 类图专用)
+
+attribution 类图(needs_materials 含 serving_api)不碰用户模型,只认运行时
+薄适配器 `analysis_scripts/predict_adapter.py`(与 §1 的 adapter.py 同款纪律:
+现场唯一要写的代码;golden 模板在 `golden/example_predict_adapter/`):
+
+```python
+CAPABILITIES = {
+    "perturb_features": True,    # 支持特征替换(global-attribution/local-waterfall 需要)
+    "perturb_lookback": False,   # 支持历史窗遮蔽(lookback-decay 需要)
+    "torch_module": False,       # True 时须实现 get_model()(梯度白盒加速路)
+    "lookback_steps": 0,         # perturb_lookback=True 时必填:历史窗长度(步)
+    "features": ["..."],         # 可扰动特征名全集
+}
+
+def predict(requests):
+    """requests: list[dict]——unit_id, window_ts,
+       feature_overrides: {特征名: list[float] 长=horizon} | 缺省用模型自己的输入,
+       lookback_mask: list[[start,end]] 半开步区间(0=最旧) | 缺省不遮蔽。
+    返回 DataFrame: unit_id | window_ts | horizon_step | y_pred。"""
+
+def get_model():
+    """torch_module=True 时实现:返回 (torch_model, background_X, explain_X,
+    feature_names)——model 输入 (N,D) tensor、输出 (N,B);GradientExplainer 用。"""
+```
+
+用户给 FastAPI 就在 predict 里打 API,给本地模型就本地推理——预写脚本无感。
+能力不满足的图由选择门如实标注不可画。归因脚本经 attribution_common 的
+BudgetedAdapter 调用:预算上限(--max-calls,超限截断记 coverage)+ 请求哈希
+缓存(jsonl,重跑不重打)。背景集定义与所用 explainer/种子必须落盘进归因
+JSON(background_meta)——换背景集=换归因基线。
