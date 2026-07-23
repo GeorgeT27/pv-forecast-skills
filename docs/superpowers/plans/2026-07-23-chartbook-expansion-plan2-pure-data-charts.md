@@ -1701,9 +1701,12 @@ from __future__ import annotations
 
 import argparse
 
+import warnings
+
 import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.metrics import silhouette_score
 
 import chart_common as cc
@@ -1724,8 +1727,11 @@ def compute(df: pd.DataFrame, feats: pd.DataFrame, seed: int = 0) -> dict:
     for k in (2, 3, 4):
         if k >= len(Xz):
             continue
-        km = KMeans(n_clusters=k, n_init=10, random_state=seed).fit(Xz)
-        s = float(silhouette_score(Xz, km.labels_))
+        with warnings.catch_warnings():
+            # k > 真实制式数时重复点必然簇合并——固有告警,局部消音防污染测试输出
+            warnings.simplefilter("ignore", ConvergenceWarning)
+            km = KMeans(n_clusters=k, n_init=10, random_state=seed).fit(Xz)
+            s = float(silhouette_score(Xz, km.labels_))
         sil[str(k)] = round(s, 4)
         if s > best[1]:
             best = (k, s, km.labels_)
