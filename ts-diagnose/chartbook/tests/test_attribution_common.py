@@ -81,3 +81,34 @@ def test_missing_request_idx_rejected(tmp_path):
     ba = ac.BudgetedAdapter(ac.load_adapter(p), max_calls=10)
     with pytest.raises(ValueError, match="request_idx"):
         ba.predict([{"unit_id": "U1", "window_ts": "t"}])
+
+
+def _feats_two_clusters():
+    import pandas as pd
+    rows = []
+    for i, w in enumerate([f"2024-01-{d:02d}" for d in range(1, 9)]):
+        base = 0.0 if i < 4 else 1.0
+        for s in range(6):
+            for fn, v in (("fa", base), ("fb", base), ("fc", 1.0 - base)):
+                rows.append({"window_ts": w, "unit_id": "U1", "feature": fn,
+                             "horizon_step": s, "f_pred": v})
+    df = pd.DataFrame(rows)
+    df["window_ts"] = pd.to_datetime(df["window_ts"])
+    return df
+
+
+def test_background_set_medoids_and_meta():
+    series, meta = ac.background_set(_feats_two_clusters(), k=2, seed=0)
+    assert meta["k"] == 2 and meta["seed"] == 0 and len(meta["windows"]) == 2
+    # 两簇 medoid 各一 → 背景序列 = 两窗均值 = 0.5
+    assert np.allclose(series["fa"], 0.5)
+    assert len(series["fa"]) == 6
+
+
+def test_feature_corr_groups_clones_grouped():
+    groups = ac.feature_corr_groups(_feats_two_clusters(), threshold=0.8)
+    # fa/fb 同向克隆成一组;fc 反向(|ρ|=1 也应入组——绝对值口径)
+    flat = {f for g in groups for f in g}
+    assert flat == {"fa", "fb", "fc"}
+    big = max(groups, key=len)
+    assert set(big) == {"fa", "fb", "fc"}, "绝对相关 |ρ|≥0.8 全部成一组"

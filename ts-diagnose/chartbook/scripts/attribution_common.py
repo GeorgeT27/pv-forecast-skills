@@ -76,3 +76,61 @@ class BudgetedAdapter:
                         f.write(json.dumps(
                             {"key": k, "y_pred": self._cache[k]}) + "\n")
         return [np.array(self._cache[k]) for k in keys]
+
+
+def background_set(feats, k: int = 5, seed: int = 0):
+    """背景集:窗口级特征向量 kmeans 后每簇取 medoid(离质心最近的真实窗),
+    背景序列 = 代表窗逐步均值。meta 必须随归因 JSON 落盘(守卫一)。"""
+    import pandas as pd
+    vec = (feats.groupby(["unit_id", "window_ts", "feature"])["f_pred"].mean()
+           .unstack("feature").dropna())
+    if len(vec) < 1:
+        raise ValueError("features 表无完整窗口,无法建背景集")
+    k = min(k, len(vec))
+    if k < len(vec):
+        from sklearn.cluster import KMeans
+        km = KMeans(n_clusters=k, n_init=10, random_state=seed).fit(vec.values)
+        idx = []
+        for ci in range(k):
+            members = np.where(km.labels_ == ci)[0]
+            d = np.linalg.norm(
+                vec.values[members] - km.cluster_centers_[ci], axis=1)
+            idx.append(int(members[int(np.argmin(d))]))
+    else:
+        idx = list(range(len(vec)))
+    chosen = [vec.index[i] for i in idx]
+    sub = feats.set_index(["unit_id", "window_ts"]).loc[chosen].reset_index()
+    series = {}
+    for fname, g in sub.groupby("feature"):
+        series[str(fname)] = [round(float(v), 6) for v in
+                              g.groupby("horizon_step")["f_pred"].mean()
+                              .sort_index()]
+    meta = {"method": "kmeans-medoid", "k": int(k), "seed": int(seed),
+            "windows": [f"{u}|{w}" for u, w in chosen]}
+    return series, meta
+
+
+def feature_corr_groups(feats, threshold: float = 0.8):
+    """|ρ|≥threshold 的特征并查集成组(窗口级均值向量口径)——强相关特征
+    独立扰动会造分布外样本,归因必须按组呈现/置换(守卫二)。"""
+    vec = (feats.groupby(["unit_id", "window_ts", "feature"])["f_pred"].mean()
+           .unstack("feature").dropna())
+    names = list(vec.columns)
+    parent = {n: n for n in names}
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    corr = vec.corr().abs()
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            c = corr.loc[a, b]
+            if np.isfinite(c) and c >= threshold:
+                parent[find(a)] = find(b)
+    groups = {}
+    for n in names:
+        groups.setdefault(find(n), []).append(n)
+    return sorted(sorted(g) for g in groups.values())
