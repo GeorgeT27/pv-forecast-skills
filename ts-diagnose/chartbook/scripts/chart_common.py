@@ -133,7 +133,8 @@ def detect_period_steps(values, max_lag: int = 96, threshold: float = 0.5):
     注意不能用全局 argmax:正弦的 ACF 在低阶 lag 本来就高(cos 因子),
     全局 argmax 会答 lag≈2;周期表现为 ACF 先降后升的局部峰。
     峰值 < threshold 或无局部峰时返回 None。
-    baseline-skill 的季节基线与 lookback 类图的 lag 桶共用。"""
+    baseline-skill 的季节基线与 lookback 类图的 lag 桶共用。
+    period 恰在 max_lag 边界时右端上升沿视作峰。"""
     x = np.asarray(values, float)
     x = x[np.isfinite(x)]
     if len(x) < 6:
@@ -149,4 +150,8 @@ def detect_period_steps(values, max_lag: int = 96, threshold: float = 0.5):
     for i in range(1, len(rho) - 1):
         if rho[i] > rho[i - 1] and rho[i] > rho[i + 1] and rho[i] > best_rho:
             best_lag, best_rho = i + 1, float(rho[i])
+    i_last = len(rho) - 1
+    if i_last >= 1 and rho[i_last] > rho[i_last - 1] and rho[i_last] > best_rho:
+        # 右端上升沿视作峰:period == max_lag 时真峰落在末位,无右邻可比
+        best_lag, best_rho = i_last + 1, float(rho[i_last])
     return best_lag

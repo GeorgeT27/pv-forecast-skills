@@ -38,7 +38,8 @@ def compute(df: pd.DataFrame, period_steps=None, freq: str = "15min",
     out = {"recipe": RECIPE_ID, "period_steps": period_steps,
            "freq": freq, "baselines": {}, "models": {},
            "note": "skill=1−RMSE_model/RMSE_baseline,基线可算的行上对齐比较;"
-                   "copies_persistence: corr(pred,persistence)>corr(pred,truth)。"}
+                   "copies_persistence: 预测到 persistence 基线的 RMSE < 0.5×"
+                   "自身(同行)误差 RMSE——离基线比离真值近一倍以上。"}
     scored = d.dropna(subset=["base_persistence"])
     out["n_scored"] = int(len(scored) / max(1, d["model"].nunique()))
     rmse_p = _rmse(scored["base_persistence"] - scored["y_true"])
@@ -68,7 +69,15 @@ def compute(df: pd.DataFrame, period_steps=None, freq: str = "15min",
             if len(gp) > 2 else np.nan
         entry["corr_with_truth"] = round(ct, 4)
         entry["corr_with_persistence"] = round(cp, 4) if np.isfinite(cp) else None
-        entry["copies_persistence"] = bool(np.isfinite(cp) and cp > ct)
+        if len(gp):
+            dist_p = _rmse(gp["y_pred"] - gp["base_persistence"])
+            rmse_scored = _rmse(gp["err"])
+            entry["dist_to_persistence"] = round(dist_p, 4)
+            entry["copies_persistence"] = bool(
+                rmse_scored > 1e-12 and dist_p < 0.5 * rmse_scored)
+        else:
+            entry["dist_to_persistence"] = None
+            entry["copies_persistence"] = False
         out["models"][str(m)] = entry
     return out
 

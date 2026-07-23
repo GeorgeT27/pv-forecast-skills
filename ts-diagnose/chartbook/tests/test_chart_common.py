@@ -110,3 +110,11 @@ def test_detect_period_steps_sine():
 def test_detect_period_steps_aperiodic_returns_none():
     x = np.arange(50, dtype=float)  # 纯趋势,无周期
     assert cc.detect_period_steps(x, max_lag=20) is None
+
+
+def test_detect_period_steps_period_at_max_lag_boundary():
+    # 3 个完整周期(72 点),period=24=max_lag → 真峰恰好落在 rho 数组末位(无右邻)。
+    # 注:用 2 个周期(48 点)会让线性去趋势后 lag=24 处 rho 跌破默认 threshold=0.5
+    # (仅约 0.37,边界处单周期重叠样本太少),故取 3 周期保证边界峰能稳健地过阈值。
+    x = 10 + 5 * np.sin(2 * np.pi * np.arange(72) / 24)
+    assert cc.detect_period_steps(x, max_lag=24) == 24

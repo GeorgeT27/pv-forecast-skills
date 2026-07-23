@@ -52,8 +52,9 @@ def test_persistence_copy_flagged():
     st = cbs.compute(_mk(), period_steps=24, freq="1h")
     m = st["models"]["persist_copy"]
     assert m["copies_persistence"] is True
-    # 阴性对照用 seasonal_copy:pred=y−100 与 truth 相关恒为 1(平移不变),
-    # 必大于与 persistence 的相关 → 稳健地不触发
+    assert np.isclose(m["dist_to_persistence"], 0.0)
+    # 两个阴性对照:half_err(纯半误差)与 seasonal_copy(抄季节)都不得触发
+    assert st["models"]["half_err"]["copies_persistence"] is False
     assert st["models"]["seasonal_copy"]["copies_persistence"] is False
 
 
