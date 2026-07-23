@@ -67,3 +67,25 @@ def test_main_writes_outputs(tmp_path):
               "--k", "2"])
     assert (tmp_path / "local-waterfall.json").exists()
     assert (tmp_path / "local-waterfall.png").exists()
+
+
+def test_render_negative_phi_cumulative_positions():
+    """负 φ 瀑布条:bar(bottom=cum, height=v<0) 应占据 [cum+v, cum] 区间,
+    下一条从 cum+v 起(Plan3 终审 T5b 补覆盖)。"""
+    stats = {"rows": [{"window_ts": "2024-01-01T00:00:00", "unit_id": "U1",
+                       "rmse_actual": 2.0, "base_value": 5.0,
+                       "check_sum": 3.0, "basis": "f_true",
+                       "contributions": {"fa": -3.0, "fb": 1.0}}],
+             "k": 1, "model": "A"}
+    fig = clw.render(stats)
+    ax = fig.axes[0]
+    bars = [p for p in ax.patches]
+    assert len(bars) == 2
+    # 排序按 |φ| 降序:fa(-3) 先画,从 base_value=5.0 起,占 [2,5]
+    y0, h0 = bars[0].get_y(), bars[0].get_height()
+    assert np.isclose(min(y0, y0 + h0), 2.0) and np.isclose(max(y0, y0 + h0), 5.0)
+    # fb(+1) 从 cum=2.0 起,占 [2,3]
+    y1, h1 = bars[1].get_y(), bars[1].get_height()
+    assert np.isclose(min(y1, y1 + h1), 2.0) and np.isclose(max(y1, y1 + h1), 3.0)
+    import matplotlib.pyplot as plt
+    plt.close(fig)

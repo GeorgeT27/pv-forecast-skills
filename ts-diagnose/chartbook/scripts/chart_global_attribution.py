@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 
 import numpy as np
-import pandas as pd
 
 import attribution_common as ac
 import chart_common as cc
@@ -76,6 +75,8 @@ def compute(pred_df, feats, adapter, buckets: int = 4, max_windows: int = 30,
     ba = ac.BudgetedAdapter(adapter, max_calls=max_calls,
                             cache_path=cache_path)
     nsamples = 2 ** D if D <= 8 else 2 * D + 64
+    # 双重播种非冗余:rng 喂本脚本自己的采样;shap KernelExplainer 内部走全局
+    # np.random——两者都不种任一侧就不可复现(Plan3 T3 评审备注)。
     np.random.seed(seed)
     acc = np.zeros((len(bks), D))
     done, truncated = 0, False

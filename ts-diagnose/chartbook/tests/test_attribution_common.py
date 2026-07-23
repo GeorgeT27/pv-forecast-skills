@@ -112,3 +112,13 @@ def test_feature_corr_groups_clones_grouped():
     assert flat == {"fa", "fb", "fc"}
     big = max(groups, key=len)
     assert set(big) == {"fa", "fb", "fc"}, "绝对相关 |ρ|≥0.8 全部成一组"
+
+
+def test_background_set_degenerate_labels_all_windows():
+    """k≥完整窗数时未跑聚类,meta.method 不得谎称 kmeans-medoid。"""
+    feats = _feats_two_clusters()          # 该文件已有夹具:8 个完整窗
+    _series, meta = ac.background_set(feats, k=99, seed=0)
+    assert meta["method"] == "all-windows"
+    assert meta["k"] == 8
+    _series2, meta2 = ac.background_set(feats, k=2, seed=0)
+    assert meta2["method"] == "kmeans-medoid"

@@ -66,3 +66,32 @@ def test_budget_truncation_keeps_completed_buckets():
     assert len(st["delta_by_bucket"]) == 2
     assert np.isclose(st["delta_by_bucket"][0], 1.0)
     assert st["weights"] is None and st["short_term_share"] is None
+
+
+CONST_ADAPTER = '''\
+import pandas as pd
+CAPABILITIES = {"perturb_features": False, "perturb_lookback": True,
+                "torch_module": False, "lookback_steps": 4, "features": []}
+HORIZON = 2
+def predict(requests):
+    rows = []
+    for i, r in enumerate(requests):
+        for s in range(HORIZON):
+            rows.append({"request_idx": i, "unit_id": r["unit_id"],
+                         "window_ts": r["window_ts"], "horizon_step": s,
+                         "y_pred": 5.0})
+    return pd.DataFrame(rows)
+'''
+
+
+def test_mask_insensitive_adapter_ref_zero(tmp_path):
+    """对遮蔽完全不敏感的模型:全桶 Δ=0 → weights=None 不归一;
+    per-instance ref≈0 分支 → h*=0(此前无覆盖,Plan3 终审 T4b)。"""
+    p = tmp_path / "predict_adapter.py"
+    p.write_text(CONST_ADAPTER)
+    st = cld.compute(_pred(), ac.load_adapter(p), max_windows=2, seed=0,
+                     max_calls=5000, per_instance=True)
+    assert st["weights"] is None
+    assert st["short_term_share"] is None
+    assert st["per_instance"]["median"] == 0
+    assert set(st["per_instance"]["hist"]) == {"0"}

@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 
 import numpy as np
-import pandas as pd
 
 import attribution_common as ac
 import chart_common as cc

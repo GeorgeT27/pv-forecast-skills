@@ -81,7 +81,6 @@ class BudgetedAdapter:
 def background_set(feats, k: int = 5, seed: int = 0):
     """背景集:窗口级特征向量 kmeans 后每簇取 medoid(离质心最近的真实窗),
     背景序列 = 代表窗逐步均值。meta 必须随归因 JSON 落盘(守卫一)。"""
-    import pandas as pd
     vec = (feats.groupby(["unit_id", "window_ts", "feature"])["f_pred"].mean()
            .unstack("feature").dropna())
     if len(vec) < 1:
@@ -105,7 +104,8 @@ def background_set(feats, k: int = 5, seed: int = 0):
         series[str(fname)] = [round(float(v), 6) for v in
                               g.groupby("horizon_step")["f_pred"].mean()
                               .sort_index()]
-    meta = {"method": "kmeans-medoid", "k": int(k), "seed": int(seed),
+    meta = {"method": "kmeans-medoid" if len(idx) < len(vec) else "all-windows",
+            "k": int(k), "seed": int(seed),
             "windows": [f"{u}|{w}" for u, w in chosen]}
     return series, meta
 

@@ -1,12 +1,10 @@
 """global-attribution golden:线性适配器 3:1:0 精确回收;预算截断如实。
 
-pytestmark 过滤的 RuntimeWarning 与 shap/golden 断言无关：本环境 anaconda
-的 numpy/scipy 绑的 Intel OpenMP(libiomp)与 shap 依赖链带的 LLVM
-OpenMP(libomp)同进程加载时 threadpoolctl 会告警(仅当 shap 与 sklearn
-的 KMeans 同 session 加载才触发,纯环境二进制共存提示，非 shap API
-弃用、非本任务代码逻辑问题)。禁改 numpy/scipy/sklearn/shap 版本，按来源
-精确过滤本文件内的告警，不做全局静默(跨文件的同一告警见 task-3-report.md
-"其他发现"节)。"""
+RuntimeWarning 过滤见 conftest.py:本环境 anaconda 的 numpy/scipy 绑的
+Intel OpenMP(libiomp)与 shap 依赖链带的 LLVM OpenMP(libomp)同进程加载时
+threadpoolctl 会告警(仅当 shap 与 sklearn 的 KMeans 同 session 加载才触发,
+纯环境二进制共存提示，非 shap API 弃用、非本任务代码逻辑问题)。禁改
+numpy/scipy/sklearn/shap 版本。"""
 import sys
 from pathlib import Path
 
@@ -16,9 +14,6 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-pytestmark = pytest.mark.filterwarnings(
-    "ignore:(?s).*Found Intel OpenMP.*LLVM OpenMP.*:RuntimeWarning")
 
 shap = pytest.importorskip("shap")  # noqa: F841
 
