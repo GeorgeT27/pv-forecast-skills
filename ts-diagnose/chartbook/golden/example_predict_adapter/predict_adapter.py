@@ -12,11 +12,12 @@ HORIZON = 6
 
 def predict(requests):
     rows = []
-    for r in requests:
+    for i, r in enumerate(requests):
         ov = r.get("feature_overrides") or {}
         for s in range(HORIZON):
             y = sum(c * (ov[f][s] if f in ov else 1.0)
                     for f, c in COEF.items())
-            rows.append({"unit_id": r["unit_id"], "window_ts": r["window_ts"],
+            rows.append({"request_idx": i, "unit_id": r["unit_id"],
+                         "window_ts": r["window_ts"],
                          "horizon_step": s, "y_pred": y})
     return pd.DataFrame(rows)

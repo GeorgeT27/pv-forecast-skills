@@ -90,7 +90,8 @@ def predict(requests):
     """requests: list[dict]——unit_id, window_ts,
        feature_overrides: {特征名: list[float] 长=horizon} | 缺省用模型自己的输入,
        lookback_mask: list[[start,end]] 半开步区间(0=最旧) | 缺省不遮蔽。
-    返回 DataFrame: unit_id | window_ts | horizon_step | y_pred。"""
+    返回 DataFrame: request_idx | horizon_step | y_pred(request_idx=请求在本批的
+    下标——同一批可含同窗不同扰动的请求,必须靠它区分;unit_id/window_ts 列可选)。"""
 
 def get_model():
     """torch_module=True 时实现:返回 (torch_model, background_X, explain_X,

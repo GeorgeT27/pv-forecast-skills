@@ -63,9 +63,12 @@ class BudgetedAdapter:
                     f"本批需 {len(miss)})")
             self.calls += len(miss)
             df = self.adapter.predict([r for _k, r in miss])
-            for k, r in miss:
-                sub = df[(df["unit_id"].astype(str) == str(r["unit_id"])) &
-                         (df["window_ts"].astype(str) == str(r["window_ts"]))]
+            if "request_idx" not in df.columns:
+                raise ValueError(
+                    "适配器返回缺 request_idx 列——同批同窗不同扰动的请求无法"
+                    "区分(契约见 _recipe-spec §6)")
+            for j, (k, _r) in enumerate(miss):
+                sub = df[df["request_idx"] == j]
                 self._cache[k] = [float(v) for v in
                                   sub.sort_values("horizon_step")["y_pred"]]
                 if self.cache_path:
