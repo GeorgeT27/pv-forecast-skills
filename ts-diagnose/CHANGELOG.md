@@ -12,6 +12,17 @@
 - 2026-07-23 | 弱模型压力测试修复轮：test_layering/test_gen_gate 改动态发现（PLAYBOOK_IDS 目录扫描+下限断言、REFS 从 manifest reference 字段收集，新 playbook 不再静默脱守卫）+ spec §4.8 chartbook 覆盖声明硬规则（逐 recipe 声明或跳过）+ spec §5 植入难例形态规则 + spec §7 default 与菜谱同法自查 + mechanisms 反驳门 8「渐变-突变混淆」（时间定位双点齐报）+ engine-core 对账两关扩到一切整形脚本 + 停顿点模糊授权操作判据 + 新 playbook deployment-drift（部署后退化/漂移：切分点+onset 首离双点、置换基线、诱因双关筛查、ramp 难例 golden） | 用户："do a pressure test with another question…switch to sonnet…find out what need to be changed" | Sonnet 全流程压测（非光伏负荷退化+埋点数据）：路由/授权/新写 playbook/闸全过，但 onset 答错一周仍标高置信（切分点≠起始点）、日内维度整段漏查（无 chartbook 清单强制）、硬编码守卫盲区（GAPS G-1~G-7）；修复全部落 CI，pytest 263 绿
 - 2026-07-23 | 图表选择门（画前增删图，engine 级）：任何声明 charts: 的阶段画图前必停一次 AskUserQuestion 多选——默认全选可画图（被动接受=画全套，守完整性），用户可删图（记 PROGRESS+CONCLUSION 声明覆盖缺口）或从「可加画池」加图（跨 playbook 任取材料满足的 recipe）；选择门=画前定范围 vs pause_after=画后定深挖，二者不合并。engine_common 加 declared_recipes/addable_recipes/has_chart_stage/recipe_min_models，orient 打印三组图+可加画池；recipe frontmatter 加 needs_models（对比类图=2，可加画池标注「需 ≥2 模型」防单模型误加，<N 运行时 ValueError 兜底），4 对比图（worst-slice-compare/oracle-gap/model-error-correlation/cross-dim-stability）已标；spec §4.8 补选择门与可加画池的衔接 | 用户："we might want to delete or add extra images for final analysis task"（压测追问后确认）+ 选 draw-all-default 与 add-any-applicable | pytest 266 绿
 
+## 2026-07-23 chartbook 扩展第四轮(呈现层收口,28 图工程完结)
+- orient 图表选择门按六类 category 分组:声明图带类别标签,可加画池分组呈现
+  (engine_common.recipe_category);
+- 新增 `chartbook/scripts/build_index.py`:扫产物目录生成 INDEX.md,按类别分节、
+  只索引实际产物(28 图是库存非必画清单,不为没画的留空位);
+- true-vs-pred-scatter 增强:Mincer-Zarnowitz 回归(y_true=a+b·y_pred)+
+  a=0,b=1 联合 F 检验注记,配对正交噪声零随机精确 golden;
+- Plan3 延后清单清扫:死 pandas import×4、背景集退化分支如实标 all-windows、
+  双 RNG 播种注释、tests/conftest.py 集中 OpenMP 豁免(全套件回到 0 warnings)、
+  lookback ref≈0 与负 φ 瀑布渲染补覆盖。
+
 ## 2026-07-23 chartbook 扩展第一轮:地基
 
 - recipe frontmatter 强制 `category`(六类,engine_common.CATEGORY_IDS,conform CI 闸)
