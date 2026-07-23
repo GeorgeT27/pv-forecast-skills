@@ -32,9 +32,30 @@ def _window_series(feats, unit, wts):
 
 def compute(pred_df, feats, adapter, buckets: int = 4, max_windows: int = 30,
             background_k: int = 5, seed: int = 0, max_calls: int = 5000,
-            cache_path=None) -> dict:
+            cache_path=None, explainer: str = "auto") -> dict:
     if not adapter.CAPABILITIES.get("perturb_features"):
         raise ValueError("适配器 perturb_features=False,本图不可画(§6)")
+    if explainer == "auto":
+        explainer = ("gradient" if adapter.CAPABILITIES.get("torch_module")
+                     else "kernel")
+    if explainer == "gradient":
+        mat, names, bg_meta = ac.gradient_mean_shap(adapter)
+        overall = {n: round(float(mat[:, j].mean()), 6)
+                   for j, n in enumerate(names)}
+        return {"recipe": RECIPE_ID,
+                "ranking": sorted(names, key=lambda n: -overall[n]),
+                "overall": overall,
+                "by_bucket": [{n: round(float(mat[bi, j]), 6)
+                               for j, n in enumerate(names)}
+                              for bi in range(mat.shape[0])],
+                "bucket_defs": [[i, i + 1] for i in range(mat.shape[0])],
+                "corr_groups": ac.feature_corr_groups(feats),
+                "background_meta": bg_meta, "explainer": "gradient",
+                "seed": seed, "nsamples": None,
+                "coverage": {"windows_evaluated": bg_meta["n_explain"],
+                             "calls_used": 0, "truncated": False},
+                "note": "白盒期望梯度路:输出维=get_model 的桶;"
+                        "corr_groups 组内贡献须合并判读(守卫二)。"}
     background, bg_meta = ac.background_set(feats, k=background_k, seed=seed)
     names = sorted(background)
     D = len(names)
@@ -135,13 +156,16 @@ def main(argv=None):
     ap.add_argument("--background-k", type=int, default=5)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--max-calls", type=int, default=5000)
+    ap.add_argument("--explainer", default="auto",
+                    choices=["auto", "kernel", "gradient"])
     a = ap.parse_args(argv)
     from pathlib import Path
     stats = compute(cc.load_predictions(a.pred), cc.load_features(a.features),
                     ac.load_adapter(a.adapter), buckets=a.buckets,
                     max_windows=a.max_windows, background_k=a.background_k,
                     seed=a.seed, max_calls=a.max_calls,
-                    cache_path=Path(a.out_dir) / "attribution_cache.jsonl")
+                    cache_path=Path(a.out_dir) / "attribution_cache.jsonl",
+                    explainer=a.explainer)
     cc.save_outputs(render(stats), a.out_dir, RECIPE_ID, stats)
 
 

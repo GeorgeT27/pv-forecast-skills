@@ -18,3 +18,10 @@
 - id 领域名词闸(weather/station/solar/irradiance)+ 领域中立硬规则进 _recipe-spec §5.6
 - `setup_font` 硬化为 CJK 回退链(返回命中列表);回填 row_analysis / analyze_row 两外围脚本
 - 28 图扩展总设计:docs/superpowers/specs/2026-07-23-chartbook-expansion-design.md
+
+## 2026-07-23 chartbook 扩展第三轮:模型归因层
+
+- predict_adapter 契约进 _recipe-spec §6(CAPABILITIES+predict(requests)+get_model 白盒路);合成线性/lookback 双 golden 适配器
+- attribution_common:加载校验、BudgetedAdapter(预算+请求哈希 jsonl 缓存)、background_set(kmeans-medoid,meta 落盘=守卫一)、feature_corr_groups(守卫二)
+- 三图:global-attribution(KernelSHAP 双面板,梯度白盒路 --explainer auto)、lookback-decay(按桶遮蔽+逐窗有效历史)、local-waterfall(单行 φ 解析回收+防冤枉诱饵)
+- chartbook 25→28 recipe,attribution 类首次有图,六类全满;依赖新增 shap==0.44.1(numpy 必须保持 1.26.4)

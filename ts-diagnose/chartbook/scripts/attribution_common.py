@@ -110,6 +110,23 @@ def background_set(feats, k: int = 5, seed: int = 0):
     return series, meta
 
 
+def gradient_mean_shap(adapter):
+    """白盒路:GradientExplainer(期望梯度)。adapter.get_model() 返回
+    (torch_model, background_X, explain_X, feature_names);输出维=horizon 桶。
+    返回 (mean|SHAP| 矩阵 (B,D), feature_names, meta)。"""
+    import shap
+    model, background, explain, names = adapter.get_model()
+    ex = shap.GradientExplainer(model, background)
+    sv = ex.shap_values(explain)
+    if not isinstance(sv, list):
+        sv = [sv]
+    mat = np.array([np.abs(np.asarray(s)).mean(axis=0) for s in sv])
+    meta = {"method": "gradient-explainer",
+            "n_background": int(len(background)),
+            "n_explain": int(len(explain))}
+    return mat, [str(n) for n in names], meta
+
+
 def feature_corr_groups(feats, threshold: float = 0.8):
     """|ρ|≥threshold 的特征并查集成组(窗口级均值向量口径)——强相关特征
     独立扰动会造分布外样本,归因必须按组呈现/置换(守卫二)。"""

@@ -87,3 +87,56 @@ def test_main_writes_outputs(tmp_path):
               "--buckets", "2", "--background-k", "2"])
     assert (tmp_path / "global-attribution.json").exists()
     assert (tmp_path / "global-attribution.png").exists()
+
+
+def _write_torch_adapter(tmp_path):
+    torch = pytest.importorskip("torch")  # noqa: F841
+    p = tmp_path / "torch_adapter.py"
+    p.write_text('''
+"""微型 torch 线性适配器(梯度路 golden):W 两行均 [3,1,0],B=2 输出。"""
+import pandas as pd
+import torch
+
+CAPABILITIES = {"perturb_features": True, "perturb_lookback": False,
+                "torch_module": True, "lookback_steps": 0,
+                "features": ["fa", "fb", "fc"]}
+
+_model = torch.nn.Linear(3, 2, bias=False)
+with torch.no_grad():
+    _model.weight.copy_(torch.tensor([[3.0, 1.0, 0.0], [3.0, 1.0, 0.0]]))
+
+
+def predict(requests):
+    rows = []
+    for i, r in enumerate(requests):
+        ov = r.get("feature_overrides") or {}
+        x = torch.tensor([[float(ov.get(f, [1.0] * 2)[0])
+                           for f in ("fa", "fb", "fc")]])
+        y = _model(x).detach().numpy().ravel()
+        for s, v in enumerate(y):
+            rows.append({"request_idx": i, "unit_id": r["unit_id"],
+                         "window_ts": r["window_ts"],
+                         "horizon_step": s, "y_pred": float(v)})
+    return pd.DataFrame(rows)
+
+
+def get_model():
+    import torch as _t
+    background = _t.zeros((4, 3))
+    explain = _t.ones((4, 3))
+    return _model, background, explain, ["fa", "fb", "fc"]
+''')
+    return p
+
+
+def test_gradient_path_ratios(tmp_path):
+    pytest.importorskip("torch")
+    adapter = ac.load_adapter(_write_torch_adapter(tmp_path))
+    st = cga.compute(_pred(), _feats(), adapter, buckets=2, max_windows=4,
+                     background_k=2, seed=0, max_calls=5000,
+                     explainer="auto")
+    assert st["explainer"] == "gradient"
+    o = st["overall"]
+    assert o["fc"] < 1e-6
+    assert np.isclose(o["fa"] / o["fb"], 3.0)
+    assert st["coverage"]["calls_used"] == 0, "梯度路不打推理入口"
