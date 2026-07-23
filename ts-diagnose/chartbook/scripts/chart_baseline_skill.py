@@ -67,7 +67,7 @@ def compute(df: pd.DataFrame, period_steps=None, freq: str = "15min",
         ct = float(np.corrcoef(g["y_pred"], g["y_true"])[0, 1])
         cp = float(np.corrcoef(gp["y_pred"], gp["base_persistence"])[0, 1]) \
             if len(gp) > 2 else np.nan
-        entry["corr_with_truth"] = round(ct, 4)
+        entry["corr_with_truth"] = round(ct, 4) if np.isfinite(ct) else None
         entry["corr_with_persistence"] = round(cp, 4) if np.isfinite(cp) else None
         if len(gp):
             dist_p = _rmse(gp["y_pred"] - gp["base_persistence"])

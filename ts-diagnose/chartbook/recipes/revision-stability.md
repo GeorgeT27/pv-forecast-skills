@@ -13,7 +13,7 @@ json_schema: >
   y_true,画刺猬图用)。无任何目标被 ≥2 窗覆盖时抛 ValueError(结构性不适用)。
 bridge_hooks: >
   smapc 高且 convergence_ratio≈1 → 翻新抖动不收敛候选(输入翻新噪声直通/
-  模型对输入过敏),与 pv 特征侧翻新类分析呼应——输入侧有对照数据时先查输入;
+  模型对输入过敏)——有特征对照数据(features 材料)时先查输入翻新是否本身在跳;
   smapc 低但 convergence_ratio≈1 → 稳定地错(系统性偏差),转 theil-decomposition;
   轨迹集体平坦贴均值 → 回归均值塌缩候选,与 pp-calibration 压缩互证。
 验证步: 收敛轨迹(每翻新近 1)与跳变轨迹(交替 ±2)双模型 → smapc 排序与 convergence_ratio 阈值回收;单覆盖数据抛 ValueError(tests/test_chart_revision_stability.py)

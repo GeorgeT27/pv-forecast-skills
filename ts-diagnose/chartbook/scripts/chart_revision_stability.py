@@ -26,7 +26,9 @@ def compute(df: pd.DataFrame, freq: str = "15min") -> dict:
         covered = cov[cov >= 2]
         entry = {"n_targets": int(len(covered)),
                  "coverage_hist": {str(int(k)): int(v) for k, v in
-                                   cov.value_counts().sort_index().items()}}
+                                   cov.value_counts().sort_index().items()},
+                 "smapc": None, "convergence_ratio": None,
+                 "sample_trajectories": []}
         if len(covered) == 0:
             out["models"][str(m)] = entry
             continue

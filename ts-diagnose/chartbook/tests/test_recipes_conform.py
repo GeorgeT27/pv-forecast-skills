@@ -32,6 +32,12 @@ def check_recipe(path: Path):
     DOMAIN_WORDS = ("weather", "station", "solar", "irradiance")
     hit = [w for w in DOMAIN_WORDS if w in fm["id"]]
     assert not hit, f"{path.name} id 含领域名词 {hit}(领域中立纪律见 _recipe-spec §5.6)"
+    m2 = re.match(r"^---\n(.*?)\n---", path.read_text(), re.S)
+    fm_raw = m2.group(1) if m2 else ""
+    hit_fm = [w for w in DOMAIN_WORDS + ("pv",)
+              if re.search(rf"(?i)\b{w}\b", fm_raw)]
+    assert not hit_fm, \
+        f"{path.name} frontmatter 含领域名词 {hit_fm}(领域中立纪律 §5.6,不限于 id)"
     mats = fm["needs_materials"]
     assert mats and set(mats) <= set(MATERIAL_IDS), \
         f"{path.name} needs_materials 非法: {mats}"
@@ -80,4 +86,14 @@ def test_recipe_checker_rejects_domain_word_id(tmp_path):
                    "  json: weather-regime.json\n  png: weather-regime.png\n"
                    "json_schema: x\nbridge_hooks: x\n验证步: x\n---\n## 判读\n")
     with pytest.raises(AssertionError, match="领域名词"):
+        check_recipe(bad)
+
+
+def test_recipe_checker_rejects_domain_word_in_frontmatter(tmp_path):
+    bad = tmp_path / "ok-id.md"
+    bad.write_text("---\nid: ok-id\ncategory: input-side\n"
+                   "needs_materials: [predict]\n适用问题: x\noutputs:\n"
+                   "  json: ok-id.json\n  png: ok-id.png\njson_schema: x\n"
+                   "bridge_hooks: solar 辐照坏了\n验证步: x\n---\n## 判读\n")
+    with pytest.raises(AssertionError, match="frontmatter 含领域名词"):
         check_recipe(bad)

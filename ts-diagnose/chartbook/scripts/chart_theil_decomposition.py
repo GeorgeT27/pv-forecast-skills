@@ -25,6 +25,7 @@ def _theil(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
         cov = 2 * (1 - r) * sp * st
     else:
         cov = mse - bias2 - var2
+    cov = max(cov, 0.0)  # 浮点/退化下 cov 可微负,clamp 防渲染堆叠条倒扣
     return {"u_bias": round(bias2 / mse, 4), "u_var": round(var2 / mse, 4),
             "u_cov": round(cov / mse, 4), "mse": round(mse, 6)}
 
