@@ -8,15 +8,17 @@ outputs:
   png: lookback-decay.png
 json_schema: >
   lookback_steps、bucket_defs(步区间,近→远)、delta_by_bucket(遮蔽该桶后
-  预测相对未遮蔽的 RMSE 变化)、weights(Δ⁺ 归一,全零时 null)、
-  short_term_share(近期桶权重和;近期=1 主周期内,无周期给近四分之一)、
-  per_instance{hist,median}(可选:逐窗有效历史步数)、coverage、seed。
+  预测相对未遮蔽的 RMSE 变化;预算截断时短于 bucket_defs)、
+  buckets_evaluated(已完成桶数)、weights(Δ⁺ 归一,全零或桶不全时 null)、
+  short_term_share(近期桶权重和;近期=1 主周期内,无周期时=最近一步+近
+  四分位段;桶不全时 null)、per_instance{hist,median}(可选:逐窗有效历史
+  步数)、coverage(含 truncated)、seed。
 bridge_hooks: >
   weights 集中最近桶 → 短记忆模型:远端 horizon 退化时优先查输入质量而非
   历史长度;远桶权重可观 → 长程依赖:训练数据的久远分布漂移会伤它
   (与 train-test-drift 交叉);全桶 Δ≈0 → 模型几乎不用历史(用协变量),
   与 global-attribution 互证。
-验证步: 只读最近一步的合成适配器 → 最近桶 weight=1、其余 0、per-instance 中位数 1;无 lookback 能力适配器抛 ValueError(tests/test_chart_lookback_decay.py)
+验证步: 只读最近一步的合成适配器 → 最近桶 weight=1、其余 0、per-instance 中位数 1;无 lookback 能力适配器抛 ValueError;预算中途耗尽 → 已完成桶保留、weights/short_term_share 置 null、truncated=true(tests/test_chart_lookback_decay.py)
 ---
 
 # lookback-decay:按桶遮蔽的历史依赖衰减
@@ -48,4 +50,8 @@ python3 chartbook/scripts/chart_lookback_decay.py \
 
 ## 验证步
 只读最近一步的适配器(L=8)→ 遮最近桶 Δ=1、其余桶 Δ=0 → weights=[1,0,0,0]、
-short_term_share=1;--per-instance 全窗 h*=1;线性(无 lookback)适配器抛 ValueError。
+short_term_share=1;--per-instance 全窗 h*=1;线性(无 lookback)适配器抛 ValueError;
+预算中途耗尽(如 max_calls 只够 base+前 2 桶)→ delta_by_bucket 只保留已完成的
+桶(如实变短)、buckets_evaluated 对应变小、weights/short_term_share 置 null(桶
+不全不做归一,避免误导)、coverage.truncated=true——一个桶都没完成才抛
+ValueError,已完成的桶不再因超预算被整体丢弃。

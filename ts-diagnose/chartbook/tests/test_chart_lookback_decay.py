@@ -54,3 +54,15 @@ def test_main_writes_outputs(tmp_path):
               "--out-dir", str(tmp_path)])
     assert (tmp_path / "lookback-decay.json").exists()
     assert (tmp_path / "lookback-decay.png").exists()
+
+
+def test_budget_truncation_keeps_completed_buckets():
+    """max_calls=12:base(4)+桶1(4)+桶2(4) 后截断——已完成桶保留、
+    weights/share 置 null、truncated 如实(Critical 修复回归)。"""
+    st = cld.compute(_pred(), ac.load_adapter(LB_ADAPTER), max_windows=4,
+                     seed=0, max_calls=12)
+    assert st["coverage"]["truncated"] is True
+    assert st["buckets_evaluated"] == 2
+    assert len(st["delta_by_bucket"]) == 2
+    assert np.isclose(st["delta_by_bucket"][0], 1.0)
+    assert st["weights"] is None and st["short_term_share"] is None

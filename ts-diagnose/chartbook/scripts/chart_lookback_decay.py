@@ -51,21 +51,35 @@ def compute(pred_df, adapter, period_steps=None, max_windows: int = 30,
     truncated = False
     try:
         base = ba.predict([{"unit_id": u, "window_ts": w} for u, w in cand])
-        deltas = []
-        for a, b in bks:
+    except ac.BudgetExceeded:
+        raise ValueError("预算不足以完成基准预测——调大 --max-calls")
+    deltas = []
+    for a, b in bks:
+        try:
             masked = ba.predict([{"unit_id": u, "window_ts": w,
                                   "lookback_mask": [[a, b]]}
                                  for u, w in cand])
-            deltas.append(round(_delta(base, masked), 6))
-        out["delta_by_bucket"] = deltas
+        except ac.BudgetExceeded:
+            truncated = True
+            break
+        deltas.append(round(_delta(base, masked), 6))
+    out["delta_by_bucket"] = deltas          # 截断时短于 bucket_defs,如实
+    out["buckets_evaluated"] = len(deltas)
+    if len(deltas) == len(bks):
         tot = sum(d for d in deltas if d > 0)
         out["weights"] = ([round(max(d, 0.0) / tot, 4) for d in deltas]
                           if tot > 1e-12 else None)
-        cutoff = L - (period_steps if period_steps else max(1, L // 4))
+        cutoff = (L - period_steps if period_steps
+                  else L - 1 - max(1, L // 4))
         out["short_term_share"] = (
             round(sum(w for (a, _b), w in zip(bks, out["weights"])
                       if a >= cutoff), 4) if out["weights"] else None)
-        if per_instance:
+    else:
+        # 桶不全时不做归一与占比——部分权重会误导
+        out["weights"] = None
+        out["short_term_share"] = None
+    if per_instance and not truncated:
+        try:
             hs = []
             for i, (u, w) in enumerate(cand):
                 ref = float(np.sqrt(np.mean(
@@ -89,11 +103,11 @@ def compute(pred_df, adapter, period_steps=None, max_windows: int = 30,
             out["per_instance"] = {
                 "hist": {str(int(v)): int(c) for v, c in zip(vals, counts)},
                 "median": int(np.median(hs))}
-    except ac.BudgetExceeded:
-        truncated = True
+        except ac.BudgetExceeded:
+            truncated = True
     out["coverage"] = {"windows_evaluated": len(cand),
                        "calls_used": ba.calls, "truncated": truncated}
-    if truncated and "delta_by_bucket" not in out:
+    if not deltas:
         raise ValueError("预算不足以完成任何桶——调大 --max-calls")
     return out
 
