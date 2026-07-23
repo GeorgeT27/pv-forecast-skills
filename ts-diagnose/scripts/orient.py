@@ -124,6 +124,20 @@ def main():
                           "（自动跳过，不阻塞）")
                 else:
                     print(f"    📊 {rid} ✓可画")
+    if ec.has_chart_stage(fm):
+        addable = ec.addable_recipes(fm, cfg)
+        print("-" * 62)
+        print("  图表选择门（画图前 AskUserQuestion 多选，engine-core「图表选择门」）：")
+        print("    默认全选上方 ✓可画 图；用户可取消勾选删图（删了记 PROGRESS+CONCLUSION"
+              "声明覆盖缺口），或从下方「可加画」勾选加图。")
+        if addable:
+            print("    ➕ 可加画（未声明、材料已满足，可跨 playbook 任取）：")
+            for rid, needs, min_models in addable:
+                mnote = f"，需 ≥{min_models} 模型（单模型勿加）" if min_models >= 2 else ""
+                print(f"       {rid}（需 {','.join(needs) or '无'}{mnote}）")
+        else:
+            print("    ➕ 可加画：无（未声明的 recipe 材料都不满足，或已全声明）。")
+
     if cur is None:
         print("  全部阶段完成——可写/刷新 CONCLUSION.md，或 --goto 复核，或按"
               " references/crystallize.md 提议固化。")

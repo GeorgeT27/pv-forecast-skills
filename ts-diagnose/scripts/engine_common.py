@@ -398,16 +398,24 @@ def available_recipes():
                   if f.endswith(".md"))
 
 
-def recipe_materials(rid):
-    """chartbook recipe 的 needs_materials（orient 可画性判定用）。"""
+def _recipe_frontmatter(rid):
     p = recipe_path(rid)
     if not os.path.exists(p):
         raise ValueError(f"未知 chartbook recipe '{rid}'；可用：{available_recipes()}")
     with open(p, encoding="utf-8") as f:
         text = f.read()
     m = re.match(r"^---\n(.*?)\n---", text, re.S)
-    fm = yaml.safe_load(m.group(1)) if m else {}
-    return list(fm.get("needs_materials") or [])
+    return yaml.safe_load(m.group(1)) if m else {}
+
+
+def recipe_materials(rid):
+    """chartbook recipe 的 needs_materials（orient 可画性判定用）。"""
+    return list(_recipe_frontmatter(rid).get("needs_materials") or [])
+
+
+def recipe_min_models(rid):
+    """chartbook recipe 需要的最少模型数（对比类图=2，默认 1；_recipe-spec §5.5）。"""
+    return int(_recipe_frontmatter(rid).get("needs_models") or 1)
 
 
 def charts_report(fm, cfg):
@@ -419,6 +427,36 @@ def charts_report(fm, cfg):
                        if material_status(cfg, mid) != "present"]
             rep.append((st["id"], rid, missing))
     return rep
+
+
+def declared_recipes(fm):
+    """本 playbook 任一阶段 charts: 里声明过的 recipe id 集合。"""
+    out = set()
+    for st in fm.get("stages") or []:
+        out |= set(st.get("charts") or [])
+    return out
+
+
+def addable_recipes(fm, cfg):
+    """图表选择门的「可加画池」：未在本 playbook 声明、但材料已全部满足的 chartbook
+    recipe（跨 playbook 任取）。→ [(rid, needs_materials, min_models)]，按 rid 排序。
+    材料不满足的未声明 recipe 不进池（缺什么材料由 intake 负责，不在此门问）；
+    min_models≥2 的对比类图仍进池但带标注（模型数运行时才知，不静默隐藏，
+    <N 模型时 recipe 脚本按 _recipe-spec §5.5 抛 ValueError 兜底）。"""
+    declared = declared_recipes(fm)
+    out = []
+    for rid in available_recipes():
+        if rid in declared:
+            continue
+        needs = recipe_materials(rid)
+        if all(material_status(cfg, mid) == "present" for mid in needs):
+            out.append((rid, needs, recipe_min_models(rid)))
+    return out
+
+
+def has_chart_stage(fm):
+    """本 playbook 是否存在声明了 charts: 的阶段（图表选择门是否适用）。"""
+    return any(st.get("charts") for st in fm.get("stages") or [])
 
 
 # ---------------------------------------------------------------- contexts

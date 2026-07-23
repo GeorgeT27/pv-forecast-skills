@@ -1,6 +1,7 @@
 ---
 id: oracle-gap
 needs_materials: [predict, truth]
+needs_models: 2
 适用问题: 逐样本动态选最优模型能提升多少？现有 ensemble 吃满互补性了吗？谁最常是最优？
 outputs:
   json: oracle-gap.json

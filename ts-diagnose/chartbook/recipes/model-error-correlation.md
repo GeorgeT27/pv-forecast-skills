@@ -1,6 +1,7 @@
 ---
 id: model-error-correlation
 needs_materials: [predict, truth]
+needs_models: 2
 适用问题: 多个模型是同质还是互补？组合/动态选模有没有空间？谁和谁犯同样的错？
 outputs:
   json: model-error-correlation.json

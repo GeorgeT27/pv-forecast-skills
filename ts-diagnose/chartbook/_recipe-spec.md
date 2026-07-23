@@ -29,6 +29,8 @@ predictions: window_ts | unit_id | model | horizon_step | y_true | y_pred
 ---
 id: horizon-degradation            # 必填，== 文件名（去 .md），kebab-case
 needs_materials: [predict, truth]  # 必填，⊆ engine_common.MATERIAL_IDS；orient 据此报可用性
+needs_models: 1                    # 可选，默认 1；对比类图填 2（<该数模型抛 ValueError，见 §5.5）——
+                                   #   图表选择门的「可加画池」据此标注「需 ≥N 模型」，避免误加结构性不适用的图
 适用问题: 短期准长期崩？退化速度对比？   # 必填，一句话（路由与 playbook 选图依据）
 outputs:
   json: horizon-degradation.json   # 必填，== "<id>.json"（一等产物）
