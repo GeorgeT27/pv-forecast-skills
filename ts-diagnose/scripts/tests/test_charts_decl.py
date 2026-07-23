@@ -70,6 +70,30 @@ def test_charts_report_splits_by_materials(tmp_path):
     assert "features" in by_rid["feature-error-conditional"]
 
 
+def test_recipe_category_reads_frontmatter():
+    assert ec.recipe_category("error-breakdown") == "error-structure"
+    assert ec.recipe_category("global-attribution") == "attribution"
+
+
+def test_orient_groups_addable_pool_by_category(tmp_path):
+    """可加画池按类别分组:出现有池类别的组头;无一图满足材料的类别不出现。"""
+    _pb(tmp_path, "    charts: [error-breakdown]")
+    pb_path = str(tmp_path / "playbooks" / "demo-charts" / "playbook.md")
+    cfg = {"playbook": pb_path,
+           "materials": {"predict": {"status": "present"},
+                         "truth": {"status": "present"}}}
+    (tmp_path / "diagnose_config.json").write_text(json.dumps(cfg))
+    proc = subprocess.run(
+        [sys.executable, ORIENT], cwd=tmp_path, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    out = proc.stdout
+    assert "[error-structure]" in out          # intraday-profile 等在池,组头出现
+    assert "[sample-contrast]" in out          # worst-points 等只需 predict+truth
+    assert "[attribution]" not in out          # 归因图需 serving_api+features,不满足
+    # 声明图行带类别标签
+    assert "error-breakdown" in out
+
+
 def test_orient_prints_chart_availability(tmp_path):
     pb_dir = tmp_path / "playbooks" / "demo-charts"
     pb_path = _pb(tmp_path, "    charts: [error-breakdown, feature-error-conditional]")
@@ -83,6 +107,7 @@ def test_orient_prints_chart_availability(tmp_path):
     out = proc.stdout
     assert "✓可画" in out and "error-breakdown" in out
     assert "✗缺材料" in out and "feature-error-conditional" in out
+    assert "[error-structure]" in out  # 声明图行尾类别标签
 
 
 def test_addable_recipes_excludes_declared_and_missing(tmp_path):

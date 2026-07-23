@@ -423,6 +423,11 @@ def recipe_min_models(rid):
     return int(_recipe_frontmatter(rid).get("needs_models") or 1)
 
 
+def recipe_category(rid):
+    """chartbook recipe 的类别(orient 分组呈现用;缺失回退 uncategorized)。"""
+    return str(_recipe_frontmatter(rid).get("category") or "uncategorized")
+
+
 def charts_report(fm, cfg):
     """→ [(stage_id, recipe_id, missing_materials)]；missing 空 = 可画。"""
     rep = []

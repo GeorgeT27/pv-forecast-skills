@@ -119,11 +119,12 @@ def main():
             for (_sid, rid, missing) in ec.charts_report(fm, cfg):
                 if _sid != st["id"]:
                     continue
+                cat = ec.recipe_category(rid)
                 if missing:
                     print(f"    📊 {rid} ✗缺材料:{','.join(missing)}"
-                          "（自动跳过，不阻塞）")
+                          f"（自动跳过，不阻塞）[{cat}]")
                 else:
-                    print(f"    📊 {rid} ✓可画")
+                    print(f"    📊 {rid} ✓可画 [{cat}]")
     if ec.has_chart_stage(fm):
         addable = ec.addable_recipes(fm, cfg)
         print("-" * 62)
@@ -131,10 +132,19 @@ def main():
         print("    默认全选上方 ✓可画 图；用户可取消勾选删图（删了记 PROGRESS+CONCLUSION"
               "声明覆盖缺口），或从下方「可加画」勾选加图。")
         if addable:
-            print("    ➕ 可加画（未声明、材料已满足，可跨 playbook 任取）：")
+            print("    ➕ 可加画（未声明、材料已满足，可跨 playbook 任取，按类别分组）：")
+            by_cat = {}
             for rid, needs, min_models in addable:
-                mnote = f"，需 ≥{min_models} 模型（单模型勿加）" if min_models >= 2 else ""
-                print(f"       {rid}（需 {','.join(needs) or '无'}{mnote}）")
+                by_cat.setdefault(ec.recipe_category(rid), []).append(
+                    (rid, needs, min_models))
+            for cat in list(ec.CATEGORY_IDS) + ["uncategorized"]:
+                if cat not in by_cat:
+                    continue
+                print(f"      [{cat}]")
+                for rid, needs, min_models in by_cat[cat]:
+                    mnote = (f"，需 ≥{min_models} 模型（单模型勿加）"
+                             if min_models >= 2 else "")
+                    print(f"        {rid}（需 {','.join(needs) or '无'}{mnote}）")
         else:
             print("    ➕ 可加画：无（未声明的 recipe 材料都不满足，或已全声明）。")
 
