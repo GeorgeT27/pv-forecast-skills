@@ -177,6 +177,14 @@ def make_plots(focus, target_ts, ft, pairs, err_mats, raw_mats, sl, prefix, out_
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    import matplotlib.font_manager
+    for _f in ("Arial Unicode MS", "PingFang SC", "Hiragino Sans GB", "Heiti TC",
+               "SimHei", "Noto Sans CJK SC", "Microsoft YaHei"):
+        if _f in {f.name for f in matplotlib.font_manager.fontManager.ttflist}:
+            plt.rcParams["font.family"] = "sans-serif"
+            plt.rcParams["font.sans-serif"] = [_f, "DejaVu Sans"]
+            break
+    plt.rcParams["axes.unicode_minus"] = False
 
     d = fb.require_du()
     ts_tag = fb.sanitize(str(target_ts))

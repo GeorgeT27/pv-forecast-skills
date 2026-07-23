@@ -168,6 +168,14 @@ def make_plots(target_ts, model, hkey, P_row, Y_row, power, feat_rows,
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    import matplotlib.font_manager
+    for _f in ("Arial Unicode MS", "PingFang SC", "Hiragino Sans GB", "Heiti TC",
+               "SimHei", "Noto Sans CJK SC", "Microsoft YaHei"):
+        if _f in {f.name for f in matplotlib.font_manager.fontManager.ttflist}:
+            plt.rcParams["font.family"] = "sans-serif"
+            plt.rcParams["font.sans-serif"] = [_f, "DejaVu Sans"]
+            break
+    plt.rcParams["axes.unicode_minus"] = False
 
     order = feat_rows                          # 已按 z 降序
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))

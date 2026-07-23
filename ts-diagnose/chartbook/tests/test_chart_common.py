@@ -79,3 +79,24 @@ def test_curve_stats_degenerate_single_point():
     st = cc.curve_stats([5.0], index=["only"])
     assert st["max_jump_idx"] is None and st["max_jump"] == 0.0
     assert st["argmax"] == "only" and st["argmin"] == "only"
+
+
+def test_setup_font_returns_hits_and_renders_cjk(tmp_path):
+    """setup_font 返回命中字体列表;命中时渲染中文+负号必须无 missing-glyph 警告。"""
+    import warnings
+    import matplotlib.pyplot as plt
+    hits = cc.setup_font()
+    assert isinstance(hits, list)
+    if not hits:
+        pytest.skip("环境无 CJK 字体")
+    assert plt.rcParams["font.family"] == ["sans-serif"]
+    assert plt.rcParams["font.sans-serif"][:len(hits)] == hits
+    fig, ax = plt.subplots()
+    ax.set_title("中文标题")
+    ax.plot([0, 1], [-1.5, 1.0])
+    with warnings.catch_warnings(record=True) as rec:
+        warnings.simplefilter("always")
+        fig.savefig(tmp_path / "cjk.png")
+    plt.close(fig)
+    bad = [w for w in rec if "Glyph" in str(w.message) or "findfont" in str(w.message)]
+    assert not bad, f"渲染出缺字形警告: {[str(w.message) for w in bad]}"

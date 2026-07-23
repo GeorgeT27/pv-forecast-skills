@@ -24,13 +24,23 @@ REQUIRED_COLS = ("window_ts", "unit_id", "model", "horizon_step",
 FEATURE_COLS = ("window_ts", "unit_id", "feature", "horizon_step", "f_pred")
 
 
-def setup_font():
-    for font in ("Arial Unicode MS", "PingFang SC", "SimHei",
-                 "Noto Sans CJK SC"):
-        if font in {f.name for f in matplotlib.font_manager.fontManager.ttflist}:
-            plt.rcParams["font.family"] = font
-            break
+CJK_FONTS = ("Arial Unicode MS", "PingFang SC", "Hiragino Sans GB", "Heiti TC",
+             "SimHei", "Noto Sans CJK SC", "Microsoft YaHei")
+
+
+def setup_font() -> list:
+    """CJK 字体探测:命中项组成 sans-serif 回退链(单字体断链→回退链硬化)。
+    返回命中列表;空列表 = 环境无 CJK,发一次警告但不炸图。"""
+    installed = {f.name for f in matplotlib.font_manager.fontManager.ttflist}
+    hits = [f for f in CJK_FONTS if f in installed]
+    if hits:
+        plt.rcParams["font.family"] = "sans-serif"
+        plt.rcParams["font.sans-serif"] = hits + ["DejaVu Sans"]
+    else:
+        import warnings
+        warnings.warn("未找到 CJK 字体,中文将渲染为方框;建议安装 Noto Sans CJK SC")
     plt.rcParams["axes.unicode_minus"] = False
+    return hits
 
 
 def load_predictions(path):
