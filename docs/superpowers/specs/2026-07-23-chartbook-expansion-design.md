@@ -169,18 +169,16 @@ golden:只读最后一步的合成适配器 → 全部质量落桶 1。
 worst-K 行(默认 20)逐行局部 SHAP → shap 自带 waterfall,top 行拼网格 PNG +
 逐行贡献 JSON。golden:线性适配器 → 贡献 = 系数×(x−背景) 精确回收。
 
-## 4.5 中文渲染修复(跨切面,回填全部既有图)
+## 4.5 中文渲染修复(跨切面,已按实情收窄)
 
-matplotlib 默认字体无 CJK 字形,中文标签渲染成方框。修复:
+实施时调查发现:chartbook 15 个脚本已全部调用 `chart_common.setup_font()`,
+方框来自两个从未配置字体的外围脚本。实际修复(Plan 1 Task 2):
 
-- 新增共享模块 `chartbook/scripts/mpl_style.py`:`apply_style()` 用
-  `font_manager` 在候选链(PingFang SC / Hiragino Sans GB / Noto Sans CJK SC /
-  Microsoft YaHei / SimHei)里探测第一个可用 CJK 字体设入 `font.sans-serif`,
-  并设 `axes.unicode_minus=False`(防负号变方框);探测不到任何 CJK 字体时
-  发一次警告并继续(不炸图);
-- **全部 28 个 chart 脚本的 render() 统一调用**(含回填既有 14 张);
-- 测试 `tests/test_mpl_style.py`:渲染含中文样例文本,断言无 findfont /
-  missing-glyph 警告(无 CJK 字体的 CI 环境自动 skip)。
+- `chart_common.setup_font()` 硬化:单字体 `font.family` → CJK 命中列表组成
+  sans-serif 回退链 + 无 CJK 时警告不炸图 + 返回命中列表;新图脚本(Plan 2/3)
+  沿用它,不再新建 mpl_style.py;
+- 回填 `row-diagnostic/row_analysis.py` 与 `pv-feature-blame/scripts/analyze_row.py`;
+- 测试:渲染中文+负号断言无 missing-glyph 警告(无 CJK 环境 skip)。
 
 ## 5. 既有图增强(2 处)
 

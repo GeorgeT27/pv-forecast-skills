@@ -28,6 +28,10 @@ predictions: window_ts | unit_id | model | horizon_step | y_true | y_pred
 ```yaml
 ---
 id: horizon-degradation            # 必填，== 文件名（去 .md），kebab-case
+category: error-structure          # 必填,∈ engine_common.CATEGORY_IDS
+                                   #   (error-structure/temporal-stability/input-side/
+                                   #    model-comparison/sample-contrast/attribution)
+                                   #   呈现层按类归组(orient 选择门 + INDEX.md)
 needs_materials: [predict, truth]  # 必填，⊆ engine_common.MATERIAL_IDS；orient 据此报可用性
 needs_models: 1                    # 可选，默认 1；对比类图填 2（<该数模型抛 ValueError，见 §5.5）——
                                    #   图表选择门的「可加画池」据此标注「需 ≥N 模型」，避免误加结构性不适用的图
@@ -61,3 +65,8 @@ bridge_hooks: >                    # 必填，形状描述符 → 架构假设�
    脚本内固定种子置换例外——种子显式 CLI 参数并落 JSON，期望由同种子实跑钉住。
 4. 每脚本 CLI 公共参数：`--pred`（规范长表路径）、`--out-dir`；其余 recipe 特有。
 5. 多模型才有意义的图（对比类）在 <2 模型时抛 ValueError 并说明，不静默出空图。
+6. **领域中立**:recipe 的 id/frontmatter 字段/图内标签/判读不得出现领域名词
+   (天气/站点/光伏/医学等;id 英文黑名单 weather/station/solar/irradiance 由
+   test_recipes_conform 闸)。领域语义只允许运行时经 intake 背景(data_profile)
+   注入呈现层——如给聚类簇起领域名。周期性假设图(如 intraday-profile)须在
+   recipe 内标注"周期性数据专用",orient 按 data_profile 判断适用。
