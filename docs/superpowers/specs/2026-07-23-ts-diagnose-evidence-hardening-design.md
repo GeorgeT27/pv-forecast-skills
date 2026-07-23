@@ -32,9 +32,10 @@ v2 完成后，model-comparison 的证据升级链是：两条证据线方向一
 现行口径（不变）：`gaps[slice] = per[focal] − per[others].min(axis=1)`，`pos = gaps.clip(lower=0)`，`concentration_ratio = pos[worst] / pos.sum()`。
 
 置换检验（新增）：
+- **统计量 = 最差片正差距**（`worst_slice_gap`）：焦点自身最差片（片 RMSE argmax，与真实值同一选择规则）上的 `max(0, 焦点 − 同片最优他模型)`。**不用 `concentration_ratio` 做统计量**——正差稀疏时任意重排的占比仍近 1（如 4 个坏日随机散到三片，只要仅一片正差，占比就是 1.0；金标准下 null 有 ~78% 质量在 1.0，无检验力）；坏日被打散后片均值被稀释，gap 幅度才有检验力。`concentration_ratio` 保留为描述量。
 - **置换单元 = 自然日块**（`date = window_ts 的 %Y-%m-%d`）：把 distinct dates 列表用 `random.Random(perm_seed)` 洗牌后，按原各切片的**日数配额**顺序重新分配 slice 标签（保持每片日数不变）。同一日的所有行（全模型、全 unit）整块移动——防止拆散配对结构，也部分抵消日内自相关把 null 做窄。
-- 每次置换在新的 slice 标签下重算 `concentration_ratio`（同一公式，worst 取置换后的 argmax）；`pos.sum()==0` 的置换记 0。
-- `perm_p = (1 + #{null_conc ≥ real_conc}) / (n_perm + 1)`（plus-one 修正，避免 p=0）。
+- 每次置换在新的 slice 标签下重算 `worst_slice_gap`（worst 取置换后的 argmax）。
+- `perm_p = (1 + #{null_stat ≥ real_stat}) / (n_perm + 1)`（plus-one 修正，避免 p=0）。
 - `null_q95` = null 分布的 95 分位（`quantile(0.95)`）。
 - `verdict = "significant"` 当 `perm_p < 0.05`，否则 `"not-significant"`。
 
@@ -45,12 +46,13 @@ v2 完成后，model-comparison 的证据升级链是：两条证据线方向一
 JSON 新增顶层 `perm` 块（其余字段全部不变，纯增量，不破坏现有 expects）：
 
 ```json
-"perm": {"n_perm": 200, "seed": 0, "real_concentration": 1.0,
-         "null_q95": 0.62, "perm_p": 0.005, "verdict": "significant",
+"perm": {"stat": "worst_slice_gap", "n_perm": 200, "seed": 0,
+         "real_stat": 1.0, "null_q95": 0.575, "perm_p": 0.01,
+         "verdict": "significant",
          "note": "按日块置换，slice 日数配额保持；月内自相关未校正，显著性偏乐观时以此为限"}
 ```
 
-跳过条件（`perm` 置 null + note）：切片数 < 2、`concentration_ratio` 为 null（pos.sum()==0）、distinct 日数 < 切片数、`--n-perm 0`。
+跳过条件（`perm` 置 null，原因追加进顶层 note）：最差片正差距 ≤ 0（焦点未落后）、切片数 < 2、distinct 日数 < 切片数、`--n-perm 0`。
 
 ### 3.3 判读规则收紧（recipe 判读节改写）
 
@@ -135,13 +137,13 @@ PNG 副产品：每配对两组柱（两半差 / 两口径差），焦点色与 
 
 - **time_split**：12 窗对半（cut 在 2024-02-10 后），前半 = 1 月 4 窗(−0.7) + 2 月 2 窗(+1.0) → diff = −0.1333；后半 = 2 月 2 窗(+1.0) + 3 月 4 窗(−0.7) → diff = −0.1333 ⇒ `time_stable = true`。
 - **caliber_switch**：pooled A = sqrt((8×0.8² + 4×2.5²)/12) = sqrt(2.51) = 1.5843 > B 1.5 ⇒ `pooled_diff = +0.0843` 与 `row_diff = −0.1333` 反号 ⇒ `caliber_stable = false`。现有构造**天然给出判别性结构**：时间稳、口径翻转——正好走通"升级不阻塞但限定口径"分支。
-- **perm**：4 个 2 月日块全落一片才有 conc=1.0，随机 4-4-4 分配下概率极低 ⇒ `verdict = significant`（`perm_p`、`null_q95` 期望值由 reference 以 seed=0/n_perm=200 实跑取得，manifest 用 `le`/`between` 留容差）。
+- **perm**：真实 `worst_slice_gap = 1.0`（2024-02 片 A 2.5 − B 1.5）；null 下 4 个 2 月日块被打散，典型 null 值 0.575（3+1 分裂）/ 0.15（2+2、2+1+1），仅全 4 落一片才回 1.0（概率 210/34650 ≈ 0.006）⇒ `verdict = significant`、`null_q95 ≈ 0.575`（`perm_p`、`null_q95` 由 reference 以 seed=0/n_perm=200 实跑钉住，manifest 用 `le` 留容差）。
 
-manifest stage 2 `expect` 增量：`perm.verdict eq significant`、`perm.perm_p le 0.05`、`pairs.B.time_split.consistent eq true`、`pairs.B.caliber_switch.consistent eq false`、两半 diff `between` −0.14/−0.13。新增 `reference/stage2_crossdim.py`（照 §4 菜谱经 sys.path 引 chartbook 脚本，与 stage2_slice.py 同构），注册进 `test_gen_gate.py` 的 REFS。
+manifest stage 2 `expect` 增量：`perm.verdict eq significant`、`perm.perm_p le 0.05`、`perm.real_stat between [0.99,1.01]`、`perm.null_q95 le 0.7`。新增伪 stage 键 `2-crossdim`（gen_gate 的 stage 键只作 manifest 查找、不要求等于 playbook 阶段 id，manifest note 写明）挂 `reference/stage2_crossdim.py`（照 §4 菜谱经 sys.path 引 chartbook 脚本，与 stage2_slice.py 同构），expect：`pairs.B.time_split.consistent eq true`、`pairs.B.caliber_switch.consistent eq false`、两半 diff `between` −0.14/−0.13、`pooled_diff between [0.08,0.09]`；注册进 `test_gen_gate.py` 的 REFS。
 
 ## 7. 测试与守卫
 
-- `chartbook/tests/test_chart_worst_slice_compare.py` 扩展：现有植入（A 仅 2024-02 三倍误差）加 perm 断言 significant；新增**弥散诱饵** case（A 各月同幅小差 ⇒ conc ≈ 1/3、not-significant）——防"逢集中必点名"。
+- `chartbook/tests/test_chart_worst_slice_compare.py` 扩展：置换断言用**加密版植入**（8 日/月、A 仅 2024-02 三倍误差——全部 8 个坏日重聚一片的 null 概率 ~4e-6，perm_p 恰为 1/201，判定稳不依赖种子运气；3 日/月的原构造 null 概率 1/28，太贴 0.05 线不做置换断言）；新增**弥散诱饵** case（A 各月同幅小差 ⇒ 任意重排统计量不变，perm_p 精确 = 1.0、not-significant）——防"逢集中必点名"；另断言"焦点未落后 → perm 置 null"与 `--n-perm 0` 关闭路径。
 - 新 `chartbook/tests/test_chart_cross_dim_stability.py`：一个双稳 case（同幅同向）+ 一个口径翻转 case（复用 golden 构造思路），数值精确回收。
 - `test_recipes_conform.py` 自动覆盖新 recipe（frontmatter 7 键 + 判读节）；`test_charts_decl.py` 的全 playbook frontmatter 加载守卫自动覆盖 stage charts 引用新 recipe id 的合法性。
 - 顺序约束：新 recipe 文件先于 playbook frontmatter 改动落地（否则 charts 校验红）。
