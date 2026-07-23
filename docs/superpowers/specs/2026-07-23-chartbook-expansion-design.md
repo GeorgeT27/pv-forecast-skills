@@ -37,13 +37,17 @@ chartbook 从 14 张 recipe 扩到 28 张,补齐四个缺口:
 (与 `adapter.py` 同款纪律:现场唯一要写的代码,写完过对账):
 
 ```python
-CAPABILITIES = {"perturb_features": True, "perturb_lookback": False}
+CAPABILITIES = {"perturb_features": True, "perturb_lookback": False,
+                "torch_module": False}  # True 时须提供 get_model()
 
 def predict(windows, feature_overrides=None, lookback_mask=None):
     """windows: 规范长表行集; 返回同形 y_pred。
     feature_overrides: {feature: 替换值序列} — 特征扰动
     lookback_mask: 步数区间列表 — 历史窗遮蔽(能力可选)
     """
+
+def get_model():
+    """torch_module=True 时实现:返回可反传的 torch 模型与输入规格(白盒路)。"""
 ```
 
 - 用户给 FastAPI 包 FastAPI、给本地模型包本地模型,脚本无感;
@@ -56,9 +60,14 @@ def predict(windows, feature_overrides=None, lookback_mask=None):
 - 背景集:`shap.kmeans(data, K)` 摘要(默认 K=25)或分层采样;**背景集定义
   (来源、K、采样期、种子)必须落盘进每个归因 JSON 的 `background_meta`**
   ——换背景集 = 换归因基线,这是复现性关键(守卫一);
-- Shapley 估计:直接调 `shap` 库(KernelExplainer / PermutationExplainer +
-  自带 waterfall 绘图),不手写采样;192 步输出按 shap 官方多输出实践逐输出
-  独立算再聚合(mean|SHAP| 全局 + per-horizon 桶保留);
+- Shapley 估计:直接调 `shap` 库,不手写采样;**按适配器能力自动选路**——
+  `torch_module=True` → `GradientExplainer`(期望梯度,Transformer 兼容性优于
+  DeepExplainer,快一个量级以上,且 lookback 归因免费升到逐时间步分辨率);
+  否则 → `KernelExplainer` / `PermutationExplainer`(纯黑盒)。两条路输出同一
+  JSON schema,所用 explainer 与设置落 `background_meta`;192 步输出按 shap
+  官方多输出实践逐输出独立算再聚合(mean|SHAP| 全局 + per-horizon 桶保留);
+  梯度路 golden 用微型 torch 线性模型(环境无 torch 时 pytest skip),
+  Kernel 路 golden 用合成线性适配器(解析精确回收);
 - **成组置换守卫(守卫二)**:permutation 口径必须先做特征相关性聚类
   (|ρ|>0.8 成组),组内整体置换——独立置换强相关特征会造分布外样本、
   重要性虚高;分组结果落 JSON;
@@ -151,12 +160,27 @@ golden:构造 y_pred 恰等于季节朴素 → skill=0;半误差模型 → skill
 无周期退化为四分位桶)→ ΔRMSE 衰减曲线;描述符 `short_term_share`(≤1 主周期
 贡献占比)。`--per-instance` 选项:逐实例"贡献≥90% 所需最近历史步数"分布
 (TimeSHAP 剪枝思想),可按好/坏样本分组与 bad-window-clustering 交叉。
+白盒路(torch_module)时输出**输入时间步×特征归因热力图**(文献标准的
+time series attribution heatmap,逐步分辨率);黑盒路为窗级分辨率。
 判读话术:曲线平坦 ≠ 模型差,Transformer 系依赖短历史是文献常态。
 golden:只读最后一步的合成适配器 → 全部质量落桶 1。
 
 **local-waterfall** `[predict, truth, features, serving_api]`
 worst-K 行(默认 20)逐行局部 SHAP → shap 自带 waterfall,top 行拼网格 PNG +
 逐行贡献 JSON。golden:线性适配器 → 贡献 = 系数×(x−背景) 精确回收。
+
+## 4.5 中文渲染修复(跨切面,回填全部既有图)
+
+matplotlib 默认字体无 CJK 字形,中文标签渲染成方框。修复:
+
+- 新增共享模块 `chartbook/scripts/mpl_style.py`:`apply_style()` 用
+  `font_manager` 在候选链(PingFang SC / Hiragino Sans GB / Noto Sans CJK SC /
+  Microsoft YaHei / SimHei)里探测第一个可用 CJK 字体设入 `font.sans-serif`,
+  并设 `axes.unicode_minus=False`(防负号变方框);探测不到任何 CJK 字体时
+  发一次警告并继续(不炸图);
+- **全部 28 个 chart 脚本的 render() 统一调用**(含回填既有 14 张);
+- 测试 `tests/test_mpl_style.py`:渲染含中文样例文本,断言无 findfont /
+  missing-glyph 警告(无 CJK 字体的 CI 环境自动 skip)。
 
 ## 5. 既有图增强(2 处)
 
@@ -215,7 +239,7 @@ worst-K 行(默认 20)逐行局部 SHAP → shap 自带 waterfall,top 行拼网�
 ## 10. 实施顺序建议
 
 1. 规范与地基:_recipe-spec §6(adapter 契约)+ category 字段 + CATEGORY_IDS
-   + test_charts_decl 扩展;
+   + test_charts_decl 扩展 + mpl_style.py(既有 14 张回填中文渲染);
 2. 纯数据侧 11 张(无 serving_api 依赖,可并行):样本对比 2、误差结构 6、
    输入侧 1、模型对比 2、时间稳定 1;
 3. attribution_common + 归因 3 张(shap 依赖 + 合成线性适配器 golden);
