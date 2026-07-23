@@ -126,3 +126,27 @@ def save_outputs(fig, out_dir, recipe_id: str, stats: dict) -> dict:
     (out / f"{recipe_id}.json").write_text(
         json.dumps(stats, ensure_ascii=False, indent=2, default=str))
     return stats
+
+
+def detect_period_steps(values, max_lag: int = 96, threshold: float = 0.5):
+    """去趋势后 ACF 的**局部极大值**里取最高峰作主周期(步数)。
+    注意不能用全局 argmax:正弦的 ACF 在低阶 lag 本来就高(cos 因子),
+    全局 argmax 会答 lag≈2;周期表现为 ACF 先降后升的局部峰。
+    峰值 < threshold 或无局部峰时返回 None。
+    baseline-skill 的季节基线与 lookback 类图的 lag 桶共用。"""
+    x = np.asarray(values, float)
+    x = x[np.isfinite(x)]
+    if len(x) < 6:
+        return None
+    x = x - np.polyval(np.polyfit(np.arange(len(x)), x, 1), np.arange(len(x)))
+    denom = float(np.dot(x, x))
+    if denom < 1e-12:
+        return None
+    kmax = min(max_lag, len(x) // 2)
+    rho = np.array([float(np.dot(x[:-k], x[k:]) / denom)
+                    for k in range(1, kmax + 1)])
+    best_lag, best_rho = None, threshold
+    for i in range(1, len(rho) - 1):
+        if rho[i] > rho[i - 1] and rho[i] > rho[i + 1] and rho[i] > best_rho:
+            best_lag, best_rho = i + 1, float(rho[i])
+    return best_lag

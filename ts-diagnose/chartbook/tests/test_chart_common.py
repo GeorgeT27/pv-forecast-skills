@@ -100,3 +100,13 @@ def test_setup_font_returns_hits_and_renders_cjk(tmp_path):
     plt.close(fig)
     bad = [w for w in rec if "Glyph" in str(w.message) or "findfont" in str(w.message)]
     assert not bad, f"渲染出缺字形警告: {[str(w.message) for w in bad]}"
+
+
+def test_detect_period_steps_sine():
+    x = 10 + 5 * np.sin(2 * np.pi * np.arange(96) / 24)
+    assert cc.detect_period_steps(x, max_lag=48) == 24
+
+
+def test_detect_period_steps_aperiodic_returns_none():
+    x = np.arange(50, dtype=float)  # 纯趋势,无周期
+    assert cc.detect_period_steps(x, max_lag=20) is None
