@@ -32,7 +32,7 @@ stages:
              horizon-degradation, rolling-stability, true-vs-pred-scatter,
              model-error-correlation, worst-slice-compare, oracle-gap,
              feature-error-conditional, feature-trend-overlay,
-             y-vs-feature-mapping, train-test-drift]
+             y-vs-feature-mapping, train-test-drift, cross-dim-stability]
   - id: 3
     name: 机制归因（变体）
     done_when:
@@ -89,7 +89,10 @@ evidence_lines:
   - id: slice-gap
     stage: 2
     output: charts/worst-slice-compare.json
-upgrade_rule: "总差距方向（gap_summary 排名）与主导切片方向（worst-slice 片内排名）一致才把差距结论从「现象」升「假设」"
+  - id: cross-dim
+    stage: 2
+    output: charts/cross-dim-stability.json
+upgrade_rule: "总差距方向与主导切片方向一致（slice-gap 仅在 worst-slice perm.verdict=significant 时计入）且 cross-dim time_split 两半同向，才把差距结论从「现象」升「假设」"
 ---
 
 # model-comparison：多模型对比归因
@@ -104,6 +107,9 @@ worst-slice-compare 的集中度）。首要陷阱：**排名≠机制**——St
 阶段，禁机制语言；机制只能在 Stage 3 经模型档案桥接假设 + 图 JSON 证据合流产生。
 量纲纪律：点级 pool 口径（error-breakdown/horizon 等）与行 RMSE 均值口径
 （rolling-stability/oracle-gap 等）两族数值不可直接比大小，只比走势与排名。
+第四陷阱：**多图同源≠多证据**——全部图派生自同一份 predictions，方向一致只是
+同一证据维度的内部自洽（mechanisms.md §2「证据维度」）；升「假设」还须
+cross-dim-stability 的正交切分稳定性（§3 三条腿）。
 
 ## 2. 逐阶段菜谱
 
@@ -143,8 +149,10 @@ done：gap_summary.json 落盘。
     python3 <ENGINE>/chartbook/scripts/chart_<蛇形id>.py \
       --pred predictions.csv --out-dir charts/ [各图特有参数]
 
-（worst-slice-compare 传 `--focal-model` = model-set 答案里的关注模型；D 组图
-加 `--features features.csv`；train-test-drift 加 `--train-y train_y.csv`。）
+（worst-slice-compare 与 cross-dim-stability 传 `--focal-model` = model-set
+答案里的关注模型；worst-slice 置换基线默认开——`--n-perm 200 --perm-seed 0`，
+改种子=改期望须连 golden 一起改；D 组图加 `--features features.csv`；
+train-test-drift 加 `--train-y train_y.csv`。）
 判读读各图 JSON 的描述符（recipe 判读节），产出 FINDINGS.md 现象清单——
 只写「现象」；因缺材料跳过的图逐条注明「因缺 <材料> 未画」。
 done：charts/*.json 至少一个 + FINDINGS.md 含「现象」→ **pause_after 停顿**。
@@ -153,8 +161,8 @@ done：charts/*.json 至少一个 + FINDINGS.md 含「现象」→ **pause_after
 输入：model-profile 上下文（contexts 机制：linked 目录下 models.md 的桥接假设
 H-ID）+ Stage 2 图 JSON。
 菜谱：逐条桥接假设 → 找它预言的图形态（bridge_hooks）→ 对照实际描述符；
-两条证据线（total-gap 与 slice-gap）方向一致才把「现象」升「假设」
-（upgrade_rule）。产出写回 FINDINGS.md（状态用保留字）。
+升级按 §3 三条腿判定（upgrade_rule 两线一致 + 噪声门 + 跨维时间稳定）。
+产出写回 FINDINGS.md（状态用保留字）。
 done：FINDINGS.md 出现「假设」。
 
 ### Stage 4 结论
@@ -164,7 +172,11 @@ CONCLUSION.md（末尾附 Provenance 块）。
 
 ## 3. 证据升级规则
 
-- 现象 → 假设：upgrade_rule（两线方向一致）**且** |sign_z| ≥ 2（差距非噪声）；
+- 现象 → 假设（三条腿缺一不可）：①upgrade_rule 两线方向一致——slice-gap 线仅在
+  worst-slice `perm.verdict=significant` 时计入，not-significant → 该线弃权、
+  只剩单线则上限「现象」；②|sign_z| ≥ 2（差距非噪声）；③cross-dim
+  `time_stable=true`（时间对半同向）。`caliber_stable=false` 不阻塞升级，
+  但结论必须限定口径（「A 更好」仅在行 RMSE 均值口径成立）；
 - 假设 → 已证实：仅当机制预言了**未用于生成假设的**新图形态且被验证（三道门
   之门 2），或用户提供外部实验（换 checkpoint/换输入重跑）证实；
 - 任何一步不满足 → 停在当前层级，结论如实写层级。
@@ -172,7 +184,9 @@ CONCLUSION.md（末尾附 Provenance 块）。
 ## 4. 停顿点与汇报
 
 Stage 2 完成即停：向用户汇报 ①gap_summary 的排名与 z ②已画/跳过图清单
-③Top-3 现象（引用图 JSON 数字）。请用户点名：补画哪张图/调参数（top-N、切片
+③Top-3 现象（引用图 JSON 数字）④worst-slice 置换基线判定（significant →
+点名最差片；否则明说「集中未超随机基线，不点名」）⑤cross-dim 两维是否稳。
+请用户点名：补画哪张图/调参数（top-N、切片
 粒度）/指定下一步关注的配对或片段。用户不点名则按 orient 推荐推进。
 
 ## 5. subagent 拆分建议
@@ -188,8 +202,11 @@ Stage 2 各图独立可并发：每图一子代理，brief 只带命令模板+�
 oracle-gap）→ Provenance 块。
 特有反驳门（写结论前逐条自问并记录）：
 - **对齐偏置门**：dropped 不对称吗？只在对齐子集上比较的结论声明了子集吗？
-- **口径反转门**：horizon 交叉点存在吗？换口径（子段）后排名保持吗？
+- **口径反转门**：horizon 交叉点存在吗？换口径后方向保持吗（引 cross-dim
+  caliber_switch 数字；翻转 → 结论限定口径）？
 - **切片挑拣门**：结论引用的片段是事先声明的（最差片规则）还是事后挑的？
+- **随机集中门**：点名的最差片过了置换基线吗（perm_p、null_q95 抄进结论）？
+- **半程运气门**：时间对半后差距方向保持吗（引 cross-dim time_split 数字）？
 - **同质化门**：模型间误差相关 >0.95 时，「A 略好」的差距有实际意义吗
   （与 sign_z 联判）？
 
