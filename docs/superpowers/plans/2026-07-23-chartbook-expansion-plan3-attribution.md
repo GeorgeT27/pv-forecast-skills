@@ -55,7 +55,8 @@ def predict(requests):
     """requests: list[dict]——unit_id, window_ts,
        feature_overrides: {特征名: list[float] 长=horizon} | 缺省用模型自己的输入,
        lookback_mask: list[[start,end]] 半开步区间(0=最旧) | 缺省不遮蔽。
-    返回 DataFrame: unit_id | window_ts | horizon_step | y_pred。"""
+    返回 DataFrame: request_idx | horizon_step | y_pred(request_idx=请求在
+    本批的下标——同批可含同窗不同扰动的请求,必须靠它区分;unit/window 列可选)。"""
 
 def get_model():
     """torch_module=True 时实现:返回 (torch_model, background_X, explain_X,
@@ -717,14 +718,15 @@ HORIZON = 4
 
 def predict(requests):
     rows = []
-    for r in requests:
+    for i, r in enumerate(requests):
         hist = [1.0] * 8
         for a, b in (r.get("lookback_mask") or []):
-            for i in range(max(0, int(a)), min(8, int(b))):
-                hist[i] = 0.0
+            for j in range(max(0, int(a)), min(8, int(b))):
+                hist[j] = 0.0
         y = 10.0 + hist[-1]
         for s in range(HORIZON):
-            rows.append({"unit_id": r["unit_id"], "window_ts": r["window_ts"],
+            rows.append({"request_idx": i, "unit_id": r["unit_id"],
+                         "window_ts": r["window_ts"],
                          "horizon_step": s, "y_pred": y})
     return pd.DataFrame(rows)
 ```
@@ -1335,13 +1337,14 @@ with torch.no_grad():
 
 def predict(requests):
     rows = []
-    for r in requests:
+    for i, r in enumerate(requests):
         ov = r.get("feature_overrides") or {}
         x = torch.tensor([[float(ov.get(f, [1.0] * 2)[0])
                            for f in ("fa", "fb", "fc")]])
         y = _model(x).detach().numpy().ravel()
         for s, v in enumerate(y):
-            rows.append({"unit_id": r["unit_id"], "window_ts": r["window_ts"],
+            rows.append({"request_idx": i, "unit_id": r["unit_id"],
+                         "window_ts": r["window_ts"],
                          "horizon_step": s, "y_pred": float(v)})
     return pd.DataFrame(rows)
 
