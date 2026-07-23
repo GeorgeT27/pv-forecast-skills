@@ -55,7 +55,7 @@ def test_recipe_conforms(path):
 
 def test_recipe_checker_has_teeth(tmp_path):
     bad = tmp_path / "bad-recipe.md"
-    bad.write_text("---\nid: bad-recipe\nneeds_materials: [不存在的材料]\n"
+    bad.write_text("---\nid: bad-recipe\ncategory: error-structure\nneeds_materials: [不存在的材料]\n"
                    "适用问题: x\noutputs:\n  json: bad-recipe.json\n"
                    "  png: bad-recipe.png\njson_schema: x\nbridge_hooks: x\n"
                    "验证步: x\n---\n## 判读\n")
