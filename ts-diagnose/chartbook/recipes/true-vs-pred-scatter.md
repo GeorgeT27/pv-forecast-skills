@@ -9,11 +9,12 @@ outputs:
 json_schema: >
   每模型：slope / intercept / r2 / n / true_max / pred_max、pred_by_true_bin
   （真值分位箱均值→预测均值）、resid_quantiles_by_bin（每箱残差 p10/p50/p90）。
+  每模型另有 mz(Mincer-Zarnowitz:y_true=a+b·y_pred 的 a/b/f_stat/p_value;p 小 → 拒绝「无偏」,系统性衰减/放大真值)。
 bridge_hooks: >
   slope<1 且压低集中高段 → 幅值压缩类假设（归一化/RevIN 反变换、损失对大值欠罚）；
   slope≈1 而 R² 低 → 时序错位类假设（相位/滞后），去 worst-points 看转折点占比；
   intercept 显著非 0 → 基线偏置类假设。
-验证步: 无噪声 y_pred=0.8y+0.5 → slope/intercept 精确回收、R²>0.9999、分箱单调（tests/test_chart_true_vs_pred_scatter.py）
+验证步: 无噪声 y_pred=0.8y+0.5 → slope/intercept 精确回收、R²>0.9999、分箱单调（tests/test_chart_true_vs_pred_scatter.py）;MZ 配对正交噪声精确回收 a/b 与解析 F 值(同测试文件)
 ---
 
 # true-vs-pred-scatter：真值-预测回归诊断

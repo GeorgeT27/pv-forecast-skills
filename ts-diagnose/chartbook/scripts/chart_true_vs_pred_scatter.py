@@ -6,10 +6,30 @@ import argparse
 
 import numpy as np
 import pandas as pd
+from scipy.stats import f as f_dist
 
 import chart_common as cc
 
 RECIPE_ID = "true-vs-pred-scatter"
+
+
+def _mincer_zarnowitz(y, p, eps=1e-12):
+    """MZ 回归 y_true = a + b·y_pred;联合检验 H0: a=0,b=1(F,df=(2,n-2))。
+    SSR_u≈0 时 F 发散:f_stat=None,p 由 SSR_r 是否也≈0 判(恰无偏→1,有偏→0)。"""
+    n = len(y)
+    b, a = np.polyfit(p, y, 1)
+    ssr_u = float(np.sum((y - (a + b * p)) ** 2))
+    ssr_r = float(np.sum((y - p) ** 2))
+    out = {"a": round(float(a), 6), "b": round(float(b), 6)}
+    if ssr_u < eps:
+        out.update({"f_stat": None,
+                    "p_value": 1.0 if ssr_r < eps else 0.0,
+                    "note": "无噪声退化:SSR_u≈0,F 发散;p 由 SSR_r 判"})
+        return out
+    f_stat = max(((ssr_r - ssr_u) / 2.0) / (ssr_u / (n - 2)), 0.0)
+    out.update({"f_stat": round(float(f_stat), 6),
+                "p_value": round(float(f_dist.sf(f_stat, 2, n - 2)), 6)})
+    return out
 
 
 def compute(df: pd.DataFrame, n_bins: int = 10) -> dict:
@@ -33,6 +53,7 @@ def compute(df: pd.DataFrame, n_bins: int = 10) -> dict:
             "slope": round(float(slope), 6),
             "intercept": round(float(intercept), 6),
             "r2": round(r2, 6), "n": int(len(gg)),
+            "mz": _mincer_zarnowitz(y, p),
             "true_max": round(float(y.max()), 4),
             "pred_max": round(float(p.max()), 4),
             "pred_by_true_bin": {f"{r.y:.2f}": round(float(r.p), 4)
@@ -62,8 +83,16 @@ def render_from_df(df: pd.DataFrame, stats: dict):
         ax.plot(lim, lim, "r--", lw=1, label="y = x")
         ax.plot(lim, [s["slope"] * v + s["intercept"] for v in lim],
                 color="orange", lw=1.5, label=f"slope={s['slope']:.3f}")
-        ax.text(0.03, 0.95, f"R²={s['r2']:.4f}", transform=ax.transAxes,
-                va="top", bbox=dict(fc="white", alpha=0.85))
+        mz = s["mz"]
+        ptxt = ("p<1e-6" if mz["p_value"] < 1e-6 else f"p={mz['p_value']:.3f}")
+        ax.text(0.03, 0.95,
+                f"R²={s['r2']:.4f}\nMZ: b={mz['b']:.3f} {ptxt}",
+                transform=ax.transAxes, va="top",
+                bbox=dict(fc="white", alpha=0.85))
+        if abs(mz["b"]) > 1e-12:
+            ax.plot(lim, [(v - mz["a"]) / mz["b"] for v in lim],
+                    color="green", lw=1.2, ls=":",
+                    label=f"MZ b={mz['b']:.3f}")
         ax.set_xlabel("y_true"), ax.set_ylabel("y_pred")
         ax.set_title(f"true-vs-pred — {m}"), ax.legend(loc="lower right")
     fig.tight_layout()
