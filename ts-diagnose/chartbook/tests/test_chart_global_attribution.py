@@ -140,3 +140,15 @@ def test_gradient_path_ratios(tmp_path):
     assert o["fc"] < 1e-6
     assert np.isclose(o["fa"] / o["fb"], 3.0)
     assert st["coverage"]["calls_used"] == 0, "梯度路不打推理入口"
+
+
+def test_gradient_without_torch_capability():
+    """explicitly requesting gradient on a non-torch adapter should raise ValueError."""
+    adapter = ac.load_adapter(ADAPTER)
+    # Verify adapter indeed lacks torch capability
+    assert not adapter.CAPABILITIES.get("torch_module")
+    # Requesting gradient should raise ValueError with clear message
+    with pytest.raises(ValueError, match=r"gradient.*torch_module.*get_model"):
+        cga.compute(_pred(), _feats(), adapter, buckets=2, max_windows=4,
+                    background_k=2, seed=0, max_calls=5000,
+                    explainer="gradient")

@@ -39,6 +39,10 @@ def compute(pred_df, feats, adapter, buckets: int = 4, max_windows: int = 30,
         explainer = ("gradient" if adapter.CAPABILITIES.get("torch_module")
                      else "kernel")
     if explainer == "gradient":
+        if not adapter.CAPABILITIES.get("torch_module") or not callable(getattr(adapter, "get_model", None)):
+            raise ValueError(
+                "explainer='gradient' 需要适配器 CAPABILITIES['torch_module']=True "
+                "且实现 get_model() 函数;此适配器不满足(请用 --explainer kernel)")
         mat, names, bg_meta = ac.gradient_mean_shap(adapter)
         overall = {n: round(float(mat[:, j].mean()), 6)
                    for j, n in enumerate(names)}
