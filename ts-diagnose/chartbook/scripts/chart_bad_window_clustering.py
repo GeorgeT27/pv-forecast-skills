@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import argparse
+import warnings
 
 import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.metrics import silhouette_score
 
 import chart_common as cc
@@ -53,8 +55,11 @@ def compute(df: pd.DataFrame, top_n: int = 50, seed: int = 0) -> dict:
             for k in (2, 3, 4):
                 if k >= len(X):
                     continue
-                km = KMeans(n_clusters=k, n_init=10, random_state=seed).fit(X)
-                s = float(silhouette_score(X, km.labels_))
+                with warnings.catch_warnings():
+                    # k > 真实形状数时重复点必然簇合并——固有告警,局部消音防污染测试输出
+                    warnings.simplefilter("ignore", ConvergenceWarning)
+                    km = KMeans(n_clusters=k, n_init=10, random_state=seed).fit(X)
+                    s = float(silhouette_score(X, km.labels_))
                 entry["silhouette_by_k"][str(k)] = round(s, 4)
                 if s > best_s:
                     best_k, best_s, best_labels = k, s, km.labels_
