@@ -23,6 +23,7 @@ REFS = [
     ("feature-importance", "0", "reference/correlation_screen.py"),
     ("model-comparison", "1", "reference/stage1_gap.py"),
     ("model-comparison", "2", "reference/stage2_slice.py"),
+    ("model-comparison", "2-crossdim", "reference/stage2_crossdim.py"),
     ("fact-scan", "1", "reference/scan_charts.py"),
 ]
 
