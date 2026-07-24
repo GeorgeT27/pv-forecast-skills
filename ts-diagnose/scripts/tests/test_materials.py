@@ -247,3 +247,60 @@ def test_intake_doc_covers_all_material_ids():
     for kw in ("absent-confirmed", "degraded_ok", "还有别的", "sample_rows",
                "y_col", "对账"):
         assert kw in text, f"intake.md 缺关键纪律词 '{kw}'"
+
+
+# ---------------------------------------------------------------- 入口闸（三道闸之一）
+def test_present_gaps():
+    cfg = {"materials": {
+        "predict": {"status": "present", "paths": ["p.parquet"],
+                    "schema": {"y_col": "power"}},                 # 缺 time_col
+        "truth": {"status": "present", "paths": ["t.parquet"],
+                  "schema": {"y_col": "y", "time_col": "ts"}},     # 齐
+        "checkpoint": {"status": "present"},                        # 缺 paths
+        "training_log": {"status": "absent-confirmed"},             # 非 present → []
+    }}
+    assert ec.present_gaps(cfg, "predict") == ["schema.time_col"]
+    assert ec.present_gaps(cfg, "truth") == []
+    assert ec.present_gaps(cfg, "checkpoint") == ["paths"]
+    assert ec.present_gaps(cfg, "training_log") == []
+    assert ec.present_gaps({}, "predict") == []
+
+
+def test_intake_blockers_five_piece_always_asked(tmp_path):
+    """五件套是引擎级恒问：playbook 只声明 predict/truth，五件套照样阻塞。"""
+    fm = fm_with_materials(
+        tmp_path, "materials:\n  required: [predict, truth]\n")
+    got = dict(ec.intake_blockers(fm, {}))
+    for mid in ("training_log", "truth", "train_y", "checkpoint",
+                "model_code", "predict"):
+        assert got[mid] == "unknown"
+    assert "features" not in got      # 非五件套、非 required → 不恒问
+
+
+def test_intake_blockers_reasons(tmp_path):
+    fm = fm_with_materials(tmp_path, "materials:\n  required: [predict]\n")
+    cfg = {"materials": {
+        "predict": {"status": "present", "paths": ["p.parquet"],
+                    "schema": {"y_col": "p", "time_col": "ts"}},
+        "truth": {"status": "present"},                              # 缺实质字段
+        "train_y": {"status": "absent-confirmed", "source": "user"},
+        "training_log": {"status": "absent-confirmed"},              # source≠user
+        "checkpoint": {"status": "absent-confirmed", "source": "user"},
+        "model_code": {"status": "absent-confirmed", "source": "user"},
+    }}
+    got = dict(ec.intake_blockers(fm, cfg))
+    assert "predict" not in got
+    assert got["truth"].startswith("present-incomplete:")
+    assert "paths" in got["truth"]
+    assert got["training_log"] == "absent-not-user"
+    assert "train_y" not in got and "checkpoint" not in got
+    # required 材料 absent-confirmed（source=user）仍须 degraded_ok
+    cfg["materials"]["predict"] = {"status": "absent-confirmed", "source": "user"}
+    got = dict(ec.intake_blockers(fm, cfg))
+    assert got["predict"] == "absent-need-degraded-ok"
+
+
+def test_intake_ask_lines():
+    lines = ec.intake_ask_lines("training_log")
+    assert any("追问" in ln for ln in lines)
+    assert ec.intake_ask_lines("不存在的id") == []

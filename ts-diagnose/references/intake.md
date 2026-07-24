@@ -23,6 +23,12 @@ orient 会报盘点状态。主 agent 按本文件流程收集，答案落 `diag
 4. 材料相关的证据自答（如工作目录已有明显的 predict parquet）只能免"在哪"，
    **免不了 schema 追问**——列名语义猜错污染全部下游（必问五类第 1 条）。
 
+## 引擎级恒问五件套
+
+不管进哪个 playbook，`training_log / truth / train_y / checkpoint / model_code`
+五类必须全部问到 present 或 absent-confirmed(source=user)，否则 orient 直接
+BLOCKED（不输出任何阶段菜单）。playbook 声明的 required/optional 照旧叠加。
+
 ## config.materials 条目格式
 
 ```json
@@ -81,8 +87,8 @@ orient 会报盘点状态。主 agent 按本文件流程收集，答案落 `diag
 
 ## `train_y`
 
-训练期真值序列（漂移对比用：训练/测试同期分布）。
-**追问**：在哪？时间范围？与 test 真值同单位同口径吗？
+训练集数据（train.parquet：训练期真值，特征列可选；漂移对比与训练侧诊断用）。
+**追问**：在哪？时间范围？含哪些列（真值列名？带不带特征）？与 test 真值同单位同口径吗？
 
 ## `checkpoint`
 

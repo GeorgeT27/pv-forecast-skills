@@ -344,6 +344,60 @@ MATERIAL_IDS = ("predict", "truth", "model_code", "training_log", "features",
                 "experiment_config", "data_profile")
 MATERIAL_STATUSES = ("present", "absent-confirmed")  # 其余一律视为 unknown
 
+# 入口闸（spec 2026-07-24 §2）：五件套引擎级恒问——不管 playbook 声明什么，
+# 都必须盘点到 present / absent-confirmed(source=user)。
+GLOBAL_MATERIALS = ("training_log", "truth", "train_y", "checkpoint", "model_code")
+
+# present 记录的实质字段要求：缺任一 → 不算过闸（防"标 present 但没问 schema"）。
+# 字段名支持点路径；未列出的材料默认只要求 paths 非空。
+PRESENT_REQUIRED_FIELDS = {
+    "predict": ("paths", "schema.y_col", "schema.time_col"),
+    "truth": ("paths", "schema.y_col", "schema.time_col"),
+    "serving_api": ("schema.endpoint",),
+}
+_PRESENT_DEFAULT_FIELDS = ("paths",)
+
+
+def present_gaps(cfg, mid):
+    """present 记录缺的实质字段列表；非 present 记录 → []。"""
+    rec = ((cfg or {}).get("materials") or {}).get(mid)
+    if not isinstance(rec, dict) or rec.get("status") != "present":
+        return []
+    fields = PRESENT_REQUIRED_FIELDS.get(mid, _PRESENT_DEFAULT_FIELDS)
+    return [f for f in fields if not _filled(_value_at(rec, f))]
+
+
+def intake_blockers(fm, cfg):
+    """入口闸：五件套 ∪ playbook required 中所有未过闸材料 → [(mid, reason)]。
+    absent-confirmed 只认用户亲口（source=user）；required 材料降级还须 degraded_ok。"""
+    req = set(materials_of(fm)[0])
+    out = []
+    for mid in [m for m in MATERIAL_IDS if m in (set(GLOBAL_MATERIALS) | req)]:
+        s = material_status(cfg, mid)
+        rec = ((cfg or {}).get("materials") or {}).get(mid) or {}
+        if s == "unknown":
+            out.append((mid, "unknown"))
+        elif s == "present":
+            gaps = present_gaps(cfg, mid)
+            if gaps:
+                out.append((mid, "present-incomplete:" + ",".join(gaps)))
+        else:  # absent-confirmed
+            if rec.get("source") != "user":
+                out.append((mid, "absent-not-user"))
+            elif mid in req and rec.get("degraded_ok") is not True:
+                out.append((mid, "absent-need-degraded-ok"))
+    return out
+
+
+def intake_ask_lines(mid):
+    """references/intake.md 中该材料小节的原文行（orient BLOCKED 时打印追问模板）。"""
+    doc = os.path.join(ENGINE_DIR, "references", "intake.md")
+    m = re.search(rf"^## `{re.escape(mid)}`\n(.*?)(?=^## |\Z)",
+                  _read_text(doc), re.S | re.M)
+    if not m:
+        return []
+    return [ln.strip() for ln in m.group(1).strip().splitlines() if ln.strip()]
+
 # chartbook recipe 类别全集(呈现层归组;spec 2026-07-23 §6)。
 # recipe frontmatter 的 category 必填且 ∈ 本集(test_recipes_conform 闸)。
 CATEGORY_IDS = ("error-structure", "temporal-stability", "input-side",
