@@ -149,6 +149,11 @@ def test_all_done_returns_none(fm, workdir):
                  "CONCLUSION.md"):
         (workdir / name).write_text("{}", encoding="utf-8")
     (workdir / "FINDINGS.md").write_text("现象", encoding="utf-8")
+    # 结论阶段 done_when 现含 conclusion_gate.py 的 receipt（task-10）；
+    # 这里只测 stage_done 的机械产物判定，不跑真闸，故直接摆一份最小 receipt。
+    (workdir / "gate_reports").mkdir()
+    (workdir / "gate_reports" / "conclusion_gate.json").write_text(
+        "{}", encoding="utf-8")
     assert ec.current_stage(fm, ctx_of(fm, {})) is None
 
 

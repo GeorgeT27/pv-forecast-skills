@@ -54,7 +54,7 @@ stages:
   - id: 5
     name: 确认（Mode B：微调探针 + 剔除重训 → 已证实/CONCLUSION）
     done_when:
-      artifacts: ["CONCLUSION.md"]
+      artifacts: ["CONCLUSION.md", "gate_reports/conclusion_gate.json"]
     prereqs:
       - desc: 有可用 checkpoint（Mode B）
         check: "material:checkpoint"

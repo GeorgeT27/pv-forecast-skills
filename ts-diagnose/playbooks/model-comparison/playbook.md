@@ -43,7 +43,7 @@ stages:
   - id: 4
     name: 结论
     done_when:
-      artifacts: ["CONCLUSION.md"]
+      artifacts: ["CONCLUSION.md", "gate_reports/conclusion_gate.json"]
     subagent_ok: false
     prereqs:
       - desc: 现象清单已停顿汇报

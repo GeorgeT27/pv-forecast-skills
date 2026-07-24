@@ -48,7 +48,7 @@ stages:
   - id: 4
     name: 结论（重要性排名判级 + CONCLUSION.md）
     done_when:
-      artifacts: ["CONCLUSION.md"]
+      artifacts: ["CONCLUSION.md", "gate_reports/conclusion_gate.json"]
     prereqs:
       - desc: 现象清单已有（Stage 3）
         check: "stage:3"

@@ -281,6 +281,8 @@ def main():
             print("    另：≥2 证据线按 upgrade_rule 一致才升『假设』；样本<阈值只报排名不报显著；")
             print("    收尾：写 CONCLUSION.md 前跑 provenance.py 附 Provenance 块，"
                   "写完直接呈现给用户不只丢路径。")
+            print("    收尾后必须跑：python3 <ENGINE>/scripts/conclusion_gate.py"
+                  "（不过则结论不算交付，receipt 是本阶段完成判据）")
         if ec.prereqs_ok(pr) and not blocked_qs and not mat_blocked and not mm:
             print(f"→ 前置齐，可开工 Stage {target['id']}。")
         else:

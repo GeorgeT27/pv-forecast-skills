@@ -66,7 +66,7 @@ stages:
   - id: 6
     name: 结论（充分性判定 + CONCLUSION.md）
     done_when:
-      artifacts: ["CONCLUSION.md"]
+      artifacts: ["CONCLUSION.md", "gate_reports/conclusion_gate.json"]
     prereqs:
       - desc: 现象清单已有（Stage 5）
         check: "stage:5"

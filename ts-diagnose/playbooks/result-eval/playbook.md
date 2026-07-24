@@ -42,7 +42,7 @@ stages:
   - id: 4
     name: 深归因与结论
     done_when:
-      artifacts: ["CONCLUSION.md"]
+      artifacts: ["CONCLUSION.md", "gate_reports/conclusion_gate.json"]
     prereqs:
       - desc: 用户已点名待深挖现象
         check: "stage:3"
