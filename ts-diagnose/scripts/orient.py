@@ -65,6 +65,8 @@ def main():
     ap.add_argument("--playbook", default=None, help="playbook id（首次进入绑定）")
     ap.add_argument("--profile", default=None, help="固化技能 profile.yaml 路径")
     ap.add_argument("--goto", type=int, default=None, help="直达目标阶段 id：校验前置")
+    ap.add_argument("--force", action="store_true",
+                     help="用户明确要求跳过前置时才可用；PROGRESS 留痕")
     args = ap.parse_args()
 
     today = dt.date.today().isoformat()
@@ -239,12 +241,24 @@ def main():
     elif cur is not None:
         target = cur
     if target is not None:
+        pr = ec.prereqs_of(target, ctx)
+        blocked_qs = ec.blocking_questions(fm, ctx, stage_id=target["id"])
+        goto_jump = (args.goto is not None and cur is not None
+                     and target["id"] != cur["id"])
+        if goto_jump and not (ec.prereqs_ok(pr) and not blocked_qs) \
+                and not args.force:
+            print("-" * 62)
+            print(f"⛔ 拒绝直达 Stage {target['id']}：前置不齐。"
+                  f"正确入口 = Stage {cur['id']}（{cur['name']}）。")
+            print("   确需跳过：须用户明确指示后重跑 orient --goto "
+                  f"{target['id']} --force（将记 PROGRESS 留痕，结论须声明缺口）。")
+            target = cur          # 回落到当前阶段，按正常流程打印
+            pr = ec.prereqs_of(target, ctx)
+            blocked_qs = ec.blocking_questions(fm, ctx, stage_id=target["id"])
         print("-" * 62)
         print(f"进入 Stage {target['id']} 的前置：")
-        pr = ec.prereqs_of(target, ctx)
         for desc, ok in pr:
             print(f"  [{'✓' if ok else '✗'}] {desc}")
-        blocked_qs = ec.blocking_questions(fm, ctx, stage_id=target["id"])
         for q in blocked_qs:
             print(f"  [✗] 必答问题未答：{q['id']}（{q['why']}）")
         for mid, reason in mat_blocked:
@@ -298,7 +312,8 @@ def _write_state_progress(fm, cur, args, ctx=None, actives=None, state=None, blo
         }
         line = (f"orient：playbook={fm['id']}，当前 Stage "
                 f"{cur['id'] if cur is not None else '收尾'}"
-                f"{f'（--goto {args.goto}）' if args.goto is not None else ''}")
+                f"{f'（--goto {args.goto}）' if args.goto is not None else ''}"
+                f"{'（--force：用户要求跳过前置，Stage 前置未齐）' if args.goto is not None and args.force else ''}")
     ec.dump_json(new_state, ec.STATE_PATH)
     stamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     is_new = not os.path.exists(ec.PROGRESS_PATH)

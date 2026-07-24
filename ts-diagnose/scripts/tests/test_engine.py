@@ -307,7 +307,9 @@ def test_orient_prints_three_door_checklist_on_conclusion_stage(workdir):
     非结论阶段不打印——just-in-time，不靠模型追 mechanisms.md 指针。"""
     _seed_five_ok(workdir)
     run_orient(workdir, "--playbook", "training-sufficiency")
-    r = run_orient(workdir, "--goto", "6")   # Stage 6 = 结论（artifacts: CONCLUSION.md）
+    # Stage 6 = 结论（artifacts: CONCLUSION.md）；前置阶段未完成，--goto 护栏（task-3）
+    # 默认拒绝直达，须 --force 放行才能看到目标阶段的三道门自检。
+    r = run_orient(workdir, "--goto", "6", "--force")
     assert r.returncode == 0, r.stderr
     assert "三道门自检" in r.stdout
     for door in ("门1 稳健性", "门2 假设登记", "门3 反驳门"):
