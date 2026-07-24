@@ -2,7 +2,8 @@
 
 设计纪律（见 SKILL.md 上下文预算节）：
 - 所有重活在脚本内完成，脚本只 print ≤30 行摘要；产物落盘 CSV/JSON，各带自足 summary。
-- 复用兄弟技能 pv-result-analysis/scripts/data_utils.py 读 parquet、算 PSI，不另写一套。
+- 复用 ts-diagnose/playbooks/result-eval/scripts/data_utils.py 读 parquet、算 PSI，不另写
+  一套（原 pv-result-analysis/scripts/data_utils.py，2026-07-24 迁入 result-eval playbook）。
 
 配置文件 influence_config.json（工作目录，字段全部可选、按模式渐进填）：
 {
@@ -36,8 +37,15 @@ import numpy as np
 CONFIG_PATH = "influence_config.json"
 
 # 复用主技能 data_utils（读 parquet / to_matrix / psi）。找不到就降级：本技能不重写。
+# data_utils.py 现居 ts-diagnose/playbooks/result-eval/scripts/（2026-07-24 迁移，原
+# pv-result-analysis/scripts/）；旧路径保留作兜底，防止尚未同步迁移的检出环境炸掉。
 _SKILL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_SIBLING = os.path.normpath(os.path.join(_SKILL_ROOT, "..", "pv-result-analysis", "scripts"))
+_REPO_ROOT = os.path.dirname(_SKILL_ROOT)
+_SIBLING_CANDIDATES = (
+    os.path.join(_REPO_ROOT, "ts-diagnose", "playbooks", "result-eval", "scripts"),
+    os.path.join(_REPO_ROOT, "pv-result-analysis", "scripts"),  # 旧路径兜底
+)
+_SIBLING = next((p for p in _SIBLING_CANDIDATES if os.path.isdir(p)), _SIBLING_CANDIDATES[0])
 if os.path.isdir(_SIBLING) and _SIBLING not in sys.path:
     sys.path.insert(0, _SIBLING)
 try:
@@ -96,7 +104,7 @@ def dump_json(path: str, obj) -> None:
 def load_test_label_matrix(cfg: dict):
     """载入留出站真值并转 (n,192) 矩阵 + timestamps。复用 data_utils。"""
     if du is None:
-        raise RuntimeError("找不到 pv-result-analysis/scripts/data_utils.py，无法读 parquet。")
+        raise RuntimeError("找不到 data_utils.py（找过：" + "、".join(_SIBLING_CANDIDATES) + "），无法读 parquet。")
     df = du.load_table(cfg["test_label"])
     Y = du.to_matrix(df, du.LABEL_COL)
     return df[du.TIMESTAMP_COL].to_numpy(), Y

@@ -2,7 +2,8 @@
 
 设计纪律（见 SKILL.md 上下文预算节）：
 - 重活在脚本内完成，脚本只 print ≤30 行摘要；产物落盘 CSV/JSON，各带自足 summary。
-- 复用兄弟技能 pv-result-analysis/scripts/data_utils.py 的口径常量与读表工具，
+- 复用 ts-diagnose/playbooks/result-eval/scripts/data_utils.py 的口径常量与读表工具
+  （原 pv-result-analysis/scripts/data_utils.py，2026-07-24 迁入 result-eval playbook），
   绝不重新定义第 16 点 / [59:155]（口径漂移 = 整条归因链作废）——缺该文件直接硬失败。
 
 配置文件 blame_config.json（工作目录；字段渐进填，缺就问用户，CLI flag 可覆盖）：
@@ -49,8 +50,15 @@ CONFIG_PATH = "blame_config.json"
 
 # 复用主技能 data_utils（口径常量 / load_table / to_matrix / check_window_consistency）。
 # 与 si_common 不同：本技能的口径常量承重（坏行定义直接依赖），缺失时硬失败而非降级。
+# data_utils.py 现居 ts-diagnose/playbooks/result-eval/scripts/（2026-07-24 迁移，原
+# pv-result-analysis/scripts/）；旧路径保留作兜底，防止尚未同步迁移的检出环境炸掉。
 _SKILL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_SIBLING = os.path.normpath(os.path.join(_SKILL_ROOT, "..", "pv-result-analysis", "scripts"))
+_REPO_ROOT = os.path.dirname(_SKILL_ROOT)
+_SIBLING_CANDIDATES = (
+    os.path.join(_REPO_ROOT, "ts-diagnose", "playbooks", "result-eval", "scripts"),
+    os.path.join(_REPO_ROOT, "pv-result-analysis", "scripts"),  # 旧路径兜底
+)
+_SIBLING = next((p for p in _SIBLING_CANDIDATES if os.path.isdir(p)), _SIBLING_CANDIDATES[0])
 if os.path.isdir(_SIBLING) and _SIBLING not in sys.path:
     sys.path.insert(0, _SIBLING)
 try:
@@ -62,9 +70,8 @@ except Exception:            # pragma: no cover - 仅在兄弟技能缺失时
 def require_du():
     if du is None:
         raise SystemExit(
-            "找不到 pv-result-analysis/scripts/data_utils.py —— 本技能的口径常量"
-            "（ULTRA_SHORT_IDX/SHORT_SLICE）从它导入，绝不本地重定义。"
-            f"请确认兄弟技能目录存在：{_SIBLING}"
+            "找不到 data_utils.py（找过：" + "、".join(_SIBLING_CANDIDATES) + "）—— "
+            "本技能的口径常量（ULTRA_SHORT_IDX/SHORT_SLICE）从它导入，绝不本地重定义。"
         )
     return du
 

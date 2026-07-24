@@ -94,12 +94,20 @@ def test_layer0_routes_every_playbook():
     assert os.path.exists(os.path.join(ENGINE_DIR, "references", "engine-core.md"))
 
 
+# model-audit 是跨 playbook 共享的档案供应方（`contexts.provider_playbook` 机制 +
+# engine_common.modelmap_blocker 全局阻塞，见 3b0ed11）：任何声明 model_code 材料的
+# playbook 按设计以 id 引用它触发嵌入执行提示，这不是方法内容内联，是引擎既定的
+# provider 接线——同 chartbook 一样按共享库豁免，而非 Layer 1 独立性违例。
+SHARED_PROVIDER_PLAYBOOKS = frozenset(("model-audit",))
+
+
 def test_layer1_playbooks_independent():
-    """全部 playbook 之间零共享内联：互不引用对方 id（动态发现，新增自动纳管）。"""
+    """全部 playbook 之间零共享内联：互不引用对方 id（动态发现，新增自动纳管），
+    但允许引用 SHARED_PROVIDER_PLAYBOOKS 里的跨 playbook 供应方（见上）。"""
     for a in PLAYBOOK_IDS:
         text = _read(os.path.join(ENGINE_DIR, "playbooks", a, "playbook.md"))
         for b in PLAYBOOK_IDS:
-            if a != b:
+            if a != b and b not in SHARED_PROVIDER_PLAYBOOKS:
                 assert b not in text, f"playbook {a} 内联引用了 {b}"
 
 
