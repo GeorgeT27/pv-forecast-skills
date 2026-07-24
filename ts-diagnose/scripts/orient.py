@@ -280,8 +280,6 @@ def main():
                   "写完直接呈现给用户不只丢路径。")
         if ec.prereqs_ok(pr) and not blocked_qs and not mat_blocked:
             print(f"→ 前置齐，可开工 Stage {target['id']}。")
-        elif args.goto is not None and cur is not None and args.goto != cur["id"]:
-            print(f"→ 前置不齐，不能直达 Stage {args.goto}。正确入口 = Stage {cur['id']}（{cur['name']}）。")
         else:
             print("→ 有 ✗ 先补：缺答案 AskUserQuestion；缺产物回上一阶段；缺路径问用户后写 config。")
     print("=" * 62)

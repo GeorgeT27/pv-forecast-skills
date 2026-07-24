@@ -66,6 +66,8 @@ def test_goto_refused_without_force(tmp_path):
     assert "⛔ 拒绝直达 Stage 1" in out
     assert "正确入口 = Stage 0" in out
     assert "三道门" not in out                  # 不吐目标阶段的自检/菜谱指引
+    # ⛔ 块唯一负责拒绝措辞——旧 elif 分支的"不能直达"不得再重复一遍拒绝
+    assert "不能直达" not in out
 
 
 def test_goto_force_allows_and_logs(tmp_path):
@@ -73,5 +75,7 @@ def test_goto_force_allows_and_logs(tmp_path):
     out = run_orient(wd, "--goto", "1", "--force")
     assert "⛔" not in out
     assert "进入 Stage 1 的前置" in out
+    # --force 放行后不得在同一输出里又打印"不能直达"，自相矛盾
+    assert "不能直达" not in out
     prog = (wd / "PROGRESS.md").read_text(encoding="utf-8")
     assert "--force" in prog and "跳过前置" in prog

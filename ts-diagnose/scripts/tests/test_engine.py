@@ -284,7 +284,9 @@ def test_orient_goto_blocked_reports_entry(workdir):
     _seed_five_ok(workdir)
     run_orient(workdir, "--playbook", "training-sufficiency")
     r = run_orient(workdir, "--goto", "6")
-    assert "不能直达 Stage 6" in r.stdout and "正确入口 = Stage 0" in r.stdout
+    # ⛔ 拒绝直达块唯一负责拒绝措辞（旧 "不能直达" elif 分支已删除，不应再重复出现）
+    assert "⛔ 拒绝直达 Stage 6" in r.stdout and "正确入口 = Stage 0" in r.stdout
+    assert "不能直达" not in r.stdout
 
 
 def test_orient_prints_must_ask_banner_and_reorient_footer(workdir):
