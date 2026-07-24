@@ -8,11 +8,22 @@ feature-importance）——原先逐技能 description 的存在性/触发短语
 目录一起失去测试对象，已随本次删壳移除（不是精简，是测试对象不存在了）。保留的测试
 只锁引擎自己 SKILL.md 的 description 与路由表内容，这是删壳后唯一还站得住的锚点；
 四技能间的路由优先级契约现由 test_layering.py 的 provider_playbook 声明式守卫接管。
+
+Task 12：单入口化。description 的「负面清单」与 pv-* 让位条款已删除（不再有让位对象），
+路由优先级由三级（固化代理 > 专用技能 > 引擎兜底）收成两级（固化代理 > 本引擎）。本文件
+新增断言锁住这两点，并把 9 个 playbook（含新并入的 result-eval/model-audit/subset-influence）
+都纳入 description 与路由表的存在性检查——防止收编回归、防止 SKILL.md 再长回 pv-* 负面清单。
 """
 import os
 import re
 
 ENGINE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+ALL_PLAYBOOK_IDS = (
+    "training-sufficiency", "robustness", "feature-importance",
+    "model-comparison", "deployment-drift", "fact-scan",
+    "model-audit", "result-eval", "subset-influence",
+)
 
 
 def description_of(skill_dir):
@@ -44,3 +55,35 @@ def test_engine_routes_deployment_drift():
     text = open(os.path.join(ENGINE_DIR, "SKILL.md"), encoding="utf-8").read()
     assert "deployment-drift" in text
     assert "退化" in text
+
+
+def test_engine_description_enumerates_all_nine_playbooks():
+    """单入口化后 description 必须正面枚举全部 9 个 playbook id（含本轮并入的三个）。"""
+    d = description_of(ENGINE_DIR)
+    missing = [pid for pid in ALL_PLAYBOOK_IDS if pid not in d]
+    assert not missing, f"引擎 description 缺 playbook id：{missing}"
+
+
+def test_engine_description_has_no_negative_list_or_pvstar_deferral():
+    """负面清单与 pv-* 让位条款已随单入口化删除——不应再出现在 description 里。"""
+    d = description_of(ENGINE_DIR)
+    for stale in ("负面清单", "pv-result-analysis", "pv-station-influence",
+                  "pv-model-analysis", "pv-feature-blame"):
+        assert stale not in d, f"引擎 description 残留旧让位条款文案「{stale}」"
+
+
+def test_routing_priority_is_two_level():
+    """路由优先级节已从三级收成两级：固化代理技能 > 本引擎；不应再提「专用技能」分级。"""
+    text = open(os.path.join(ENGINE_DIR, "SKILL.md"), encoding="utf-8").read()
+    assert "两级" in text
+    assert "专用技能" not in text, "路由优先级仍残留三级措辞（专用技能一档）"
+
+
+def test_skill_md_line_budget_and_full_playbook_coverage():
+    """SKILL.md ≤60 行（与 test_layering 的预算口径一致），且路由表覆盖全部 9 个 playbook。"""
+    path = os.path.join(ENGINE_DIR, "SKILL.md")
+    lines = open(path, encoding="utf-8").read().splitlines()
+    assert len(lines) <= 60, f"SKILL.md {len(lines)} 行 > 60 行预算"
+    text = "\n".join(lines)
+    missing = [pid for pid in ALL_PLAYBOOK_IDS if pid not in text]
+    assert not missing, f"路由表缺 playbook：{missing}"
