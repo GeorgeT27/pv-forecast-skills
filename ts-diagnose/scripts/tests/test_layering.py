@@ -7,6 +7,12 @@ Layer 0 = SKILL.md 纯路由层：命中任何 playbook 之前，进上下文的
 import glob
 import os
 import re
+import sys
+import tempfile
+
+SCRIPTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, SCRIPTS_DIR)
+import engine_common as ec  # noqa: E402
 
 ENGINE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SKILL_PATH = os.path.join(ENGINE_DIR, "SKILL.md")
@@ -94,21 +100,76 @@ def test_layer0_routes_every_playbook():
     assert os.path.exists(os.path.join(ENGINE_DIR, "references", "engine-core.md"))
 
 
-# model-audit 是跨 playbook 共享的档案供应方（`contexts.provider_playbook` 机制 +
-# engine_common.modelmap_blocker 全局阻塞，见 3b0ed11）：任何声明 model_code 材料的
-# playbook 按设计以 id 引用它触发嵌入执行提示，这不是方法内容内联，是引擎既定的
-# provider 接线——同 chartbook 一样按共享库豁免，而非 Layer 1 独立性违例。
-SHARED_PROVIDER_PLAYBOOKS = frozenset(("model-audit",))
+# model-audit 是跨 playbook 共享的档案供应方（`contexts[].provider_playbook` 机制 +
+# engine_common.modelmap_blocker 全局阻塞，见 3b0ed11）：一个 playbook 若在自己的
+# frontmatter `contexts[]` 里显式声明某 id 为 provider_playbook，它以该 id 引用对方
+# 触发嵌入执行提示——这不是方法内容内联，是引擎既定的 provider 接线，按共享库豁免，
+# 而非 Layer 1 独立性违例。豁免按「声明」颗粒度收窄：只有 a 自己声明了 b 为
+# provider_playbook，a 全文提及 b 才合法；未声明的 playbook 提及任何其他 id 一律 0 次
+# ——防止未来 playbook 把 model-audit（或任何 provider）的说明文字贴进正文却不声明
+# provider 关系，从而绕过本守卫（见 fix round 1 报告）。
+def _declared_providers(playbook_path):
+    """读取 playbook frontmatter 的 contexts[].provider_playbook 声明集合。"""
+    fm = ec.load_frontmatter(playbook_path)
+    return frozenset(
+        ctx["provider_playbook"]
+        for ctx in (fm.get("contexts") or [])
+        if isinstance(ctx, dict) and ctx.get("provider_playbook"))
+
+
+def _assert_no_undeclared_cross_reference(a, text, providers, b):
+    """独立性守卫的单点判据：b 只有在 a 声明它为 provider 时才允许出现在 a 的正文里。"""
+    if b in providers:
+        return
+    assert b not in text, f"playbook {a} 内联引用了 {b}（未在 contexts[] 声明为 provider）"
+
+
+def test_layer1_guard_rejects_undeclared_provider_mention():
+    """RED 探针：一个不声明 model-audit 为 provider 的 playbook 正文提到 model-audit，
+    必须被判违例——证明「id 出现在共享供应方集合里就整份豁免」的旧规则有洞
+    （字符串"model-audit"可以因任何理由出现在正文任何位置而不被拦截）。"""
+    fm_text = (
+        "---\n"
+        "id: decoy\n"
+        "name: 诱饵 playbook\n"
+        "goal: 验证守卫\n"
+        "stages:\n"
+        "  - id: 0\n"
+        "    name: 占位阶段\n"
+        "    done_when:\n"
+        "      manual: true\n"
+        "---\n"
+        "\n"
+        "# decoy\n"
+        "\n"
+        "本 playbook 没有在 contexts[] 里把 model-audit 声明为 provider_playbook，"
+        "但正文这里贴了一段提到 model-audit 的说明文字（模拟未来误粘贴）。\n")
+    with tempfile.TemporaryDirectory() as td:
+        path = os.path.join(td, "playbook.md")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(fm_text)
+        providers = _declared_providers(path)
+        text = _read(path)
+        assert "model-audit" not in providers  # 前提：确未声明
+        try:
+            _assert_no_undeclared_cross_reference("decoy", text, providers, "model-audit")
+        except AssertionError:
+            return  # 期望：未声明的引用必须被拦截
+        raise AssertionError("守卫应拦截未声明 provider 的跨 playbook 引用，但放行了")
 
 
 def test_layer1_playbooks_independent():
     """全部 playbook 之间零共享内联：互不引用对方 id（动态发现，新增自动纳管），
-    但允许引用 SHARED_PROVIDER_PLAYBOOKS 里的跨 playbook 供应方（见上）。"""
+    但仅当 a 在自己 frontmatter 的 contexts[] 里把 b 声明为 provider_playbook 时，
+    a 才允许在正文提及 b（见上，颗粒度=每个 playbook 自己声明了什么，而非固定豁免表）。
+    """
     for a in PLAYBOOK_IDS:
-        text = _read(os.path.join(ENGINE_DIR, "playbooks", a, "playbook.md"))
+        path = os.path.join(ENGINE_DIR, "playbooks", a, "playbook.md")
+        text = _read(path)
+        providers = _declared_providers(path)
         for b in PLAYBOOK_IDS:
-            if a != b and b not in SHARED_PROVIDER_PLAYBOOKS:
-                assert b not in text, f"playbook {a} 内联引用了 {b}"
+            if a != b:
+                _assert_no_undeclared_cross_reference(a, text, providers, b)
 
 
 def test_chartbook_scripts_no_cross_skill_imports():
