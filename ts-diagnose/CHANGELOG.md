@@ -36,3 +36,5 @@
 - attribution_common:加载校验、BudgetedAdapter(预算+请求哈希 jsonl 缓存)、background_set(kmeans-medoid,meta 落盘=守卫一)、feature_corr_groups(守卫二)
 - 三图:global-attribution(KernelSHAP 双面板,梯度白盒路 --explainer auto)、lookback-decay(按桶遮蔽+逐窗有效历史)、local-waterfall(单行 φ 解析回收+防冤枉诱饵)
 - chartbook 25→28 recipe,attribution 类首次有图,六类全满;依赖新增 shap==0.44.1(numpy 必须保持 1.26.4)
+- 2026-07-24 | 弱模型加固 A+B：orient.py 目标阶段块打印「引擎级恒问五类·开工前自检」横幅（schema/判据/降级/破坏性/多版本，playbook 没声明也提醒——恒问五类此前只靠模型自觉，orient 不主动surфacing）+ 输出末尾打印「每回合先跑 orient 再动手」脚注；engine-core Step 0 增「引擎第一纪律：每回合先 orient 再动手、做完重跑、不凭记忆推进」（test_engine 新增横幅+脚注断言，109 绿） | 用户："我要用 256k 的 deepseek flash 弱模型跑这个 skill，检查是否够频繁用 subagent、小模型能否不漏步跑通" | 弱模型两大失效模式=不 notice 该问就假设开工 + 跑一次 orient 后脱离清单凭记忆推进；A 把恒问五类摆到每回合眼前，B 把 orient 重跑立为第一纪律并每回合脚注提醒
+- 2026-07-24 | 弱模型加固 C：密集散文改即时打印编号清单——orient.py 图表选择门印 4 步编号清单（多选默认全勾/删图不静默记 PROGRESS+CONCLUSION/可加画/画完出 INDEX 再停顿），产 CONCLUSION.md 的结论阶段印「三道门自检」清单（门1 稳健·门2 假设登记·门3 反驳门 + 证据线/功效/provenance 收尾，just-in-time 不靠模型追 mechanisms.md 指针）；engine-core 同步两处 prose→编号清单（test_engine 三道门正/负例、test_charts_decl 清单断言，110 绿） | 用户："do c and commit and push"（弱模型加固 A+B 之后） | 弱模型失效模式之一=多分支密集散文只执行一支、指针懒得追；把最判断重的两处（画图门/结论三门）在该动手的那一回合直接打到眼前

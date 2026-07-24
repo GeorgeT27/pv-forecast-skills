@@ -273,6 +273,35 @@ def test_orient_goto_blocked_reports_entry(workdir):
     assert "不能直达 Stage 6" in r.stdout and "正确入口 = Stage 0" in r.stdout
 
 
+def test_orient_prints_must_ask_banner_and_reorient_footer(workdir):
+    """弱模型加固（A+B）：有目标阶段时打印「恒问五类」自检横幅，
+    输出末尾打印重跑 orient 的纪律脚注——两者每回合都在模型眼前。"""
+    r = run_orient(workdir, "--playbook", "training-sufficiency")
+    assert r.returncode == 0, r.stderr
+    # A：五类必问自检横幅（含引导词 + 五条触发器）
+    assert "恒问五类" in r.stdout
+    for trigger in ("schema/单位/口径不明", "成功判据未定义", "证据不足以升级",
+                    "破坏性/昂贵操作", "多候选文件或版本"):
+        assert trigger in r.stdout, f"缺自检项：{trigger}"
+    # B：重跑 orient 脚注
+    assert "每回合先跑 orient" in r.stdout
+
+
+def test_orient_prints_three_door_checklist_on_conclusion_stage(workdir):
+    """弱模型加固（C）：目标阶段产 CONCLUSION.md（结论阶段）时打印三道门自检清单；
+    非结论阶段不打印——just-in-time，不靠模型追 mechanisms.md 指针。"""
+    run_orient(workdir, "--playbook", "training-sufficiency")
+    r = run_orient(workdir, "--goto", "6")   # Stage 6 = 结论（artifacts: CONCLUSION.md）
+    assert r.returncode == 0, r.stderr
+    assert "三道门自检" in r.stdout
+    for door in ("门1 稳健性", "门2 假设登记", "门3 反驳门"):
+        assert door in r.stdout, f"缺门：{door}"
+    assert "provenance.py" in r.stdout
+    # 非结论阶段（Stage 0 产 probe_summary.json）不打印三道门
+    r0 = run_orient(workdir, "--goto", "0")
+    assert "三道门自检" not in r0.stdout
+
+
 def test_orient_profile_merge_and_skip_questions(workdir):
     prof = workdir / "profile.yaml"
     prof.write_text(

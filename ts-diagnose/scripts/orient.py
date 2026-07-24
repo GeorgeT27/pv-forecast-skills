@@ -128,9 +128,12 @@ def main():
     if ec.has_chart_stage(fm):
         addable = ec.addable_recipes(fm, cfg)
         print("-" * 62)
-        print("  图表选择门（画图前 AskUserQuestion 多选，engine-core「图表选择门」）：")
-        print("    默认全选上方 ✓可画 图；用户可取消勾选删图（删了记 PROGRESS+CONCLUSION"
-              "声明覆盖缺口），或从下方「可加画」勾选加图。")
+        print("  图表选择门（画图前必停一次，engine-core「图表选择门」）——按序逐条办：")
+        print("    1. 一次 AskUserQuestion 多选；默认全勾上方 ✓可画 图"
+              "（被动接受默认＝画全套，别自作主张少画）；")
+        print("    2. 用户取消勾选的删图不静默：记 PROGRESS.md 一行 + CONCLUSION 声明覆盖缺口；")
+        print("    3. 可从下方「可加画」勾选加图（跨 playbook，材料满足才在池里）；")
+        print("    4. 画最终选定集 → 跑 build_index.py 出 INDEX.md → 再进 pause_after 停顿汇报。")
         if addable:
             print("    ➕ 可加画（未声明、材料已满足，可跨 playbook 任取，按类别分组）：")
             by_cat = {}
@@ -220,6 +223,21 @@ def main():
             print(f"  [✗] 必答问题未答：{q['id']}（{q['why']}）")
         for mid, reason in mat_blocked:
             print(f"  [✗] 必需材料未就绪：{mid}（{reason}）")
+        print("  ⚑ 引擎级恒问五类·开工前自检（命中任一必停 AskUserQuestion，"
+              "orient 不替你判，playbook 没声明也照问）：")
+        print("    ① schema/单位/口径不明 ② 成功判据未定义 "
+              "③ 证据不足以升级（问降级 or 补证据并列成本）")
+        print("    ④ 破坏性/昂贵操作（重训/覆盖产物/写外部目录） ⑤ 多候选文件或版本选哪个")
+        if "CONCLUSION.md" in ((target.get("done_when") or {}).get("artifacts") or []):
+            print("  🚪 结论阶段·三道门自检（三门全过才可在 FINDINGS.md 标「已证实」；"
+                  "细则 mechanisms.md）——逐条办：")
+            print("    门1 稳健性：配对检验过 + 剔除最极端 10% 方向不变；")
+            print("    门2 假设登记：先在 HYPOTHESES.md 写下预测，再看数（禁事后编故事）；")
+            print("    门3 反驳门：替代解释逐条排除，排不掉就显式降级"
+                  "（含 playbook 特有反驳门条目）；")
+            print("    另：≥2 证据线按 upgrade_rule 一致才升『假设』；样本<阈值只报排名不报显著；")
+            print("    收尾：写 CONCLUSION.md 前跑 provenance.py 附 Provenance 块，"
+                  "写完直接呈现给用户不只丢路径。")
         if ec.prereqs_ok(pr) and not blocked_qs and not mat_blocked:
             print(f"→ 前置齐，可开工 Stage {target['id']}。")
         elif args.goto is not None and cur is not None and args.goto != cur["id"]:
@@ -227,6 +245,8 @@ def main():
         else:
             print("→ 有 ✗ 先补：缺答案 AskUserQuestion；缺产物回上一阶段；缺路径问用户后写 config。")
     print("=" * 62)
+    print("↻ 每回合先跑 orient 再动手；本阶段做完重跑一次核对进度——真相以产物为准，"
+          "状态已落盘、可断点续跑，别凭记忆推进。")
 
     # state + PROGRESS（保留 manual_done——manual 阶段的完成标记只有主 agent 会写）
     new_state = {

@@ -144,6 +144,8 @@ def test_orient_prints_selection_gate(tmp_path):
         [sys.executable, ORIENT], cwd=tmp_path, capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
     assert "图表选择门" in proc.stdout
+    assert "按序逐条办" in proc.stdout          # C：编号清单形式（非密集散文）
+    assert "build_index.py" in proc.stdout     # 清单第 4 步：出 INDEX.md
     assert "可加画" in proc.stdout
     assert "intraday-profile" in proc.stdout  # 未声明但材料满足 → 出现在可加画池
     assert "需 ≥2 模型" in proc.stdout        # 对比类图（worst-slice-compare 等）带模型数标注

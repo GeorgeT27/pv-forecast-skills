@@ -5,6 +5,11 @@
 
 ## Step 0：Orient —— 每次进入先跑
 
+**引擎第一纪律（弱模型尤其守）：每个回合开工前先跑 orient，本阶段做完再跑一次核对——
+不凭记忆推进（真相以产物为准，状态落盘、可断点续跑）。orient 的输出就是你这一回合的
+行动清单：照它的 ✗、前置、必答问题、以及末尾打印的「恒问五类」自检逐条办；办完一步就
+重跑 orient 拿下一步，不要一口气脑补多个阶段。**
+
 ```bash
 python3 "<ENGINE>/scripts/orient.py"                                 # 已有 config：报阶段+问题清单+前置
 python3 "<ENGINE>/scripts/orient.py" --playbook <id>                  # 首次进入：绑定 playbook
@@ -48,16 +53,19 @@ python3 "<ENGINE>/scripts/orient.py" --goto 3                        # 直达校
   脚本（宽转长、逐窗聚合、单位换算……）同样必须过对账两关再消费其产出——
   菜谱没声明验证步 ≠ 免验证；转换口径（聚合公式、缺失处理）记 PROGRESS.md，
   否则两次执行各自发明口径，结果不可比。
-- **图表选择门**（声明了 `charts:` 的阶段，画图前必停一次）：orient 已把图分三组
-  （①声明且可画 ②声明但缺材料自动跳过 ③未声明但材料已满足的 chartbook recipe＝
-  可加画池,**按六类 category 分组呈现**,各图带类别标签）。用**一次 AskUserQuestion 多选**呈现：**默认全选①**（草绘全覆盖是事实
-  阶段的本分，被动接受默认＝画全套，守住压测教训的完整性），用户可取消勾选删图、
-  或从③勾选加图（跨 playbook 任取材料满足的 recipe）。画最终选定集，再进
-  `pause_after` 汇报——**选择门＝画前定范围，停顿点＝画后定深挖，两者不同不可合并**。
-  **删图不静默**：用户去掉的声明图记 PROGRESS.md，并在 CONCLUSION 声明覆盖缺口
-  （同「抽样/截断必须披露」纪律）。缺材料的②仍自动跳过，不在此门重复问。
-  画完后跑 `chartbook/scripts/build_index.py --charts-dir <workdir>/charts` 生成
-  `INDEX.md`——按类别分节、只索引本次实际产物,判读入口从索引进。
+- **图表选择门**（声明了 `charts:` 的阶段，画图前必停一次）。orient 把图分三组
+  （①声明且可画 ②声明但缺材料自动跳过 ③未声明但材料已满足的可加画池，按六类
+  category 分组、各图带类别标签）。**按序逐条办**（orient 也会打印这份清单）：
+  1. **一次** AskUserQuestion 多选；**默认全勾①**（草绘全覆盖是事实阶段的本分，
+     被动接受默认＝画全套，守住压测教训的完整性），别自作主张少画；
+  2. 用户取消勾选的删图**不静默**：记 PROGRESS.md 一行 + 在 CONCLUSION 声明覆盖缺口
+     （同「抽样/截断必须披露」纪律）；
+  3. 可从③勾选加图（跨 playbook 任取材料满足的 recipe）；缺材料的②自动跳过，不重复问；
+  4. 画最终选定集 → 跑 `chartbook/scripts/build_index.py --charts-dir <workdir>/charts`
+     出 `INDEX.md`（按类别分节、只索引本次实际产物，判读入口从索引进）→ 再进
+     `pause_after` 停顿汇报。
+
+  **选择门＝画前定范围，停顿点＝画后定深挖，两者不同不可合并。**
 - **生成闸**：playbook 的 `golden/manifest.json` 覆盖到的阶段，脚本必须先过 `scripts/gen_gate.py`（静态检查 + 在结果已知的金标准输入上跑一遍），PASS 才许碰真实数据；FAIL → 改脚本不改期望。闸报告落工作目录 `gate_reports/`。
 - **事实阶段 ⏸**：playbook 标 `pause_after` 的事实提取阶段产「现象清单」（观察+数字+来源，**禁机制语言**），完成后停下向用户汇报，等用户点名要深挖的项再进结论阶段。用户给模糊授权（"挑最强的/你看着办"）时的操作判据：**效应量最大且样本数过功效阈值**的那条现象（并列取来源产物证据线更多者），选了哪条、按什么判据，记 PROGRESS.md 一行。
 - **上下文三分支**：playbook 声明的外部上下文（contexts）absent 时必须先问用户（要不要先建立/嵌入跑），linked 时核验 marker 文件才消费，declined 时结论注明缺失。
@@ -71,7 +79,11 @@ python3 "<ENGINE>/scripts/orient.py" --goto 3                        # 直达校
 
 ## 结论纪律（精简硬规则，细则见 mechanisms.md）
 
-1. **三道门**：稳健性门槛（配对检验+剔极端方向不变）→ 假设登记（HYPOTHESES.md 先预测后看数）→ 反驳门（替代解释逐条排除或显式降级）。三门全过才可在 FINDINGS.md 标「已证实」。
+1. **三道门**（结论阶段逐条办，orient 在产 `CONCLUSION.md` 的阶段会打印这份清单；三门全过才可在 FINDINGS.md 标「已证实」）：
+   - **门1 稳健性**：配对检验过 + 剔除最极端 10% 方向不变；
+   - **门2 假设登记**：先在 HYPOTHESES.md 写下预测，**再**看数（禁事后编故事）；
+   - **门3 反驳门**：替代解释逐条排除，排不掉就显式降级（含 playbook 特有反驳门条目）。
+   收尾：写 CONCLUSION.md 前跑 `provenance.py` 附 Provenance 块，写完直接呈现给用户。
 2. **多证据线**：playbook 声明 ≥2 条 evidence_lines 时，按其 upgrade_rule（通常排名一致性）才升「假设」；单证据线结论上限「现象」。
 3. **功效诚实**：样本/单元数不足（playbook 给阈值，默认 <10）只报排名与趋势，不报显著性。
 4. FINDINGS.md 状态只用保留字：**现象/假设/已证实/被推翻**（orient 判定依赖）。
