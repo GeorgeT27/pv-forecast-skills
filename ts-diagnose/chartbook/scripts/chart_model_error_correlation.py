@@ -66,7 +66,7 @@ def render(stats: dict):
         for j in range(len(names)):
             ax.text(j, i, f"{mat[i, j]:.2f}", ha="center", va="center",
                     fontsize=8)
-    ax.set_title("model-error-correlation 逐样本 RMSE 相关")
+    ax.set_title("model-error-correlation: per-sample RMSE correlation")
     fig.colorbar(im, ax=ax, shrink=0.8)
     fig.tight_layout()
     return fig

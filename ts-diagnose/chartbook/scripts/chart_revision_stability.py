@@ -74,9 +74,9 @@ def render(stats: dict):
             ax.plot(tr["leads"], tr["preds"], marker="o", ms=3, lw=1, alpha=0.7)
             ax.axhline(tr["y_true"], color="k", lw=0.4, ls=":")
         ax.invert_xaxis()
-        ax.set_xlabel("lead(步,右=临近)"), ax.set_ylabel("预测值")
+        ax.set_xlabel("lead (steps, right=nearer)"), ax.set_ylabel("predicted value")
         sm = s.get("smapc")
-        ax.set_title(f"{m} 翻新轨迹 (sMAPC={sm if sm is not None else 'n/a'})")
+        ax.set_title(f"{m} revision trajectory (sMAPC={sm if sm is not None else 'n/a'})")
     return fig
 
 

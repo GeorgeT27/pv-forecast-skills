@@ -110,8 +110,8 @@ def render(stats: dict):
         ax.plot(xs, list(s["rolling_rmse"].values()), label=f"{m} rolling")
         for cp in s["changepoints"]:
             ax.axvline(pd.Timestamp(cp["date"]), color="red", ls=":", lw=1)
-    ax.set_ylabel("滚动日均 RMSE")
-    ax.set_title("rolling-stability（红虚线=变点）")
+    ax.set_ylabel("rolling daily-mean RMSE")
+    ax.set_title("rolling-stability (red dashed = changepoint)")
     ax.legend()
     fig.autofmt_xdate()
     return fig

@@ -54,13 +54,13 @@ def render(stats: dict):
     models = list(stats["models"])
     fig, ax = plt.subplots(figsize=(1.5 + 1.2 * len(models), 4))
     bottoms = np.zeros(len(models))
-    for key, label in (("u_bias", "偏移"), ("u_var", "幅度"), ("u_cov", "形状")):
+    for key, label in (("u_bias", "bias"), ("u_var", "variance"), ("u_cov", "covariance")):
         vals = np.array([stats["models"][m]["overall"][key] or 0.0
                          for m in models])
         ax.bar(models, vals, bottom=bottoms, label=label)
         bottoms += vals
-    ax.set_ylabel("MSE 占比"), ax.set_ylim(0, 1.05)
-    ax.set_title("theil-decomposition 误差性质三分")
+    ax.set_ylabel("MSE share"), ax.set_ylim(0, 1.05)
+    ax.set_title("theil-decomposition: bias/variance/covariance split")
     ax.legend()
     return fig
 

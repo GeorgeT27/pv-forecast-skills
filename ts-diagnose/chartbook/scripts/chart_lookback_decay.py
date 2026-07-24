@@ -119,10 +119,10 @@ def render(stats: dict):
     ax.bar(range(len(labels)), stats["delta_by_bucket"])
     ax.set_xticks(range(len(labels)))
     ax.set_xticklabels(labels, fontsize=8)
-    ax.set_xlabel("遮蔽的历史步区间(左=近)")
-    ax.set_ylabel("Δ RMSE(相对未遮蔽)")
+    ax.set_xlabel("masked history-step range (left=recent)")
+    ax.set_ylabel("Δ RMSE (vs unmasked)")
     st = stats.get("short_term_share")
-    ax.set_title(f"lookback-decay 历史依赖(short_term_share={st})")
+    ax.set_title(f"lookback-decay: history dependence (short_term_share={st})")
     return fig
 
 

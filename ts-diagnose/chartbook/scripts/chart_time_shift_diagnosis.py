@@ -65,8 +65,8 @@ def render(stats: dict):
         ks = sorted(int(k) for k in s["shift_hist"])
         ax.bar(ks, [s["shift_hist"][str(k)] for k in ks])
         ax.axvline(0, color="k", lw=0.5)
-        ax.set_title(f"{m} 最优平移分布 (mode={s['mode_shift']})")
-        ax.set_xlabel("平移步数(>0=滞后)"), ax.set_ylabel("窗口数")
+        ax.set_title(f"{m} best-shift distribution (mode={s['mode_shift']})")
+        ax.set_xlabel("shift steps (>0=lag)"), ax.set_ylabel("window count")
     return fig
 
 

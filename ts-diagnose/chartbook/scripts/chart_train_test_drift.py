@@ -93,8 +93,8 @@ def render(stats: dict):
     ax.bar(months, vals, color=colors)
     ax.axhline(stats["psi_alert"], color="k", ls="--", lw=0.8,
                label=f"alert={stats['psi_alert']}")
-    ax.set_xlabel("日历月"), ax.set_ylabel("PSI")
-    ax.set_title("train-test-drift 逐月标签分布漂移"), ax.legend()
+    ax.set_xlabel("calendar month"), ax.set_ylabel("PSI")
+    ax.set_title("train-test-drift: monthly label distribution drift"), ax.legend()
     fig.tight_layout()
     return fig
 

@@ -54,8 +54,8 @@ def render(stats: dict):
             ax.plot(xs, ys, label=m)
     axes[0].set_ylabel("RMSE"), axes[1].set_ylabel("bias")
     axes[1].axhline(0, color="k", lw=0.5)
-    axes[1].set_xlabel("目标时刻 (h)")
-    axes[0].set_title("intraday-profile 日内时段误差剖面")
+    axes[1].set_xlabel("target hour (h)")
+    axes[0].set_title("intraday-profile: hourly error profile")
     axes[0].legend(ncol=max(1, len(stats["models"])))
     return fig
 

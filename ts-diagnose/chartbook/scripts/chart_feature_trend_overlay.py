@@ -74,7 +74,7 @@ def render(stats: dict):
         e = stats["features"][feat]
         days = pd.to_datetime(list(e["aligned"]))
         ax.plot(days, [v["y_rmse"] for v in e["aligned"].values()],
-                color="firebrick", label="y 日RMSE")
+                color="firebrick", label="y daily RMSE")
         ax2 = ax.twinx()
         key = "quality" if e["sync_basis"] == "quality" else "f_pred"
         ax2.plot(days, [v.get(key) for v in e["aligned"].values()],

@@ -135,7 +135,7 @@ def render(stats: dict):
     axes[0].set_yticklabels(names, fontsize=8)
     axes[0].invert_yaxis()
     axes[0].set_xlabel("mean|SHAP|")
-    axes[0].set_title("全局贡献排名")
+    axes[0].set_title("global contribution ranking")
     mat = np.array([[row[n] for n in names] for row in stats["by_bucket"]])
     im = axes[1].imshow(mat.T, aspect="auto", cmap="viridis")
     axes[1].set_yticks(range(len(names)))
@@ -143,8 +143,8 @@ def render(stats: dict):
     axes[1].set_xticks(range(len(stats["bucket_defs"])))
     axes[1].set_xticklabels([f"{a}-{b}" for a, b in stats["bucket_defs"]],
                             fontsize=8)
-    axes[1].set_xlabel("horizon 桶")
-    axes[1].set_title("特征×horizon 贡献")
+    axes[1].set_xlabel("horizon bucket")
+    axes[1].set_title("feature x horizon contribution")
     fig.colorbar(im, ax=axes[1], shrink=0.8)
     fig.suptitle(f"global-attribution ({stats['explainer']})")
     return fig

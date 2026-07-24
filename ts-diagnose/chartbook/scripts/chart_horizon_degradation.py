@@ -79,8 +79,8 @@ def render(stats: dict):
             ax.plot([int(k) for k in curve], list(curve.values()), label=m)
     axes[0].set_ylabel("RMSE"), axes[1].set_ylabel("bias")
     axes[1].axhline(0, color="k", lw=0.5)
-    axes[1].set_xlabel(f"预报步 (0–{stats['n_steps'] - 1})")
-    axes[0].set_title("horizon-degradation 误差随预报时效")
+    axes[1].set_xlabel(f"forecast step (0–{stats['n_steps'] - 1})")
+    axes[0].set_title("horizon-degradation: error vs lead time")
     axes[0].legend(ncol=max(1, len(stats["models"])))
     return fig
 

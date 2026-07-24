@@ -55,8 +55,8 @@ def render(stats: dict):
         ax.plot(pd.to_datetime(list(series)), list(series.values()),
                 label=col, **style)
     gap = stats["best_single_minus_oracle"]
-    ax.set_title(f"oracle-gap（最优单模型−oracle 日均 = {gap:.3f}）")
-    ax.set_ylabel("日均行 RMSE"), ax.legend(ncol=len(stats["daily_rmse"]))
+    ax.set_title(f"oracle-gap(best-single-model−oracle, daily mean = {gap:.3f})")
+    ax.set_ylabel("daily-mean row RMSE"), ax.legend(ncol=len(stats["daily_rmse"]))
     fig.autofmt_xdate()
     return fig
 

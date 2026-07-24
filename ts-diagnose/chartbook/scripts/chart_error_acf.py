@@ -57,8 +57,8 @@ def render(stats: dict):
         ci = 1.96 / np.sqrt(nn) if nn > 0 else 0
         ax.axhline(ci, color="r", ls="--", lw=0.6)
         ax.axhline(-ci, color="r", ls="--", lw=0.6)
-        ax.set_title(f"{m} 误差 ACF (LB p={s['ljung_box']['p']:.3g})")
-        ax.set_xlabel("lag(窗)")
+        ax.set_title(f"{m} error ACF (LB p={s['ljung_box']['p']:.3g})")
+        ax.set_xlabel("lag (window)")
     return fig
 
 

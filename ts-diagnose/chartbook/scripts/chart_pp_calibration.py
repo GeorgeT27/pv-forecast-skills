@@ -47,8 +47,8 @@ def render(stats: dict):
         ax.plot(xs, ys, marker="o", ms=3, label=f"{m} (slope={s['slope']})")
         lo, hi = min(lo, min(xs + ys)), max(hi, max(xs + ys))
     ax.plot([lo, hi], [lo, hi], "k--", lw=0.8, label="y=x")
-    ax.set_xlabel("真值分位数"), ax.set_ylabel("预测分位数")
-    ax.set_title("pp-calibration 分位数校准")
+    ax.set_xlabel("true quantile"), ax.set_ylabel("predicted quantile")
+    ax.set_title("pp-calibration: quantile calibration")
     ax.legend()
     return fig
 

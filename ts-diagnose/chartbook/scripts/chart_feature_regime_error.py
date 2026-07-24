@@ -77,9 +77,9 @@ def render(stats: dict):
         ax.bar(x + i * w, [r["rmse_by_model"].get(m, 0) for r in regimes],
                width=w, label=m)
     ax.set_xticks(x + 0.4 - w / 2)
-    ax.set_xticklabels([f"制式{i}\nshare={r['share']:.2f}"
+    ax.set_xticklabels([f"regime {i}\nshare={r['share']:.2f}"
                         for i, r in enumerate(regimes)], fontsize=8)
-    ax.set_ylabel("行 RMSE 均值")
+    ax.set_ylabel("mean row RMSE")
     ax.set_title(f"feature-regime-error (k={stats['chosen_k']})")
     ax.legend(fontsize=8)
     return fig

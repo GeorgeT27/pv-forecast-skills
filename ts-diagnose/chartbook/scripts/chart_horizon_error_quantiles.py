@@ -44,7 +44,7 @@ def render(stats: dict):
         ax.fill_between(xs, get("p25"), get("p75"), alpha=0.35, label="p25–p75")
         ax.plot(xs, get("p50"), lw=1.2, label="p50")
         ax.axhline(0, color="k", lw=0.5)
-        ax.set_title(f"{m} 误差分位扇形"), ax.set_xlabel("horizon step")
+        ax.set_title(f"{m} error-quantile fan"), ax.set_xlabel("horizon step")
         ax.legend(fontsize=8)
     return fig
 

@@ -89,8 +89,8 @@ def render(stats: dict):
     models = list(stats["models"])
     skills = ["skill_vs_persistence", "skill_vs_seasonal", "skill_vs_climatology"]
     labels = {"skill_vs_persistence": "vs persistence",
-              "skill_vs_seasonal": "vs 季节朴素",
-              "skill_vs_climatology": "vs 均值"}
+              "skill_vs_seasonal": "vs seasonal-naive",
+              "skill_vs_climatology": "vs climatology"}
     x = np.arange(len(models))
     present = [s for s in skills if any(s in stats["models"][m] for m in models)]
     w = 0.8 / max(1, len(present))
@@ -100,7 +100,7 @@ def render(stats: dict):
     ax.axhline(0, color="k", lw=0.8)
     ax.set_xticks(x + 0.4 - w / 2), ax.set_xticklabels(models, fontsize=8)
     ax.set_ylabel("skill = 1 − RMSE/RMSE_base")
-    ax.set_title("baseline-skill 基线技能阶梯")
+    ax.set_title("baseline-skill (skill ladder)")
     ax.legend(fontsize=8)
     return fig
 

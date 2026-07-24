@@ -84,7 +84,7 @@ def render(stats: dict):
         ax.axvline(0, color="k", lw=0.5)
         ax.invert_yaxis()
         ax.set_xlabel("Cohen's d (worst−best)")
-        ax.set_title(f"{m} 好/坏样本特征分离度 (k={s['k']})")
+        ax.set_title(f"{m} good/bad feature separation (k={s['k']})")
     return fig
 
 

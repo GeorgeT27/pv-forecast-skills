@@ -117,11 +117,11 @@ def render(stats: dict):
     axes[0].bar(models, [stats["in_slice"][m] for m in models],
                 color=["firebrick" if m == stats["focal"] else "steelblue"
                        for m in models])
-    axes[0].set_title(f"最差片 {stats['worst_slice']} 内各模型 RMSE")
+    axes[0].set_title(f"worst slice {stats['worst_slice']}: per-model RMSE")
     for m, series in stats["daily_in_slice"].items():
         axes[1].plot(pd.to_datetime(list(series)), list(series.values()),
                      label=m, lw=1.5 if m == stats["focal"] else 0.9)
-    axes[1].set_title("片内逐日对比"), axes[1].legend()
+    axes[1].set_title("within-slice daily comparison"), axes[1].legend()
     fig.autofmt_xdate()
     fig.tight_layout()
     return fig

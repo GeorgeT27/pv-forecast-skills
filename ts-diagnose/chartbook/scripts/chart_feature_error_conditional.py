@@ -91,9 +91,9 @@ def render(stats: dict):
             ax.plot(range(len(bins)), list(bins.values()), "-o", ms=3,
                     label=f"{feat}"
                           f"(ratio={e['quality_effect_ratio'] or e['value_effect_ratio']})")
-        ax.set_title(f"feature-error-conditional 分箱条件 RMSE — {m}",
+        ax.set_title(f"feature-error-conditional: binned conditional RMSE — {m}",
                      fontsize=10)
-        ax.set_xlabel("箱序（质量/值 由低到高）"), ax.set_ylabel("RMSE")
+        ax.set_xlabel("bin order (quality/value, low to high)"), ax.set_ylabel("RMSE")
         ax.legend(fontsize=7)
     fig.tight_layout()
     return fig

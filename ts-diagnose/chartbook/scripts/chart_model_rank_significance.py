@@ -81,7 +81,7 @@ def render(stats: dict):
     ax.set_yticks(range(len(names))), ax.set_yticklabels(
         [n + (" ★" if n in stats["best_group"] else "") for n in names])
     ax.invert_yaxis()
-    ax.set_xlabel(f"平均秩(横杠=cd/2,cd={stats['cd']})")
+    ax.set_xlabel(f"mean rank (bar=cd/2, cd={stats['cd']})")
     ax.set_title("model-rank-significance")
     ax2 = axes[1]
     pairs = list(stats["dm"])
@@ -89,7 +89,7 @@ def render(stats: dict):
     ax2.barh(range(len(pairs)), ps)
     ax2.axvline(0.05, color="r", ls="--", lw=0.8)
     ax2.set_yticks(range(len(pairs))), ax2.set_yticklabels(pairs, fontsize=8)
-    ax2.set_xlabel("DM p 值(虚线=0.05)")
+    ax2.set_xlabel("DM p-value (dashed=0.05)")
     fig.tight_layout()
     return fig
 

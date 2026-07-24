@@ -71,16 +71,16 @@ def render(stats: dict):
     for i, o in enumerate(others):
         p = stats["pairs"][o]
         ts, cs = p["time_split"], p["caliber_switch"]
-        axes[i][0].bar(["前半", "后半"],
+        axes[i][0].bar(["first half", "second half"],
                        [ts["first_half_diff"], ts["second_half_diff"]],
                        color="steelblue")
         axes[i][0].axhline(0, color="gray", lw=0.8)
-        axes[i][0].set_title(f"{stats['focal']}−{o} 时间对半差"
-                             f"（一致={ts['consistent']}）")
-        axes[i][1].bar(["行RMSE均值", "点级pool"],
+        axes[i][0].set_title(f"{stats['focal']}−{o} time-half diff"
+                             f" (consistent={ts['consistent']})")
+        axes[i][1].bar(["row-RMSE mean", "point pool"],
                        [cs["row_diff"], cs["pooled_diff"]], color="darkorange")
         axes[i][1].axhline(0, color="gray", lw=0.8)
-        axes[i][1].set_title(f"口径切换差（一致={cs['consistent']}）")
+        axes[i][1].set_title(f"metric-switch diff (consistent={cs['consistent']})")
     fig.tight_layout()
     return fig
 

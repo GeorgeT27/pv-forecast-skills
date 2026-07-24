@@ -91,7 +91,7 @@ def render(stats: dict):
                 if np.isfinite(mat[i, j]):
                     ax.text(j, i, f"{mat[i, j]:.2f}", ha="center",
                             va="center", fontsize=7)
-        ax.set_title(f"error-breakdown 单元×月 RMSE — {m}", fontsize=10)
+        ax.set_title(f"error-breakdown: unit x month RMSE — {m}", fontsize=10)
         fig.colorbar(im, ax=ax, shrink=0.8)
     fig.tight_layout()
     return fig

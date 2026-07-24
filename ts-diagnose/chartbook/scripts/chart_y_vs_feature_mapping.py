@@ -77,10 +77,10 @@ def render(stats: dict):
         for period, color in (("curve_a", "steelblue"), ("curve_b", "firebrick")):
             xs = [float(k) for k in e[period]]
             ax.plot(xs, list(e[period].values()), "-o", ms=3, color=color,
-                    label=period[-1] + " 期")
+                    label=period[-1] + " period")
         ax.set_title(f"y-vs-feature-mapping — {feat} "
                      f"(shift={e['mean_shift']})", fontsize=10)
-        ax.set_xlabel(feat), ax.set_ylabel("y_true 均值"), ax.legend()
+        ax.set_xlabel(feat), ax.set_ylabel("mean y_true"), ax.legend()
     fig.tight_layout()
     return fig
 

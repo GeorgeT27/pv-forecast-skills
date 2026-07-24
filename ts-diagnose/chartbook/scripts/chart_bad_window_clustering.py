@@ -85,9 +85,9 @@ def render(stats: dict):
     for ax, (m, s) in zip(axes[0], stats["models"].items()):
         for i, c in enumerate(s["clusters"]):
             ax.plot(c["prototype"], lw=1.5,
-                    label=f"簇{i} share={c['share']:.2f} rmse={c['mean_rmse']:.2f}")
-        ax.set_title(f"{m} 坏窗形态原型 (k={s['chosen_k']})")
-        ax.set_xlabel("归一化窗内位置"), ax.set_ylabel("z(y_true)")
+                    label=f"cluster {i} share={c['share']:.2f} rmse={c['mean_rmse']:.2f}")
+        ax.set_title(f"{m} bad-window prototypes (k={s['chosen_k']})")
+        ax.set_xlabel("normalized position in window"), ax.set_ylabel("z(y_true)")
         if s["clusters"]:
             ax.legend(fontsize=8)
     return fig
