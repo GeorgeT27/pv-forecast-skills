@@ -106,6 +106,32 @@ def main():
     actives = ec.variant_active(fm, ctx)
     cur = ec.current_stage(fm, ctx)
 
+    blockers = ec.intake_blockers(fm, cfg)
+    if blockers:
+        print("=" * 62)
+        print(f"BLOCKED: 材料盘点未完成（入口闸）    playbook: {fm['id']}")
+        print("-" * 62)
+        print("以下材料过闸前，orient 不输出任何阶段菜单与菜谱入口。")
+        print("主 agent 现在只做一件事：AskUserQuestion 盘点（一次多选列 checklist，")
+        print("末尾带『还有别的吗』开放项；再按追问模板逐项补齐，答案落")
+        print("diagnose_config.json 的 materials 块——格式见 references/intake.md）。")
+        reasons = {
+            "unknown": "未盘点（从没问过）",
+            "absent-not-user": "absent-confirmed 但 source≠user——只有用户亲口说没有才算",
+            "absent-need-degraded-ok": "required 材料缺失——须用户确认接受降级后写 degraded_ok: true",
+        }
+        for mid, reason in blockers:
+            desc = reasons.get(reason)
+            if desc is None and reason.startswith("present-incomplete:"):
+                desc = (f"标了 present 但缺实质字段 {reason.split(':', 1)[1]}"
+                        "——schema 没问清不算 present")
+            print(f"  ✗ {mid} [{reason}] —— {desc}")
+            for ln in ec.intake_ask_lines(mid)[:3]:
+                print(f"      {ln}")
+        print("=" * 62)
+        _write_state_progress(fm, None, args, blocked=[m for m, _ in blockers])
+        return
+
     print("=" * 62)
     print(f"playbook: {fm['id']}（{fm['name']}）    工作目录: {os.getcwd()}")
     print(f"目标: {fm['goal']}")
@@ -249,16 +275,30 @@ def main():
           "状态已落盘、可断点续跑，别凭记忆推进。")
 
     # state + PROGRESS（保留 manual_done——manual 阶段的完成标记只有主 agent 会写）
-    new_state = {
-        "playbook": fm["id"],
-        "updated": dt.datetime.now().isoformat(timespec="seconds"),
-        "current_stage": (cur["id"] if cur is not None else "done"),
-        "stages": {str(st["id"]): ("skipped" if ec.stage_skipped(st, fm, ctx, actives)
-                                   else "done" if ec.stage_done(st, ctx) else "todo")
-                   for st in fm["stages"]},
-        "manual_done": state.get("manual_done") or [],
-        "variants": actives,
-    }
+    _write_state_progress(fm, cur, args, ctx=ctx, actives=actives, state=state)
+
+
+def _write_state_progress(fm, cur, args, ctx=None, actives=None, state=None, blocked=None):
+    if blocked is not None:
+        new_state = {"playbook": fm["id"],
+                     "updated": dt.datetime.now().isoformat(timespec="seconds"),
+                     "current_stage": "intake-blocked", "stages": {},
+                     "manual_done": [], "variants": {}}
+        line = f"orient：playbook={fm['id']}，BLOCKED 材料盘点未完成：{','.join(blocked)}"
+    else:
+        new_state = {
+            "playbook": fm["id"],
+            "updated": dt.datetime.now().isoformat(timespec="seconds"),
+            "current_stage": (cur["id"] if cur is not None else "done"),
+            "stages": {str(st["id"]): ("skipped" if ec.stage_skipped(st, fm, ctx, actives)
+                                       else "done" if ec.stage_done(st, ctx) else "todo")
+                       for st in fm["stages"]},
+            "manual_done": (state or {}).get("manual_done") or [],
+            "variants": actives,
+        }
+        line = (f"orient：playbook={fm['id']}，当前 Stage "
+                f"{cur['id'] if cur is not None else '收尾'}"
+                f"{f'（--goto {args.goto}）' if args.goto is not None else ''}")
     ec.dump_json(new_state, ec.STATE_PATH)
     stamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     is_new = not os.path.exists(ec.PROGRESS_PATH)
@@ -266,9 +306,7 @@ def main():
         if is_new:
             f.write("# PROGRESS —— ts-diagnose 进度叙事日志\n\n每行：时间 | 动作。"
                     "脚本验证记录也追加在此（crystallize 只快照有验证记录的脚本）。\n\n")
-        f.write(f"- {stamp} | orient：playbook={fm['id']}，当前 Stage "
-                f"{cur['id'] if cur is not None else '收尾'}"
-                f"{f'（--goto {args.goto}）' if args.goto is not None else ''}\n")
+        f.write(f"- {stamp} | {line}\n")
 
 
 if __name__ == "__main__":

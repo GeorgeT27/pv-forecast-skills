@@ -243,10 +243,22 @@ def test_merge_profile_version_gate(fm, workdir):
 # ---------------------------------------------------------------- orient 冒烟（子进程）
 ORIENT = os.path.join(SCRIPTS_DIR, "orient.py")
 
+# 入口闸（五件套）恒问：training_log/truth/train_y/checkpoint/model_code。
+# training-sufficiency 未声明 required materials，故 absent-confirmed+source=user
+# 即可过闸，无需 degraded_ok。这些 e2e 冒烟测试只关心 playbook 阶段/问题机制，不是
+# 材料盘点本身——预先落盘五件套让它们越过入口闸，回到闸后行为。
+FIVE_OK = {mid: {"status": "absent-confirmed", "source": "user"}
+           for mid in ("training_log", "truth", "train_y", "checkpoint", "model_code")}
+
 
 def run_orient(cwd, *args):
     return subprocess.run([sys.executable, ORIENT, *args],
                           cwd=cwd, capture_output=True, text=True, timeout=60)
+
+
+def _seed_five_ok(workdir):
+    (workdir / "diagnose_config.json").write_text(
+        json.dumps({"materials": dict(FIVE_OK)}), encoding="utf-8")
 
 
 def test_orient_no_config_guidance(workdir):
@@ -256,6 +268,7 @@ def test_orient_no_config_guidance(workdir):
 
 
 def test_orient_bind_playbook_and_progress(workdir):
+    _seed_five_ok(workdir)
     r = run_orient(workdir, "--playbook", "training-sufficiency")
     assert r.returncode == 0, r.stderr
     assert "← 当前" in r.stdout and "✗未答" in r.stdout
@@ -268,6 +281,7 @@ def test_orient_bind_playbook_and_progress(workdir):
 
 
 def test_orient_goto_blocked_reports_entry(workdir):
+    _seed_five_ok(workdir)
     run_orient(workdir, "--playbook", "training-sufficiency")
     r = run_orient(workdir, "--goto", "6")
     assert "不能直达 Stage 6" in r.stdout and "正确入口 = Stage 0" in r.stdout
@@ -276,6 +290,7 @@ def test_orient_goto_blocked_reports_entry(workdir):
 def test_orient_prints_must_ask_banner_and_reorient_footer(workdir):
     """弱模型加固（A+B）：有目标阶段时打印「恒问五类」自检横幅，
     输出末尾打印重跑 orient 的纪律脚注——两者每回合都在模型眼前。"""
+    _seed_five_ok(workdir)
     r = run_orient(workdir, "--playbook", "training-sufficiency")
     assert r.returncode == 0, r.stderr
     # A：五类必问自检横幅（含引导词 + 五条触发器）
@@ -290,6 +305,7 @@ def test_orient_prints_must_ask_banner_and_reorient_footer(workdir):
 def test_orient_prints_three_door_checklist_on_conclusion_stage(workdir):
     """弱模型加固（C）：目标阶段产 CONCLUSION.md（结论阶段）时打印三道门自检清单；
     非结论阶段不打印——just-in-time，不靠模型追 mechanisms.md 指针。"""
+    _seed_five_ok(workdir)
     run_orient(workdir, "--playbook", "training-sufficiency")
     r = run_orient(workdir, "--goto", "6")   # Stage 6 = 结论（artifacts: CONCLUSION.md）
     assert r.returncode == 0, r.stderr
@@ -303,6 +319,7 @@ def test_orient_prints_three_door_checklist_on_conclusion_stage(workdir):
 
 
 def test_orient_profile_merge_and_skip_questions(workdir):
+    _seed_five_ok(workdir)
     prof = workdir / "profile.yaml"
     prof.write_text(
         "profile_version: 1\nplaybook: training-sufficiency\n"
@@ -319,6 +336,7 @@ def test_orient_profile_merge_and_skip_questions(workdir):
 
 
 def test_orient_profile_version_mismatch_degrades(workdir):
+    _seed_five_ok(workdir)
     prof = workdir / "profile.yaml"
     prof.write_text("profile_version: 99\nplaybook: training-sufficiency\n"
                     "questions:\n  loss-source: {answer: x}\n", encoding="utf-8")

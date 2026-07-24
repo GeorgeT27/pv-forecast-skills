@@ -40,30 +40,40 @@ def run_orient(workdir, *args):
     return r.stdout
 
 
-def setup_pb(tmp_path, cfg_materials=None):
+# 入口闸（五件套）恒问：training_log/truth/train_y/checkpoint/model_code。
+# truth 同时是本 demo playbook 的 required 材料，各用例自带 truth 记录（present 或
+# absent-confirmed+degraded_ok），故不放进 FIVE_OK（放进去也会被用例自己的记录覆盖）。
+FIVE_OK = {mid: {"status": "absent-confirmed", "source": "user"}
+           for mid in ("training_log", "train_y", "checkpoint", "model_code")}
+
+
+def setup_pb(tmp_path, cfg_materials=None, five_ok=True):
     pb = tmp_path / "pb" / "playbook.md"
     pb.parent.mkdir()
     pb.write_text(PB, encoding="utf-8")
+    mats = dict(FIVE_OK) if five_ok else {}
+    mats.update(cfg_materials or {})
     cfg = {"playbook": str(pb)}
-    if cfg_materials is not None:
-        cfg["materials"] = cfg_materials
+    if mats:
+        cfg["materials"] = mats
     ec.dump_json(cfg, str(tmp_path / "diagnose_config.json"))
     return tmp_path
 
 
 def test_blocked_when_unknown(tmp_path):
-    out = run_orient(setup_pb(tmp_path))
-    assert "材料盘点" in out
-    assert "[✗未盘点·阻塞] predict (required)" in out
-    assert "[✗未盘点·阻塞] truth (required)" in out
-    assert "[○未盘点] model_code (optional)" in out
-    assert "⚠ 必需材料未就绪" in out and "intake.md" in out
+    out = run_orient(setup_pb(tmp_path, five_ok=False))
+    assert "BLOCKED: 材料盘点未完成" in out
+    assert "Stage 0" not in out
     assert "可开工" not in out
+    assert "追问" in out
 
 
 def test_open_when_present_and_embed_hint(tmp_path):
-    mats = {"predict": {"status": "present"}, "truth": {"status": "present"},
-            "model_code": {"status": "present"}}
+    mats = {"predict": {"status": "present", "paths": ["x.parquet"],
+                        "schema": {"y_col": "y", "time_col": "ts"}},
+            "truth": {"status": "present", "paths": ["x.parquet"],
+                     "schema": {"y_col": "y", "time_col": "ts"}},
+            "model_code": {"status": "present", "paths": ["x.parquet"]}}
     out = run_orient(setup_pb(tmp_path, mats))
     assert "[✓present] predict (required)" in out
     assert "→ 前置齐，可开工 Stage 0" in out
@@ -72,8 +82,10 @@ def test_open_when_present_and_embed_hint(tmp_path):
 
 
 def test_degraded_absent_not_blocking(tmp_path):
-    mats = {"predict": {"status": "present"},
-            "truth": {"status": "absent-confirmed", "degraded_ok": True}}
+    mats = {"predict": {"status": "present", "paths": ["x.parquet"],
+                        "schema": {"y_col": "y", "time_col": "ts"}},
+            "truth": {"status": "absent-confirmed", "source": "user",
+                     "degraded_ok": True}}
     out = run_orient(setup_pb(tmp_path, mats))
     assert "[−absent] truth (required, 已确认降级)" in out
     assert "⚠ 必需材料未就绪" not in out
@@ -81,25 +93,51 @@ def test_degraded_absent_not_blocking(tmp_path):
 
 
 def test_absent_without_waiver_blocks(tmp_path):
-    mats = {"predict": {"status": "present"},
-            "truth": {"status": "absent-confirmed"}}
+    mats = {"predict": {"status": "present", "paths": ["x.parquet"],
+                        "schema": {"y_col": "y", "time_col": "ts"}},
+            "truth": {"status": "absent-confirmed", "source": "user"}}
     out = run_orient(setup_pb(tmp_path, mats))
-    assert "[−absent] truth (required)" in out
-    assert "⚠ 必需材料未就绪" in out
+    assert "BLOCKED: 材料盘点未完成" in out
+    assert "absent-need-degraded-ok" in out or "须用户确认接受降级" in out
     assert "可开工" not in out
 
 
 def test_legacy_playbook_no_materials_section(tmp_path):
-    """向后兼容：真实 training-sufficiency playbook 无 materials 键 → 无盘点段。"""
-    ec.dump_json({"playbook": "training-sufficiency"},
-                 str(tmp_path / "diagnose_config.json"))
+    """向后兼容：真实 training-sufficiency playbook 无 materials 键（无 required/optional），
+    故 playbook 自己的「材料盘点」段不出现；但入口闸五件套（含 truth，training-sufficiency
+    未声明 required 故不受 degraded_ok 约束）仍恒问，须全部补齐才能过闸。"""
+    mats = dict(FIVE_OK)
+    mats["truth"] = {"status": "absent-confirmed", "source": "user"}
+    cfg = {"playbook": "training-sufficiency", "materials": mats}
+    ec.dump_json(cfg, str(tmp_path / "diagnose_config.json"))
     out = run_orient(tmp_path)
+    assert "BLOCKED" not in out
     assert "材料盘点" not in out
 
 
 def test_goto_still_gated_when_materials_unknown(tmp_path):
-    """--goto 直达阶段不得绕过材料闸：全部材料 unknown 时，即便 --goto 0（demo playbook
-    唯一阶段），仍要报未就绪、不许开工。"""
-    out = run_orient(setup_pb(tmp_path), "--goto", "0")
-    assert "⚠ 必需材料未就绪" in out
+    """--goto 直达阶段不得绕过入口闸：五件套 unknown 时，即便 --goto 0（demo playbook
+    唯一阶段），仍要 BLOCKED、不许开工。"""
+    out = run_orient(setup_pb(tmp_path, five_ok=False), "--goto", "0")
+    assert "BLOCKED: 材料盘点未完成" in out
     assert "可开工" not in out
+
+
+def test_blocked_hides_all_menus_and_logs_progress(tmp_path):
+    wd = setup_pb(tmp_path, five_ok=False)
+    out = run_orient(wd)
+    assert "BLOCKED: 材料盘点未完成" in out
+    for banned in ("Stage 0", "图表选择门", "问题清单", "可开工", "前置"):
+        assert banned not in out
+    assert "AskUserQuestion" in out and "materials" in out
+    prog = (wd / "PROGRESS.md").read_text(encoding="utf-8")
+    assert "BLOCKED" in prog
+
+
+def test_present_without_schema_blocks(tmp_path):
+    mats = {"predict": {"status": "present", "paths": ["p.parquet"]},  # 缺 schema
+            "truth": {"status": "present", "paths": ["t.parquet"],
+                      "schema": {"y_col": "y", "time_col": "ts"}}}
+    out = run_orient(setup_pb(tmp_path, mats))
+    assert "BLOCKED" in out and "present-incomplete" in out
+    assert "schema.y_col" in out
