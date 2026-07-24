@@ -42,7 +42,7 @@ def main():
 
     # 规则 3：图证据（仅 playbook 有 chart 阶段时）
     if ec.has_chart_stage(fm):
-        cited = sorted(c for c in set(CHART_REF_RE.findall(text)) if "charts" in c)
+        cited = sorted(c for c in set(CHART_REF_RE.findall(text)) if c.startswith("charts/"))
         if not cited:
             fail("本 playbook 有图表阶段，但结论未引用任何 charts/ 产物——归因必须有图支撑")
         missing = [c for c in cited if not os.path.exists(c)]
