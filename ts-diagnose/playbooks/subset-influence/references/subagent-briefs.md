@@ -19,11 +19,13 @@ prompt**（`<...>` 占位换实参）。用通用 subagent（general-purpose）�
 
 ---
 
-## 嵌入式主技能运行（主 agent 的编排程序，非 brief）
+## 嵌入式 result-eval playbook 运行（主 agent 的编排程序，非 brief）
 
-**何时**：orient 报预测侧上下文 [absent] 且用户同意先跑留出站的 pv-result-analysis。
-**为什么由主 agent 亲自编排**：subagent 不能再派 subagent，且主技能 Stage 3→4 的停顿
-要问用户——所以嵌入运行的 Brief A/B 派发必须由主 agent 做。
+**何时**：orient 报预测侧上下文 [absent] 且用户同意先跑留出站的 result-eval playbook
+（`provider_playbook: result-eval`，见 playbook.md §4 与引擎 `references/engine-core.md`
+「嵌入执行 provider skill」纪律）。
+**为什么由主 agent 亲自编排**：subagent 不能再派 subagent，且 result-eval 自身 Stage 3→4
+的停顿要问用户——所以嵌入运行的 Brief A/B 派发必须由主 agent 做。
 
 ```
 1. mkdir <influence 工作目录>/result_analysis_<留出站拼音>/（独立目录——绝不写其他实验线的
@@ -33,13 +35,14 @@ prompt**（`<...>` 占位换实参）。用通用 subagent（general-purpose）�
      true_label   = influence_config.test_label（同一份留出站真值）
      predicted    = {M1..M4, ensemble: 留出站【最终模型】预测 parquet}
                     ——influence_config 里没有这些路径，向用户要；
-                      逐 chunk 预测属本技能 Stage 2 的 rmse_series，不进主技能流程。
+                      逐 chunk 预测属本技能 Stage 2 的 rmse_series，不进 result-eval 流程。
      train_stations = {全部训练站: 逐站 parquet}（可选；给了本技能 Stage 4 漂移就白捡）
-2. cd 该目录跑主技能 orient；随后照主技能 references/subagent-briefs.md 派发：
+2. cd 该目录跑 `python3 "<result-eval playbook 目录>/../../scripts/orient.py" --playbook
+   result-eval`；随后照 result-eval playbook 的 `references/subagent-briefs.md` 派发：
    Brief B（metric）×1 → 完成后 Brief A（figure+fact）×N 并行。
    参数覆盖：工作目录 = result_analysis_<留出站拼音> 绝对路径；Brief B 已通用
    （figures/<留出站拼音>/，站名以 analysis_config.station 为准），无需改写该句。
-3. 跑到主技能 Stage 3 现象清单为止（其 Stage 4 深归因不跑——由本技能 Stage 2–5 接管）。
+3. 跑到 result-eval Stage 3 现象清单为止（其 Stage 4 深归因不跑——由本技能 Stage 2–5 接管）。
 4. 回 influence 工作目录：往 influence_config.json 回填
    result_analysis_workdir=<该目录绝对路径> + result_analysis_status="linked"；
    把现象清单摘要（≤15 行）记入 PROGRESS.md；重跑 orient 确认 [linked]；继续 Stage 0。
@@ -56,7 +59,7 @@ FINDINGS/CONCLUSION 里注明"缺预测侧上下文（基线指标/天气分型/
 你是一个计算子 agent，只负责【逐 checkpoint 重算留出站 RMSE】，不做归因分析。
 
 工作目录：<绝对路径，含 influence_config.json 与 adapter.py>
-技能目录 SKILL：/Users/tqa946816/Documents/华为/光伏预测/结果分析skill/pv-station-influence
+技能目录 SKILL：<本 playbook 目录>（即 ts-diagnose/playbooks/subset-influence）
 
 任务：
 1. 跑：python3 "<SKILL>/scripts/ckpt_eval.py" --models <M> --out rmse_series.<M>.csv \
@@ -85,7 +88,7 @@ FINDINGS/CONCLUSION 里注明"缺预测侧上下文（基线指标/天气分型/
 你是一个计算子 agent，只负责【TracIn 梯度对齐计算】，不做升级判定。
 
 工作目录：<绝对路径，含 influence_config.json 与 adapter.py>
-技能目录 SKILL：/Users/tqa946816/Documents/华为/光伏预测/结果分析skill/pv-station-influence
+技能目录 SKILL：<本 playbook 目录>（即 ts-diagnose/playbooks/subset-influence）
 
 任务：
 1. 跑：python3 "<SKILL>/scripts/tracin_influence.py" --every <N> --n-windows <K> \
@@ -112,7 +115,7 @@ FINDINGS/CONCLUSION 里注明"缺预测侧上下文（基线指标/天气分型/
 你是一个数据子 agent，只负责【训练 loss 动力学提取与回归】，不解释气候机制。
 
 工作目录：<绝对路径>
-技能目录 SKILL：/Users/tqa946816/Documents/华为/光伏预测/结果分析skill/pv-station-influence
+技能目录 SKILL：<本 playbook 目录>（即 ts-diagnose/playbooks/subset-influence）
 
 任务：
 1. 若无 probe_summary.json：先跑 python3 "<SKILL>/scripts/probe_logs.py"。
@@ -143,7 +146,7 @@ FINDINGS/CONCLUSION 里注明"缺预测侧上下文（基线指标/天气分型/
 你是一个数据分析子 agent，只负责【逐站分布漂移计算 + 现象提取】，不做机制归因。
 
 influence 工作目录：<绝对路径>
-主技能 MAIN：/Users/tqa946816/Documents/华为/光伏预测/结果分析skill/pv-result-analysis
+result-eval playbook 目录 MAIN：ts-diagnose/playbooks/result-eval
 预测侧上下文：<linked 时给 result_analysis_workdir；否则写 "无">
 
 任务：

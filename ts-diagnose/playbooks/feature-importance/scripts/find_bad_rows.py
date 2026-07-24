@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stage 1：坏行定位——每口径 × 每模型，各自找坏行。
 
-行级误差定义（常量一律 import 自 pv-result-analysis 的 data_utils，绝不本地重定义）：
+行级误差定义（常量一律 import 自 result-eval playbook 的 data_utils，绝不本地重定义）：
   rmse_192：每行全 192 点 RMSE（全部行参与）——默认考核口径；
   ultra_short：每行第 ULTRA_SHORT_IDX(16) 点的绝对误差（全部行参与）；
   short：仅 09:00 行，SHORT_SLICE([59:155]，次日全天 96 点) 上的 RMSE。

@@ -28,7 +28,7 @@
   - resume：CSV 按 (口径,模型,行,subset_id) 去重（subset_id="|"排序特征串，""=基线），
     跨 mode 复用；旧版 CSV（无 subset_id 列）自动派生兼容，不迁移文件。
 
-用法（在工作目录下；前置见 run_orient.py Stage 4）：
+用法（在工作目录下；前置见 playbook.md §8「变体 counterfactual」/ playbook 的 Stage 6）：
   python3 <SKILL>/scripts/counterfactual_api.py --dry-run [--mode ...]
   python3 <SKILL>/scripts/counterfactual_api.py --mode oracle|per-feature|all-blamed|
       minimal-set|lattice|neighbor-swap [--metric ...] [--model ...] [--rows ts1,ts2|all-bad]

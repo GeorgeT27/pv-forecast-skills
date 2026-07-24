@@ -20,7 +20,7 @@
 你是一个数据分析子 agent，只负责【画图 + 事实提取】，不做机制归因。
 
 工作目录：<绝对路径，含 analysis_config.json 的目录>
-技能目录 SKILL：/Users/tqa946816/Documents/华为/光伏预测/结果分析skill/pv-result-analysis
+技能目录 SKILL：<本 playbook 目录>（即 ts-diagnose/playbooks/result-eval）
 
 任务：
 1. 在工作目录跑：
@@ -59,13 +59,14 @@
 你是一个数据子 agent，负责 Stage 1【质检 + 指标计算】。
 
 工作目录：<绝对路径>
-技能目录 SKILL：/Users/tqa946816/Documents/华为/光伏预测/结果分析skill/pv-result-analysis
+技能目录 SKILL：<本 playbook 目录>（即 ts-diagnose/playbooks/result-eval）
 
 任务：
 1. 跑质检：python3 "<SKILL>/scripts/run_quality_check.py"
    - 窗口一致性不过、对齐失败等硬问题 → 立即停下，把问题原样回传主 agent（不要带病继续）。
    - 可疑日落 suspect_days.csv。
-2. 按 SKILL.md Step 2 用 metric.py 的 SolarMetricCalculator.generate_report 对 M1-M4 + ensemble
+2. 按 `<本 playbook 目录>/playbook.md` Stage 1 用用户指定的外部指标脚本（原体系里的
+   metric.py 一类工具，如 SolarMetricCalculator.generate_report）对 M1-M4 + ensemble
    各跑一遍，产出 5 个 Excel（五口径 × RMSE/MAE/ACC）。首跑先 inspect.signature 对号参数、
    做一次口径对账（任选一月 pandas 自算 RMSE 比对，相对差 <1%）。
 3. 产物存 figures/<留出站拼音>/（留出站名从 analysis_config.json 的 station 字段取）。不要写 analysis_state.json / PROGRESS.md。
@@ -84,8 +85,9 @@ Stage 1 收益主要在算指标（不占图像上下文），单跑一个 subag
 1. 读固定 pointer：`references/model-ref.pointer`。
    - 存在且 `path` 指向的 `.modelmap/models.md` 在盘上 → 直接读它作为模型参考。
      - 额外：`git -C <pointer.repo> rev-parse HEAD` 与 `pointer.commit` 不一致 → 提示"模型档案可能
-       已过时，建议重跑 pv-model-analysis"，但先用现有档案继续（不阻塞分析）。
-   - pointer 不存在，或 `path` 不在盘上 → 向用户要模型代码目录路径，派子代理执行
-     **pv-model-analysis** 技能于该目录；产出 `.modelmap/` + pointer 后再读 models.md。
+       已过时，建议重跑 model-audit playbook"，但先用现有档案继续（不阻塞分析）。
+   - pointer 不存在，或 `path` 不在盘上 → 向用户要模型代码目录路径，嵌入执行
+     **model-audit** playbook（`provider_playbook: model-audit`，见 engine-core.md「嵌入执行
+     provider skill」纪律）于该目录；产出 `.modelmap/` + pointer 后再读 models.md。
 2. 消费纪律：只引用带 ✅/📊/📐 且前提清晰的字段；⚠️/待确认/缺失一律按未知，不编造。
 3. 桥接假设里的 H-ID 直接对应 `references/hypotheses.md`；落 FINDINGS 前照常过 H-ID 门。

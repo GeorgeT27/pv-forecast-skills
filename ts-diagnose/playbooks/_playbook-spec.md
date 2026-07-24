@@ -45,7 +45,8 @@ contexts:                         # 可选。外部分析上下文（泛化 ask-
     status_key: linked_status     # config 里存状态的键：linked / declined /（空 = absent）
     marker_files: ["FINDINGS.md"] # linked 有效性核验：目录下这些文件须存在
     on_absent: ask                # absent 时主 agent 必须先问用户（orient 只打印指引）
-    provider_skill: pv-model-analysis   # 可选：谁能生产本上下文（触发嵌入执行提示）
+    provider_playbook: model-audit      # 可选：谁能生产本上下文（触发嵌入执行提示，engine 内 playbook 用此字段）
+    # provider_skill: pv-model-analysis  # 二选一的旧式/外部形态：provider 是外部技能而非 engine 内 playbook 时用这个（legacy，engine 内一律用 provider_playbook）
     trigger_material: model_code        # 可选：该材料 present 才提议嵌入（须为合法材料 id）
 evidence_lines:                   # 可选。独立证据线登记（多证据线一致性判定的依据）
   - id: composition-regression

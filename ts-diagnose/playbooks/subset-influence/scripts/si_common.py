@@ -19,7 +19,7 @@
   "checkpoint_dir": "<checkpoint 根>",        # 有此字段 => 解锁 Mode B（有 optimizer state 更好）
   "models": ["M1", "M2", "M3", "M4"],         # 要分析的模型（缺省四个都做）
   "chunk_layout": {"n_chunks": 4, "sizes": [5, 5, 5, 2]},  # 每迭代的 chunk 结构
-  "result_analysis_workdir": "<留出站线 pv-result-analysis 工作目录（绝对路径）>",
+  "result_analysis_workdir": "<留出站线 result-eval playbook 工作目录（绝对路径）>",
       # 预测侧上下文：嵌入运行默认 <influence工作目录>/result_analysis_<留出站拼音>/；
       # 已单独跑过留出站结果分析就填那个目录。orient 据此扫描可消费产物。
   "result_analysis_status": "linked",
@@ -117,12 +117,12 @@ def load_test_label_matrix(cfg: dict):
     return df[du.TIMESTAMP_COL].to_numpy(), Y
 
 
-# ---------------------------------------------------------------- 预测侧上下文（pv-result-analysis 产物探测）
+# ---------------------------------------------------------------- 预测侧上下文（result-eval playbook 产物探测）
 def detect_result_analysis(cfg: dict) -> dict:
-    """只读扫描 result_analysis_workdir，返回留出站线 pv-result-analysis 的产物清单。
+    """只读扫描 result_analysis_workdir，返回留出站线 result-eval playbook 的产物清单。
 
-    判定逻辑镜像主技能 run_orient 的 stage_done（不 import 它——那个脚本假设 cwd
-    是分析目录且会写 state；这里纯只读、不改任何文件）。返回 dict 的 status 取值：
+    判定逻辑镜像 ts-diagnose/scripts/engine_common.py 的 stage_done（不 import 它——engine
+    的 orient 假设 cwd 是分析目录且会写 state；这里纯只读、不改任何文件）。返回 dict 的 status 取值：
       "linked"   工作目录有效且 station 匹配 → 附各产物 flag
       "declined" 用户已明确拒绝先跑（config.result_analysis_status）
       "absent"   没链接 / 目录无效 / 缺 analysis_config.json → 主 agent 该先问用户

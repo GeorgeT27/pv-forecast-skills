@@ -83,7 +83,7 @@ BLOCKED（不输出任何阶段菜单）。playbook 声明的 required/optional 
 
 特征的真值对照（每特征"预报 vs 实况"成对序列）。
 **追问**：在哪？结构（每行一个窗口时间戳、每格 192 点 list？）？覆盖哪些特征？
-（有此材料的特征质量归因场景优先走专用技能 pv-feature-blame——见路由优先级。）
+（有此材料的特征质量归因场景走 feature-importance playbook 的 feature-quality 变体，可选再接 counterfactual 变体做反事实验证——见 playbooks/feature-importance/playbook.md §7-8。）
 
 ## `train_y`
 

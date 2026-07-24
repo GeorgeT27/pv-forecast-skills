@@ -38,8 +38,8 @@ parquet 内容与 API payload 明细不进对话，只回 ≤30 行数字摘要�
 > 禁止：改 τ/g_min/drift 阈值（阈值敏感性由主 agent 披露）；改 endpoint / adapter.py；
 > 一次跑多层（主 agent 逐层看结果决定是否继续，oracle 的 G 闸结果决定后面几层的行集）。
 
-## 嵌入式主技能运行（需要预测侧上下文时）
+## 嵌入式 result-eval playbook 运行（需要预测侧上下文时）
 
-坏行的天气分型 / suspect_days 数据质量证据来自留出站线的 pv-result-analysis 产物；
-没跑过且用户同意时，参照 `pv-station-influence/references/subagent-briefs.md`
-「嵌入式主技能运行」节（Brief B→A 跑到现象清单为止），产物目录回填进 FINDINGS 引用。
+坏行的天气分型 / suspect_days 数据质量证据来自留出站线的 result-eval playbook 产物；
+没跑过且用户同意时，参照 `ts-diagnose/playbooks/subset-influence/references/subagent-briefs.md`
+「嵌入式 result-eval playbook 运行」节（Brief B→A 跑到现象清单为止），产物目录回填进 FINDINGS 引用。

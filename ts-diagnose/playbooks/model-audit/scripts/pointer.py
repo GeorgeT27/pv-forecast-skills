@@ -1,5 +1,6 @@
-"""Read/write/validate the model-ref pointer that lets pv-result-analysis
-find the produced .modelmap docs. Format: plain `key: value` lines, UTF-8."""
+"""Read/write/validate the model-ref pointer that lets consumer playbooks
+(result-eval, model-comparison, deployment-drift, ...) find the produced
+.modelmap docs. Format: plain `key: value` lines, UTF-8."""
 from __future__ import annotations
 import json
 import os

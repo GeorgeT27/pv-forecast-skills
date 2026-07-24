@@ -97,7 +97,7 @@ contexts:
     status_key: model_profile_status
     marker_files: ["models.md"]
     on_absent: ask
-    provider_skill: pv-model-analysis
+    provider_playbook: model-audit
     trigger_material: model_code
 evidence_lines:
   - id: error-changepoint

@@ -1,6 +1,6 @@
 # 归因纪律 —— 从"震荡"到"已证实有害"
 
-站点归因最大的陷阱是**把训练动力学的正常现象误当作站点的罪证**。本库定义把嫌疑站一步步升级的门槛，与 `pv-result-analysis/references/analysis-discipline.md`（结论三道门/反驳门七条）一脉相承，不重复其内容，只补本任务特有的部分。
+站点归因最大的陷阱是**把训练动力学的正常现象误当作站点的罪证**。本库定义把嫌疑站一步步升级的门槛，与 `result-eval/references/analysis-discipline.md`（结论三道门/反驳门七条）一脉相承，不重复其内容，只补本任务特有的部分。
 
 ## 状态枚举（写进 FINDINGS.md）
 
@@ -36,7 +36,7 @@ Stage 1 动力学给出的是**训练站自己身上的量**：θ_loss 高 = 含
 
 1. **遗忘伪装**：ΔRMSE 冲击是否只是训练顺序/新近效应？→ 看第二因变量（新近 vs 任意位置），控制 `position` 后 θ_s 还在吗。
 2. **样本量**：该站出现次数够吗（≈迭代数）？迭代 <10 一律降级。
-3. **数据质量红旗**：该站气候与留出站**相似却有害** = 强烈提示限电/坏 NWP/传感器故障，不是"分布冲突"。→ 走 pv-result-analysis 的 `run_quality_check.py` + `<project-context>/event-log.md` 查该站原始数据（预测侧上下文 linked 时 suspect_days.csv 现成）；是数据问题就**修数据**，别删站。Stage 1 的 loss 效应是现成旁证：该站若同时 θ_loss 显著为正（难学），红旗加重；loss 正常则红旗减轻、更像评估侧问题。
+3. **数据质量红旗**：该站气候与留出站**相似却有害** = 强烈提示限电/坏 NWP/传感器故障，不是"分布冲突"。→ 走 result-eval playbook 的 `run_quality_check.py` + `<project-context>/event-log.md` 查该站原始数据（预测侧上下文 linked 时 suspect_days.csv 现成）；是数据问题就**修数据**，别删站。Stage 1 的 loss 效应是现成旁证：该站若同时 θ_loss 显著为正（难学），红旗加重；loss 正常则红旗减轻、更像评估侧问题。
 4. **回放错位**：assignments 过了指纹校验吗？没过 → θ_s 归错站，先修 Stage 0。
 5. **单证据线**：只有回归、没有 TracIn 佐证？→ 只能停在"现象"。
 6. **口径/评估错**：留出站 RMSE 是不是用了错的 label 列/取点？→ 只用 `observe_power_future`，整体 48h RMSE，别混训练特征列。
@@ -54,9 +54,9 @@ Stage 1 动力学给出的是**训练站自己身上的量**：θ_loss 高 = 含
 ## Stage 5 确认协议
 
 1. **便宜探针**：从最终 checkpoint 出发，只在单个 top 嫌疑站上短暂微调，测留出站验证 ΔRMSE。方向对（微调它→留出站变差）= 一阶因果信号，几分钟。
-2. **决定性检验**：剔除 top 2–3 嫌疑**重训一次**，与原全量训练同种子同协议，留出站 test 五口径对比 + Wilcoxon 配对（复用 pv-result-analysis 的 metric 流水线与 `robustness_check`）。过了才升"已证实"。
+2. **决定性检验**：剔除 top 2–3 嫌疑**重训一次**，与原全量训练同种子同协议，留出站 test 五口径对比 + Wilcoxon 配对（复用 result-eval playbook 的 metric 流水线与 `robustness_check`）。过了才升"已证实"。
 3. 若剔除反而变差 → 该站其实有益/无害，推翻假设，回头查为什么前面阶段误报（多半是遗忘伪装或回放错位）。
 
 ## 面向主管的结论
 
-同 pv-result-analysis 的 CONCLUSION 纪律：把"已证实"结论翻译成管理层语言——"X、Y 两个站（与留出站气候差异最大）系统性拉低留出站预测，剔除后留出站 RMSE 降低 Z%"。方法论机器（回归/TracIn/Wilcoxon）不进正文，末尾一句话说可信度。附**给未来训练的建议**：逐 chunk 组成落日志、**逐 epoch loss 落结构化日志**（Stage 1 依赖它，和 Stage 0 一样——当初没记就得从 checkpoint 里抠）、混站 batch / 回放缓冲抑制遗忘、相似度加权采样偏向部署目标气候。
+同 result-eval playbook 的 CONCLUSION 纪律：把"已证实"结论翻译成管理层语言——"X、Y 两个站（与留出站气候差异最大）系统性拉低留出站预测，剔除后留出站 RMSE 降低 Z%"。方法论机器（回归/TracIn/Wilcoxon）不进正文，末尾一句话说可信度。附**给未来训练的建议**：逐 chunk 组成落日志、**逐 epoch loss 落结构化日志**（Stage 1 依赖它，和 Stage 0 一样——当初没记就得从 checkpoint 里抠）、混站 batch / 回放缓冲抑制遗忘、相似度加权采样偏向部署目标气候。

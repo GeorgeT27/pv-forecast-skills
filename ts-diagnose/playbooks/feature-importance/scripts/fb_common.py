@@ -1,6 +1,7 @@
-"""pv-feature-blame —— 共享工具（配置 / 口径切片 / 复用主技能 data_utils / 统计）。
+"""feature-importance playbook 的 feature-quality/counterfactual 变体 —— 共享工具
+（配置 / 口径切片 / 复用 result-eval playbook 的 data_utils / 统计）。
 
-设计纪律（见 SKILL.md 上下文预算节）：
+设计纪律（见 ts-diagnose/references/engine-core.md 上下文预算节）：
 - 重活在脚本内完成，脚本只 print ≤30 行摘要；产物落盘 CSV/JSON，各带自足 summary。
 - 复用 ts-diagnose/playbooks/result-eval/scripts/data_utils.py 的口径常量与读表工具
   （原 pv-result-analysis/scripts/data_utils.py，2026-07-24 迁入 result-eval playbook），

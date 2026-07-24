@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""pv-feature-blame 金标准输入生成器——**确定性解析式构造，零随机**。
+"""feature-importance playbook 的 feature-quality 变体金标准输入生成器——**确定性解析式构造，零随机**。
 
 场景：40 行滚动窗（33 个相邻行的连续块 06:00–14:00 覆盖 day1 09:00 + day2..day8 的 09:00 行），
 所有序列都是物理时间 T 的解析函数——这样滚动窗一致性（行 t 点 k == 行 t+1 点 k-1）天然成立，
