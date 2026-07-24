@@ -18,7 +18,7 @@ stages:
       - desc: sampler.n_iters（实际迭代数）已填
         check: "config:sampler.n_iters"
       - desc: （可选）Mode B 才需 adapter.py（回放采样用 checkpoint 指纹抽查）
-        check: "config:sampler.n_iters"
+        check: "material:checkpoint"
   - id: 1
     name: 训练动力学（loss 水平/收敛 ~ 条目成员 → chunk_loss_dynamics.json）
     done_when:
