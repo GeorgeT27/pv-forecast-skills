@@ -22,6 +22,7 @@ stages:                           # 必填，按执行顺序；id 为整数（�
     pause_after: false            # true = 本阶段完成后强制停顿，主 agent 向用户汇报并等点名
     subagent_ok: true             # false = 必须主 agent 亲自做（如反驳门/结论）
     charts: [horizon-degradation]     # 可选。本阶段消费的 chartbook recipe id（须存在于 chartbook/recipes/）；orient 按 needs_materials × 盘点结果逐图报可画/缺材料自动跳过
+                                       # 阶段闸：声明了 charts 的阶段，done_when.artifacts 必须含 "INDEX.md"（build_index.py 产物）——画完不建索引不算阶段完成（加载期 _validate_frontmatter 校验，见 test_materials.py::test_chart_stage_requires_index_artifact）
 materials:                        # 可选。本 playbook 的材料需求（intake 引擎级机制）
   required: [predict, truth]      #   unknown/absent 均阻塞开工（absent 可经用户确认降级）
   optional: [model_code]          #   不阻塞；驱动变体/图表可用性

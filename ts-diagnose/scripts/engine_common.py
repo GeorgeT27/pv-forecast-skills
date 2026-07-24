@@ -121,6 +121,13 @@ def _validate_frontmatter(fm, md_path):
                 raise ValueError(
                     f"{md_path} stage {st.get('id')} 的 charts 含未知 recipe {bad}；"
                     f"可用：{known}")
+        if charts:
+            arts = (st.get("done_when") or {}).get("artifacts") or []
+            if "INDEX.md" not in arts:
+                raise ValueError(
+                    f"{md_path} stage {st.get('id')} 声明了 charts 但 done_when."
+                    f"artifacts 缺 'INDEX.md'——画完必须跑 build_index.py 建索引"
+                    "才算阶段完成（阶段闸，_playbook-spec §charts）")
     if len(fm.get("evidence_lines") or []) >= 2 and not fm.get("upgrade_rule"):
         raise ValueError(f"{md_path} 有 ≥2 条 evidence_lines 但缺 upgrade_rule")
     mats = fm.get("materials") or {}

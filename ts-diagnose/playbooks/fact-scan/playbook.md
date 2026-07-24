@@ -13,7 +13,7 @@ stages:
   - id: 1
     name: 画图与现象清单（终点）
     done_when:
-      artifacts: ["charts/*.json"]
+      artifacts: ["charts/*.json", "INDEX.md"]
       findings_marker: "现象"
     prereqs:
       - desc: 对齐完成

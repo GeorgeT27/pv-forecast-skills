@@ -24,7 +24,7 @@ stages:
   - id: 2
     name: 结构分解（事实）
     done_when:
-      artifacts: ["charts/*.json"]
+      artifacts: ["charts/*.json", "INDEX.md"]
       findings_marker: "现象"
     prereqs:
       - desc: 变点事实已知

@@ -22,7 +22,7 @@ stages:
   - id: 2
     name: 差距分解（事实）
     done_when:
-      artifacts: ["charts/*.json"]
+      artifacts: ["charts/*.json", "INDEX.md"]
       findings_marker: "现象"
     prereqs:
       - desc: 总差距已知

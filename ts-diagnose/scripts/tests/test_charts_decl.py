@@ -40,7 +40,7 @@ def _pb(tmp_path, charts_line):
         stages:
           - id: 0
             name: s0
-            done_when: {{artifacts: ["x.json"]}}
+            done_when: {{artifacts: ["x.json", "INDEX.md"]}}
         {charts_line}
         materials:
           required: [predict, truth]

@@ -76,6 +76,18 @@ def test_frontmatter_rejects_required_not_a_list(tmp_path):
         fm_with_materials(tmp_path, "materials:\n  required: predict\n")
 
 
+def test_chart_stage_requires_index_artifact(tmp_path):
+    """阶段闸之二：声明了 charts 的阶段，done_when.artifacts 必须含 'INDEX.md'——
+    画完图不建索引不算阶段完成（_playbook-spec.md §charts）。"""
+    p = tmp_path / "pb.md"
+    p.write_text("---\nid: x\nname: x\ngoal: x\nstages:\n"
+                 "  - id: 0\n    name: 图\n"
+                 "    done_when: {artifacts: ['charts/*.json']}\n"
+                 "    charts: [error-breakdown]\n---\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="INDEX.md"):
+        ec.load_frontmatter(str(p))
+
+
 # ---------------------------------------------------------------- 阻塞
 def test_blocking_materials(tmp_path):
     fm = fm_with_materials(
