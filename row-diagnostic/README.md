@@ -8,7 +8,8 @@
 > matplotlib`。整个 `row-diagnostic/` 文件夹拷到任何机器都能跑。
 >
 > **定位**：本工具只做「跟自身历史比、谁反常」。反常特征 **≠** 证明它导致功率变差；
-> 因果验证（z+全局相关、系统偏差分解、反事实替换）请用 `pv-feature-blame` 技能。
+> 因果验证（z+全局相关、系统偏差分解、反事实替换）请用 `ts-diagnose` 的
+> `feature-importance` playbook（feature-quality/counterfactual 变体）。
 
 ## 数据契约（三张大表，线上/离线同构）
 

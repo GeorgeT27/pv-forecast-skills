@@ -20,7 +20,7 @@ stages:
     charts: [error-breakdown]
   - id: 1
     name: 结论
-    done_when: {artifacts: ['CONCLUSION.md']}
+    done_when: {artifacts: ['CONCLUSION.md', 'gate_reports/conclusion_gate.json']}
 ---
 """
 
@@ -94,6 +94,19 @@ def test_decoy_path_containing_charts_substring_rejected(tmp_path):
     r = run_gate(wd)
     assert r.returncode == 1 and "图" in r.stdout
     assert not (wd / "gate_reports" / "conclusion_gate.json").exists()
+
+
+def test_malformed_config_nonexistent_playbook_fails_clean(tmp_path):
+    """M-k：config 指向不存在的 playbook 时，闸必须干净失败（exit 1 + ✗ 消息），
+    不能让 find_playbook/load_frontmatter 的原始异常直接冒穿到 stderr 变成裸 traceback——
+    这是脚本被调用方（orient/主 agent）依赖的契约：闸永远只用退出码 + stdout 消息说话。"""
+    ec.dump_json({"playbook": "no-such-playbook"}, str(tmp_path / "diagnose_config.json"))
+    (tmp_path / "CONCLUSION.md").write_text("# 结论\n", encoding="utf-8")
+    r = run_gate(tmp_path)
+    assert r.returncode == 1
+    assert "✗" in r.stdout
+    assert "playbook 加载失败" in r.stdout
+    assert "Traceback" not in r.stderr
 
 
 def test_charts_rooted_citation_required_even_with_lookalike_file(tmp_path):

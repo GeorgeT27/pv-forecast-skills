@@ -23,6 +23,7 @@ stages:                           # 必填，按执行顺序；id 为整数（�
     subagent_ok: true             # false = 必须主 agent 亲自做（如反驳门/结论）
     charts: [horizon-degradation]     # 可选。本阶段消费的 chartbook recipe id（须存在于 chartbook/recipes/）；orient 按 needs_materials × 盘点结果逐图报可画/缺材料自动跳过
                                        # 阶段闸：声明了 charts 的阶段，done_when.artifacts 必须含 "INDEX.md"（build_index.py 产物）——画完不建索引不算阶段完成（加载期 _validate_frontmatter 校验，见 test_materials.py::test_chart_stage_requires_index_artifact）
+                                       # 结论闸：done_when.artifacts 含 "CONCLUSION.md" 的阶段，必须同时含 "gate_reports/conclusion_gate.json"（conclusion_gate.py 的 receipt）——结论闸 receipt 即完成判据，缺则加载期 _validate_frontmatter 直接 ValueError（见 test_materials.py::test_conclusion_stage_requires_gate_receipt_artifact）
 materials:                        # 可选。本 playbook 的材料需求（intake 引擎级机制）
   required: [predict, truth]      #   unknown/absent 均阻塞开工（absent 可经用户确认降级）
   optional: [model_code]          #   不阻塞；驱动变体/图表可用性

@@ -46,6 +46,46 @@ FIVE_OK = {mid: {"status": "absent-confirmed", "source": "user"}
            for mid in ("training_log", "train_y", "checkpoint", "model_code")}
 
 
+PB_ONE_STAGE = """---
+id: all-done-demo
+name: 全部完成演示
+goal: 测试 Mode A 全部阶段完成路径的收尾提示
+materials:
+  required: [predict, truth]
+stages:
+  - id: 0
+    name: 起步
+    done_when: {artifacts: ['stage0.json']}
+---
+正文占位。
+"""
+
+
+def setup_one_stage_pb(tmp_path):
+    pb = tmp_path / "pb" / "playbook.md"
+    pb.parent.mkdir()
+    pb.write_text(PB_ONE_STAGE, encoding="utf-8")
+    mats = dict(FIVE_OK)
+    mats["predict"] = {"status": "present", "paths": ["p.parquet"],
+                        "schema": {"y_col": "y", "time_col": "ts"}}
+    mats["truth"] = {"status": "present", "paths": ["t.parquet"],
+                      "schema": {"y_col": "y", "time_col": "ts"}}
+    cfg = {"playbook": str(pb), "materials": mats}
+    ec.dump_json(cfg, str(tmp_path / "diagnose_config.json"))
+    return tmp_path
+
+
+def test_all_stages_done_completion_message_points_at_conclusion_gate(tmp_path):
+    """I-2：Mode A（cur is None，全部阶段完成）的收尾提示必须指路结论闸——
+    不能只说"可写/刷新 CONCLUSION.md"就完了，得带上跑 conclusion_gate.py 的硬要求，
+    否则结论闸形同虚设（模型写完 CONCLUSION.md 就以为交付了）。"""
+    wd = setup_one_stage_pb(tmp_path)
+    (wd / "stage0.json").write_text("{}", encoding="utf-8")   # 唯一阶段已完成
+    out = run_orient(wd)
+    assert "全部阶段完成" in out
+    assert "conclusion_gate" in out
+
+
 def setup_two_stage_pb(tmp_path):
     pb = tmp_path / "pb" / "playbook.md"
     pb.parent.mkdir()
@@ -79,3 +119,16 @@ def test_goto_force_allows_and_logs(tmp_path):
     assert "不能直达" not in out
     prog = (wd / "PROGRESS.md").read_text(encoding="utf-8")
     assert "--force" in prog and "跳过前置" in prog
+
+
+def test_goto_force_with_met_prereqs_no_skip_suffix(tmp_path):
+    """M-c：--force 留痕不撒谎——前置本就齐时，即使带 --force，PROGRESS 也不该写
+    「跳过前置」（那是没发生的事）。只有 force 真的放行了本会被拒绝的直达才记这笔。"""
+    wd = setup_two_stage_pb(tmp_path)
+    (wd / "stage0.json").write_text("{}", encoding="utf-8")   # Stage 0 前置已满足
+    out = run_orient(wd, "--goto", "1", "--force")
+    assert "⛔" not in out
+    assert "进入 Stage 1 的前置" in out
+    prog = (wd / "PROGRESS.md").read_text(encoding="utf-8")
+    assert "（--goto 1）" in prog
+    assert "跳过前置" not in prog

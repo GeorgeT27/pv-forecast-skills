@@ -11,7 +11,8 @@
   [--baseline baseline.json --predict P --test T --feature-true F --out-dir . --prefix row --no-plots]
 
 ⚠️ 本工具只做「与自身历史比、谁反常」。反常特征 ≠ 证明它导致功率变差；因果验证需反事实
-   替换（见 pv-feature-blame）。结论止于「反常提示」。
+   替换（见 ts-diagnose 的 feature-importance playbook，feature-quality/counterfactual
+   变体）。结论止于「反常提示」。
 """
 from __future__ import annotations
 
@@ -133,7 +134,8 @@ def main():
         "abnormal_features": [r["feature"] for r in top],
         "top_suspect": feat_rows[0]["feature"] if feat_rows else None,
         "note": ("本工具只做与自身历史统计的偏离对比；反常特征≠证明它导致功率变差，"
-                 "因果验证需反事实替换（见 pv-feature-blame）。"),
+                 "因果验证需反事实替换（见 ts-diagnose 的 feature-importance playbook，"
+                 "feature-quality/counterfactual 变体）。"),
     }
     json_path = os.path.join(args.out_dir, f"{args.prefix}_{ts_tag}.json")
     with open(json_path, "w", encoding="utf-8") as f:

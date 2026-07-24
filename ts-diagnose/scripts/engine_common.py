@@ -128,6 +128,12 @@ def _validate_frontmatter(fm, md_path):
                     f"{md_path} stage {st.get('id')} 声明了 charts 但 done_when."
                     f"artifacts 缺 'INDEX.md'——画完必须跑 build_index.py 建索引"
                     "才算阶段完成（阶段闸，_playbook-spec §charts）")
+        concl_arts = (st.get("done_when") or {}).get("artifacts") or []
+        if "CONCLUSION.md" in concl_arts and "gate_reports/conclusion_gate.json" not in concl_arts:
+            raise ValueError(
+                f"{md_path} stage {st.get('id')} 结论阶段必须把 "
+                "gate_reports/conclusion_gate.json 列入 done_when.artifacts"
+                "——结论闸 receipt 即完成判据，见 _playbook-spec")
     if len(fm.get("evidence_lines") or []) >= 2 and not fm.get("upgrade_rule"):
         raise ValueError(f"{md_path} 有 ≥2 条 evidence_lines 但缺 upgrade_rule")
     mats = fm.get("materials") or {}

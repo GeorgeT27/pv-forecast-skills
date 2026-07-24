@@ -182,6 +182,8 @@ def main():
     if cur is None:
         print("  全部阶段完成——可写/刷新 CONCLUSION.md，或 --goto 复核，或按"
               " references/crystallize.md 提议固化。")
+        print("  🚪 写/改 CONCLUSION.md 后必须跑 python3 <ENGINE>/scripts/"
+              "conclusion_gate.py（不过则结论不算交付，receipt 是结论阶段完成判据）。")
 
     for cx in fm.get("contexts") or []:
         cs = ec.context_status(cx, ctx)
@@ -234,6 +236,7 @@ def main():
             print(f"  [{label}]{block} {q['id']}：{q['ask']}")
 
     target = None
+    force_skipped_prereqs = False
     if args.goto is not None:
         target = ec._stage_by_id(fm, args.goto)
         if target is None:
@@ -245,8 +248,10 @@ def main():
         blocked_qs = ec.blocking_questions(fm, ctx, stage_id=target["id"])
         goto_jump = (args.goto is not None and cur is not None
                      and target["id"] != cur["id"])
-        if goto_jump and not (ec.prereqs_ok(pr) and not blocked_qs) \
-                and not args.force:
+        would_be_refused = goto_jump and not (ec.prereqs_ok(pr) and not blocked_qs)
+        if would_be_refused and args.force:
+            force_skipped_prereqs = True
+        if would_be_refused and not args.force:
             print("-" * 62)
             print(f"⛔ 拒绝直达 Stage {target['id']}：前置不齐。"
                   f"正确入口 = Stage {cur['id']}（{cur['name']}）。")
@@ -292,10 +297,12 @@ def main():
           "状态已落盘、可断点续跑，别凭记忆推进。")
 
     # state + PROGRESS（保留 manual_done——manual 阶段的完成标记只有主 agent 会写）
-    _write_state_progress(fm, cur, args, ctx=ctx, actives=actives, state=state)
+    _write_state_progress(fm, cur, args, ctx=ctx, actives=actives, state=state,
+                          force_skipped_prereqs=force_skipped_prereqs)
 
 
-def _write_state_progress(fm, cur, args, ctx=None, actives=None, state=None, blocked=None):
+def _write_state_progress(fm, cur, args, ctx=None, actives=None, state=None, blocked=None,
+                          force_skipped_prereqs=False):
     if blocked is not None:
         new_state = {"playbook": fm["id"],
                      "updated": dt.datetime.now().isoformat(timespec="seconds"),
@@ -316,7 +323,7 @@ def _write_state_progress(fm, cur, args, ctx=None, actives=None, state=None, blo
         line = (f"orient：playbook={fm['id']}，当前 Stage "
                 f"{cur['id'] if cur is not None else '收尾'}"
                 f"{f'（--goto {args.goto}）' if args.goto is not None else ''}"
-                f"{'（--force：用户要求跳过前置，Stage 前置未齐）' if args.goto is not None and args.force else ''}")
+                f"{'（--force：用户要求跳过前置，Stage 前置未齐）' if force_skipped_prereqs else ''}")
     ec.dump_json(new_state, ec.STATE_PATH)
     stamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     is_new = not os.path.exists(ec.PROGRESS_PATH)

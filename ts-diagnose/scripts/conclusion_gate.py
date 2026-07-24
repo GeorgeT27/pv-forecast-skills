@@ -26,9 +26,12 @@ def main():
     cfg = ec.load_config() or {}
     if not cfg.get("playbook"):
         fail("无 diagnose_config.json 或未绑定 playbook")
-    fm = ec.load_frontmatter(ec.find_playbook(cfg["playbook"]))
     if not os.path.exists("CONCLUSION.md"):
         fail("CONCLUSION.md 不存在")
+    try:
+        fm = ec.load_frontmatter(ec.find_playbook(cfg["playbook"]))
+    except Exception as e:
+        fail(f"playbook 加载失败：{e}")
     text = open("CONCLUSION.md", encoding="utf-8").read()
 
     # 规则 1+2：模型结构依据节

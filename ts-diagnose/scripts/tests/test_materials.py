@@ -89,6 +89,19 @@ def test_chart_stage_requires_index_artifact(tmp_path):
 
 
 # ---------------------------------------------------------------- 阻塞
+def test_conclusion_stage_requires_gate_receipt_artifact(tmp_path):
+    """加载期新增校验：结论阶段（done_when.artifacts 含 CONCLUSION.md）必须同时把
+    gate_reports/conclusion_gate.json 列入 artifacts——结论闸 receipt 即完成判据
+    （见 _playbook-spec.md，conclusion_gate.py 是唯一合法生成方式）。"""
+    p = tmp_path / "pb.md"
+    p.write_text("---\nid: x\nname: x\ngoal: x\nstages:\n"
+                 "  - id: 0\n    name: 结论\n"
+                 "    done_when: {artifacts: ['CONCLUSION.md']}\n---\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="gate_reports/conclusion_gate.json"):
+        ec.load_frontmatter(str(p))
+
+
+# ---------------------------------------------------------------- 阻塞
 def test_blocking_materials(tmp_path):
     fm = fm_with_materials(
         tmp_path, "materials:\n  required: [predict, truth, training_log]\n"

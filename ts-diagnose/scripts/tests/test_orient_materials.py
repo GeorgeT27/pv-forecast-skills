@@ -78,8 +78,9 @@ def test_open_when_present_and_embed_hint(tmp_path):
     assert "[✓present] predict (required)" in out
     # model_code present + 上下文 absent → 打印嵌入提示
     assert "model-audit" in out and "嵌入" in out
-    # model_code present 但无 .modelmap 回执 → modelmap 全局阻塞，不可开工
-    assert "MODELMAP_RECEIPT" not in out or "model-audit" in out
+    # model_code present 但无 .modelmap 回执 → modelmap 全局阻塞，不可开工；
+    # 阻塞行必须点名缺的具体回执文件，不能只说"缺档案"让人猜
+    assert "MODELMAP_RECEIPT.json" in out
     assert "先嵌入执行 playbook「model-audit」" in out
     assert "→ 前置齐，可开工 Stage 0" not in out
 

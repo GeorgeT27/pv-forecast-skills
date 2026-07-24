@@ -27,6 +27,14 @@ python3 "<ENGINE>/scripts/orient.py" --goto 3                        # 直达校
 必问）→ 落 `config.materials`（status 三值；用户确认没有 = absent-confirmed，required
 材料降级须用户再确认后写 degraded_ok）。材料状态驱动 `material:` DSL（变体/前置/skip_if）。
 
+### 三道闸（脚本强制）
+
+引擎用三道机械闸把纪律钉死在脚本里，不指望模型自觉：
+
+1. **入口闸**（orient）：材料未盘点齐 → `BLOCKED`，orient 只吐追问清单，不打印任何阶段/前置信息——盘点不完不许看到下一步。
+2. **阶段闸**（`--goto` 护栏 + chart 阶段 INDEX.md 判据）：`--goto` 直达前置不齐的阶段默认拒绝，须显式 `--force` 才放行（且留痕 PROGRESS，仅在确实跳过未齐前置时才写"跳过前置"）；声明了 `charts:` 的阶段，`done_when.artifacts` 必须含 `INDEX.md`（build_index.py 产物），画完图不建索引不算阶段完成。
+3. **结论闸**（`conclusion_gate.py`）：结论阶段的 `done_when.artifacts` 必须同时含 `gate_reports/conclusion_gate.json`——该 receipt 是结论阶段唯一完成判据，且只能由 `conclusion_gate.py` 通过后生成（加载期 `_validate_frontmatter` 强制校验，缺则 playbook 直接加载失败）。
+
 ## 提问纪律（一等公民——本引擎与专用技能的最大差异）
 
 引擎面向没见过的任务，**不许用假设填补不确定**。细则见 `question-discipline.md`，硬规则：
@@ -69,11 +77,12 @@ python3 "<ENGINE>/scripts/orient.py" --goto 3                        # 直达校
 - **生成闸**：playbook 的 `golden/manifest.json` 覆盖到的阶段，脚本必须先过 `scripts/gen_gate.py`（静态检查 + 在结果已知的金标准输入上跑一遍），PASS 才许碰真实数据；FAIL → 改脚本不改期望。闸报告落工作目录 `gate_reports/`。
 - **事实阶段 ⏸**：playbook 标 `pause_after` 的事实提取阶段产「现象清单」（观察+数字+来源，**禁机制语言**），完成后停下向用户汇报，等用户点名要深挖的项再进结论阶段。用户给模糊授权（"挑最强的/你看着办"）时的操作判据：**效应量最大且样本数过功效阈值**的那条现象（并列取来源产物证据线更多者），选了哪条、按什么判据，记 PROGRESS.md 一行。
 - **上下文三分支**：playbook 声明的外部上下文（contexts）absent 时必须先问用户（要不要先建立/嵌入跑），linked 时核验 marker 文件才消费，declined 时结论注明缺失。
-- **嵌入执行 provider skill**：context 声明了 `provider_skill` 且 orient 给出嵌入提示 →
-  AskUserQuestion 问用户要不要现在生产（列大致成本）。同意 → **主 agent 内联读该技能的
-  SKILL.md 完整执行**（保留提问权；不经 subagent——subagent 无提问权），产物落盘、按
+- **嵌入执行 provider playbook**：context 声明了 `provider_playbook` 且 orient 给出嵌入提示 →
+  AskUserQuestion 问用户要不要现在生产（列大致成本）。同意 → **主 agent 内联执行该
+  playbook 完整正文**（保留提问权；不经 subagent——subagent 无提问权），产物落盘、按
   marker_files 核验、写回 config 的 workdir_key/status_key=linked，PROGRESS.md 记
-  「嵌入执行 <skill> 开始/完成」两行，回来重跑 orient 继续主流程。拒绝 → status_key=declined。
+  「嵌入执行 <playbook> 开始/完成」两行，回来重跑 orient 继续主流程。拒绝 → status_key=declined。
+  （`provider_skill` 为兼容外部技能的旧键，engine 内 playbook 一律用 `provider_playbook`。）
 - **subagent 编排**：重活（大日志解析、批量计算、逐产物事实提取）外包，brief 模板见 `subagent-briefs.md`；分片各写各的 `--out`，主 agent 合并；`diagnose_config/diagnose_state/PROGRESS/FINDINGS` 只由主 agent 写。
 - **上下文预算**：产物自足（json 带完整数字与形状描述），判读读 json 不读 PNG、不读原始大文件；每阶段落盘可断点续跑。
 
