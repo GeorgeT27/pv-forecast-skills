@@ -18,7 +18,15 @@ import json
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# fb_common 已随 feature-blame 方法并入 ts-diagnose 的 feature-importance playbook
+# （2026-07-24 迁移，本 orient 壳按计划保留到删壳任务）——先找同目录（旧布局），
+# 再兜底新位置，保证过渡期本技能入口不炸。
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_REPO = os.path.dirname(os.path.dirname(_HERE))
+for _p in (os.path.join(_REPO, "ts-diagnose", "playbooks",
+                        "feature-importance", "scripts"), _HERE):
+    if os.path.isdir(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)   # 后插的在前 → 同目录优先、新位置兜底
 import fb_common as fb
 
 STATE_PATH = "blame_state.json"

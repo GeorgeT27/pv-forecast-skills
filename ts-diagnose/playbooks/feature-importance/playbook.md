@@ -54,6 +54,28 @@ stages:
         check: "stage:3"
     pause_after: false
     subagent_ok: false
+  - id: 5
+    name: 预测特征质量归因（feature_true 对照）
+    done_when:
+      artifacts: ["feature_blame_report.json"]
+    prereqs:
+      - desc: feature_true 材料已就位
+        check: "material:feature_true"
+    pause_after: false
+    subagent_ok: true
+  - id: 6
+    name: 反事实验证（预算阶梯）
+    done_when:
+      artifacts: ["cf_summary.json"]
+    prereqs:
+      - desc: 特征质量归因已点名
+        check: "stage:5"
+      - desc: serving_api 材料已就位
+        check: "material:serving_api"
+    pause_after: false
+    subagent_ok: true
+materials:
+  optional: [feature_true, serving_api]
 variants:
   - id: rerun
     when: "config:model_predict_entry"
@@ -61,6 +83,12 @@ variants:
   - id: ablation
     when: "config:ablation_authorized"
     unlocks_stages: [2]
+  - id: feature-quality
+    when: "material:feature_true"
+    unlocks_stages: [5]
+  - id: counterfactual
+    when: "material:serving_api"
+    unlocks_stages: [6]
 questions:
   - id: importance-scope
     stage: 0
@@ -157,3 +185,101 @@ Stage 1 按变量组分片（`--out perm.<group>.json`），推理批量在脚�
 ## 6. 结论模板
 
 一句话（最重要的变量/信息源 + 一个数字）→ top 变量逐条（判级 + 两线数字 + 大白话含义）→ 行动建议（数据投入/特征取舍优先级）→ 可信度说明（哪些有干预确认、哪些只是模型依赖度）。
+
+## 7. 变体 feature-quality：预测特征质量归因（Stage 5，`material:feature_true` 解锁）
+
+主线 Stage 0-4 回答"变量对模型重要吗"；本变体回答另一个问题：**输入特征本身是预报量**
+（上游预报特征，未来窗口与预测目标量同期）时，**哪些特征的预报错误拖累了目标指标**。
+回答它必须有 `feature_true` 材料——每特征"预报 vs 实况"成对序列（每行一个窗口时间戳，
+每格与预测窗口同长的点列 list，命名约定不限，脚本启发式配对）。方法迁自专用技能
+pv-feature-blame（2026-07-24 并入：预写脚本在 `<本 playbook 目录>/scripts/`，金标准在
+`<本 playbook 目录>/golden-feature-blame/`——与本 playbook 自己的引擎金标准 `golden/`
+是两回事，勿混用勿合并；方法细则见 `references/blame-methods.md`、结论纪律见
+`references/blame-discipline.md`、用户标准调用模板见 `references/prompt-template.md`）。
+
+**硬规则（原话保留）：feature_true 材料 unknown 时本变体不解锁——由入口闸的 intake
+盘点解决，绝不静默降级。** 用户明确确认"没有"（absent-confirmed）→ 若仍要做，走窗口
+重叠重建实况的降级模式（见 `references/blame-methods.md`），证据自动降一级且结论注明；
+绝不在未问用户的情况下静默重建。
+
+### 首要陷阱：特征误差大 ≠ 该特征有罪
+
+1. **模型可能对该特征不敏感**——预报错得离谱但预测纹丝不动。点名必须过**双关**：该行该
+   特征误差异常（z ≥ 阈值）**且**该特征误差与该口径行误差全局相关（Spearman ρ ≥ 阈值），
+   两者都命中才点名（金标准专门埋了 f_decoy：误差更大但零耦合，点了名闸就拦）。反事实
+   （Stage 6）是最终仲裁——没跑反事实不得标"已证实"。
+2. **共线特征成簇**——同源上游的预报误差往往同涨落，统计上分不开谁是元凶。同簇只报簇不
+   点名单个（blame_summary 的 collinearity_clusters 为证），簇内定罪只能靠反事实逐个替换。
+3. **坏天/极端条件下一切特征同时坏**——全局相关可能只是条件共变。升"假设"前按分组条件
+   （如天气分型，同项目预测侧分析已有分组产物时直接复用）条件化复算。
+4. **单换无效 ≠ 无罪**——冗余结构下两个坏特征各自单换都修不好、一起换才修好。断"特征
+   无罪"前先过 Stage 6 的 minimal-set。
+5. **跳变大 ≠ 有罪**——相邻行是同一物理时刻的两次起报，预报翻新跳变是预期物理，且文献
+   实证跳变与预报误差只有弱相关。点名"翻新致不稳"须过 churn 两关（跳变幅度显著 + 跳变
+   与该模型行误差全局相关）+ neighbor-swap 反事实仲裁。金标准埋点 f_jumpy_decoy：跳变
+   更大但零耦合，必须不点名。
+6. **稳定的系统偏差 ≠ 有罪**——模型在有偏预报上训练会学会补偿它（共适应）。点名基于剥掉
+   ε_sys 后的波动 ε_res（稳健加性回归分解）；sys_frac 高的特征被补偿闸洗清（"修了"对
+   固定模型反而可能有害）；白噪声 ε_res 也不点名（可约性闸——上游改不了的误差点名是
+   废话；金标准埋点 f_sys_bias/f_irreducible 分别钉这两道闸）。
+
+### 菜谱（预写脚本流水线，产物自足可断点续跑）
+
+| 步骤 | 脚本 → 产物 |
+|---|---|
+| 探查配对 | `scripts/probe_schema.py` → probe_schema.json + feature_pairs.json（时间戳列/模型列/特征对启发式配对 + 窗一致性 + 真值交叉核验；unmapped 列问用户后写回） |
+| 坏行定位 | `scripts/find_bad_rows.py` → bad_rows_<口径>_<模型>.csv + bad_rows_summary.json（每口径×每模型：>均值 且 top N%，全量排名落盘） |
+| ε 分解 | `scripts/feature_decompose.py` → feature_decomp.json + eps_res_*.npy（剥 ε_sys → ε_res + 可约性） |
+| 双关点名 | `scripts/feature_blame.py` → blame_report.csv + blame_summary.json（z + 全局 ρ 双关 + sys_frac 补偿闸 + 可约性闸 + 共线簇） |
+| 翻新跳变 | `scripts/feature_revision.py` → revision_report.csv + revision_summary.json（churn 两关，免 API） |
+| 单行深查 | `scripts/analyze_row.py`（可选：对指定/最坏行逐特征画像，单行证据级别恒为"现象"） |
+| 汇总 | 主 agent 合并被点名清单 + 翻新画像 + 各产物路径 → **feature_blame_report.json**（本阶段 done 判据） |
+
+口径行级化（默认 rmse_192 = 每行全窗 RMSE；可选短临/日前切片口径）与切片常量一律经
+`scripts/fb_common.py` 接线的共享 data_utils import，绝不本地重定义（口径漂移 = 整条归因
+链作废）。工作目录配置 blame_config.json 字段见 `scripts/fb_common.py` 头部（键名是原技能
+遗留命名，语义已泛化为通用单元/条目表述）。**质量闸**：改任何预写脚本后必须重跑
+`python3 -m pytest <本 playbook 目录>/scripts/ -q`——金标准埋点（f_blame 必点名）、诱饵
+（f_decoy/f_jumpy_decoy 必不点名）、补偿/可约性闸埋点（f_sys_bias/f_irreducible 必洗清）
+全绿才许碰真实数据。
+
+### 升级规则（映射三道门）
+
+- **现象**：单口径单模型 z+ρ 双关命中（blame_report 行）；翻新画像同级。
+- **假设**：跨模型或跨时段稳定 + 分组条件化后仍在 + 有上游机制解释，登记 H-ID。
+- **已证实**：唯一通道 = Stage 6 反事实（见 §8）。用户拒绝反事实 → 最高只能到"假设"并注明。
+- 坏行样本 <10 只描述不定论；共线簇内不点名单个。
+
+## 8. 变体 counterfactual：反事实验证预算阶梯（Stage 6，`material:serving_api` 解锁）
+
+把被点名特征替换为实况、经用户的预测服务（`serving_api` 材料，如 FastAPI）重预测，看指标
+变差是否消失——特征质量结论升"已证实"的唯一通道。前置 `stage:5`（先有点名才有可换对象）。
+**决策数学全部在 `scripts/cf_logic.py`**（零网络、以 `--selfcheck` 过金标准闸）；HTTP 层在
+`scripts/counterfactual_api.py` + 工作目录 adapter.py（模板 `scripts/api_adapter_template.py`；
+活 API 无法金标准化，以 `--dry-run` 计划表+payload 用户确认步兜底——**首跑必 dry-run 给
+用户过目才许打真实 API**）。
+
+**预算阶梯**（按证据价值/成本排序，逐层花预算，subagent brief 见 `references/subagent-briefs.md`）：
+
+1. **oracle G 闸（防冤枉）**：坏行全部配对特征都换成实况，测指标缺口 G。G 不显著（< g_min）
+   = 该行变差不是特征质量问题（模型/其它原因），**不得归因任何特征**——先过此闸再花下面的钱。
+2. **per-feature / all-blamed（边际）**：逐个被点名特征单换 + 全部被点名一起换，按修复谓词
+   （τ 阈）报修复率。单换有效 = 单特征可修。
+3. **minimal-set（联合致坏）**：单换全无效但 all-blamed 有效 → 搜最小修复集（冗余结构下
+   单换必然无效，抓"几个坏特征一起才把这行带坏"，点名整个集合）。
+4. **lattice Shapley（最差行精查）**：对最差几行做子集格上的 Shapley 归因 + 交互项，量化
+   各特征边际贡献。
+5. **neighbor-swap（翻新仲裁）**：相邻起报的特征序列互换重预测，churn 消减才可把"翻新致
+   不稳"升"已证实"（拼接序列行间不连续，服务端可能拒收——须单独确认
+   api.neighbor_swap_confirmed）。
+
+分片纪律：按模型分片各写各的产物防竞态；阶梯按层分批，subagent 只回 JSON 摘要，**禁自行
+放宽 τ/G 阈值**；结果逐行追加、可中断续跑。最终把各层结果与判定汇总落盘
+**cf_summary.json**（本阶段 done 判据）。
+
+### 两变体的材料降级说明
+
+- `feature_true` unknown → 变体不解锁（§7 硬规则）；absent-confirmed → 用户知情后可走窗口
+  重叠重建降级（证据降一级）。Stage 5/6 未激活不阻塞主线 Stage 0-4。
+- `serving_api` absent/unknown → Stage 6 结构性跳过，特征质量结论上限"假设"
+  （CONCLUSION.md 须注明未做反事实）。

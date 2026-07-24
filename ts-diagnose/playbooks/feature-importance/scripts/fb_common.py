@@ -50,13 +50,20 @@ CONFIG_PATH = "blame_config.json"
 
 # 复用主技能 data_utils（口径常量 / load_table / to_matrix / check_window_consistency）。
 # 与 si_common 不同：本技能的口径常量承重（坏行定义直接依赖），缺失时硬失败而非降级。
-# data_utils.py 现居 ts-diagnose/playbooks/result-eval/scripts/（2026-07-24 迁移，原
-# pv-result-analysis/scripts/）；旧路径保留作兜底，防止尚未同步迁移的检出环境炸掉。
-_SKILL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_REPO_ROOT = os.path.dirname(_SKILL_ROOT)
+# data_utils.py 现居 ts-diagnose/playbooks/result-eval/scripts/（2026-07-24 迁入 result-eval
+# playbook，原 pv-result-analysis/scripts/）。本文件自身也已随 feature-blame 方法并入
+# feature-importance playbook 迁移到 ts-diagnose/playbooks/feature-importance/scripts/
+# （2026-07-24，原 pv-feature-blame/scripts/）——相对层级从 skill-root/scripts 变为
+# ts-diagnose/playbooks/<id>/scripts，多套一层 playbooks/，故 sibling 路径改为「同为
+# playbooks/ 下的兄弟 playbook」而非旧式「仓库根下的兄弟技能」（同 si_common.py 的推导）；
+# 旧路径保留兜底，防止尚未同步迁移的检出环境炸掉。
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+_PLAYBOOKS_DIR = os.path.dirname(os.path.dirname(_SCRIPTS_DIR))       # .../ts-diagnose/playbooks
+_REPO_ROOT = os.path.dirname(os.path.dirname(_PLAYBOOKS_DIR))         # 仓库根
 _SIBLING_CANDIDATES = (
-    os.path.join(_REPO_ROOT, "ts-diagnose", "playbooks", "result-eval", "scripts"),
-    os.path.join(_REPO_ROOT, "pv-result-analysis", "scripts"),  # 旧路径兜底
+    os.path.join(_PLAYBOOKS_DIR, "result-eval", "scripts"),           # 新路径（同引擎兄弟 playbook）
+    os.path.join(_REPO_ROOT, "ts-diagnose", "playbooks", "result-eval", "scripts"),  # 兜底写法等价
+    os.path.join(_REPO_ROOT, "pv-result-analysis", "scripts"),        # 旧路径兜底（迁移前）
 )
 _SIBLING = next((p for p in _SIBLING_CANDIDATES if os.path.isdir(p)), _SIBLING_CANDIDATES[0])
 if os.path.isdir(_SIBLING) and _SIBLING not in sys.path:

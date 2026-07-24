@@ -2,28 +2,50 @@
 
 这同时钉死：CLI 契约、产物 schema、埋点召回（f_blame 被点名）与诱饵拒绝（f_decoy 不被点名）。
 另含一个「放水脚本必须 FAIL」用例——谁把诱饵点了名，金标准就拦谁，钉住诱饵断言有牙。
+
+路径说明（2026-07-24 随 feature-blame 方法并入 feature-importance playbook 迁移）：
+gen_gate.py 的 golden_run() 硬编码去 <playbook_dir>/golden/manifest.json 找金标准（目录名
+写死为 golden，见 ts-diagnose/scripts/gen_gate.py）。本文件的金标准数据迁移后落在同目录的
+golden-feature-blame/（改名是为了不与 feature-importance playbook 自己的引擎金标准 golden/
+撞名——那是两回事，绝不可合并或互相覆盖）。故不能直接把 --playbook 指向本 playbook 目录；
+改为在每个 tmp_path 沙箱里搭一个一次性「锚点」：anchor.md 旁放一份 golden/（= golden-feature-blame
+的拷贝），--playbook 指向 anchor.md，gen_gate 就能按约定解析到正确的金标准，而不触碰
+playbook.md 的真实 golden/。
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 
 import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SKILL = os.path.dirname(HERE)
-REPO = os.path.dirname(SKILL)
+PLAYBOOK_DIR = os.path.dirname(HERE)
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(PLAYBOOK_DIR)))  # scripts→playbook→playbooks→ts-diagnose→repo
 GATE = os.path.join(REPO, "ts-diagnose", "scripts", "gen_gate.py")
-PLAYBOOK = os.path.join(SKILL, "SKILL.md")   # 路径形式：golden/ 解析到本技能目录下
+GOLDEN_SRC = os.path.join(PLAYBOOK_DIR, "golden-feature-blame")
 
 STAGES = [("0", "probe_schema.py"), ("1", "find_bad_rows.py"),
           ("decomp", "feature_decompose.py"), ("2", "feature_blame.py"),
           ("revision", "feature_revision.py"), ("4", "cf_logic.py")]
 
 
+def _gate_anchor(workdir):
+    """在 workdir 下搭 anchor.md + golden/（拷贝自 golden-feature-blame），
+    返回 anchor.md 路径供 --playbook 使用。gen_gate 只读 golden/manifest.json，
+    不写它——多个测试各自的 tmp_path 互不干扰，无需清理。"""
+    anchor = os.path.join(workdir, "_gate_anchor.md")
+    if not os.path.exists(anchor):
+        open(anchor, "w", encoding="utf-8").close()
+        shutil.copytree(GOLDEN_SRC, os.path.join(workdir, "golden"))
+    return anchor
+
+
 def run_gate(workdir, script, stage):
+    playbook = _gate_anchor(str(workdir))
     return subprocess.run(
-        [sys.executable, GATE, "--script", script, "--playbook", PLAYBOOK, "--stage", stage],
+        [sys.executable, GATE, "--script", script, "--playbook", playbook, "--stage", stage],
         cwd=workdir, capture_output=True, text=True)
 
 
@@ -75,7 +97,7 @@ def test_decoy_assertion_has_teeth(tmp_path):
 
 def test_manifest_inputs_exist():
     """manifest 声明的 golden 输入文件必须齐全（防中间产物漏拷/漏提交）。"""
-    gdir = os.path.join(SKILL, "golden")
+    gdir = GOLDEN_SRC
     man = json.load(open(os.path.join(gdir, "manifest.json"), encoding="utf-8"))
     assert man.get("stages")
     for st, ent in man["stages"].items():

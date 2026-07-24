@@ -14,8 +14,11 @@ import sys
 import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SKILL = os.path.dirname(HERE)
-GOLDEN = os.path.join(SKILL, "golden")
+PLAYBOOK_DIR = os.path.dirname(HERE)
+# golden-feature-blame（非 golden/）：本 playbook 自身的 golden/ 是 feature-importance 引擎
+# 金标准（gen_gate 用），与本文件迁自 pv-feature-blame 的金标准数据是两回事，迁移时改名
+# 隔离，避免误当成引擎 golden（2026-07-24）。
+GOLDEN = os.path.join(PLAYBOOK_DIR, "golden-feature-blame")
 TOOL = os.path.join(HERE, "analyze_row.py")
 
 
