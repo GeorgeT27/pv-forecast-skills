@@ -1,4 +1,5 @@
-"""pv-station-influence —— 共享工具（配置 / 路径 / RMSE / 复用主技能 data_utils）。
+"""subset-influence playbook —— 共享工具（配置 / 路径 / RMSE / 复用 result-eval data_utils）。
+原 pv-station-influence/scripts/si_common.py，2026-07-24 随 playbook 迁入 ts-diagnose。
 
 设计纪律（见 SKILL.md 上下文预算节）：
 - 所有重活在脚本内完成，脚本只 print ≤30 行摘要；产物落盘 CSV/JSON，各带自足 summary。
@@ -37,13 +38,19 @@ import numpy as np
 CONFIG_PATH = "influence_config.json"
 
 # 复用主技能 data_utils（读 parquet / to_matrix / psi）。找不到就降级：本技能不重写。
-# data_utils.py 现居 ts-diagnose/playbooks/result-eval/scripts/（2026-07-24 迁移，原
-# pv-result-analysis/scripts/）；旧路径保留作兜底，防止尚未同步迁移的检出环境炸掉。
-_SKILL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_REPO_ROOT = os.path.dirname(_SKILL_ROOT)
+# data_utils.py 现居 ts-diagnose/playbooks/result-eval/scripts/。本文件自身也已随
+# subset-influence playbook 迁移到 ts-diagnose/playbooks/subset-influence/scripts/
+# （2026-07-24，原 pv-station-influence/scripts/）——相对层级从 skill-root/scripts
+# 变为 ts-diagnose/playbooks/<id>/scripts，多套一层 playbooks/，故 sibling 路径改为
+# 「同为 playbooks/ 下的兄弟 playbook」而非旧式「仓库根下的兄弟技能」；旧路径保留兜底，
+# 防止尚未同步迁移的检出环境炸掉。
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+_PLAYBOOKS_DIR = os.path.dirname(os.path.dirname(_SCRIPTS_DIR))       # .../ts-diagnose/playbooks
+_REPO_ROOT = os.path.dirname(os.path.dirname(_PLAYBOOKS_DIR))         # 仓库根
 _SIBLING_CANDIDATES = (
-    os.path.join(_REPO_ROOT, "ts-diagnose", "playbooks", "result-eval", "scripts"),
-    os.path.join(_REPO_ROOT, "pv-result-analysis", "scripts"),  # 旧路径兜底
+    os.path.join(_PLAYBOOKS_DIR, "result-eval", "scripts"),           # 新路径（同引擎兄弟 playbook）
+    os.path.join(_REPO_ROOT, "ts-diagnose", "playbooks", "result-eval", "scripts"),  # 兜底写法等价
+    os.path.join(_REPO_ROOT, "pv-result-analysis", "scripts"),        # 旧路径兜底（迁移前）
 )
 _SIBLING = next((p for p in _SIBLING_CANDIDATES if os.path.isdir(p)), _SIBLING_CANDIDATES[0])
 if os.path.isdir(_SIBLING) and _SIBLING not in sys.path:
