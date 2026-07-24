@@ -66,7 +66,7 @@ BLOCKED（不输出任何阶段菜单）。playbook 声明的 required/optional 
 
 模型实现代码仓库/目录。
 **追问**：路径？里面有几个模型、名字分别是什么？哪个是产线版本（多版本必问，不许自行裁决）？
-（present 时 orient 会对声明了 `provider_skill: pv-model-analysis` 的上下文给出嵌入执行提示。）
+（present 时 orient 会强制先跑 playbook `model-audit` 生成档案回执，见 modelmap_blocker。）
 
 ## `training_log`
 

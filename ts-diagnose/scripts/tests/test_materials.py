@@ -176,6 +176,25 @@ def test_context_embed_hint():
     assert ec.context_embed_hint(cx3, {}) is not None
 
 
+def test_context_embed_hint_provider_playbook():
+    cx = {**{k: v for k, v in CX.items() if k != "provider_skill"},
+          "provider_playbook": "model-audit"}
+    hint = ec.context_embed_hint(cx, {"materials": {"model_code": {"status": "present"}}})
+    assert "model-audit" in hint and "嵌入" in hint
+
+
+def test_modelmap_blocker(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg = {"materials": {"model_code": {"status": "present", "paths": ["/repo"]}}}
+    fm_diag = {"id": "model-comparison"}
+    assert ec.modelmap_blocker(cfg, fm_diag) is not None      # 无回执 → 阻塞
+    (tmp_path / "MODELMAP_RECEIPT.json").write_text(
+        '{"modelmap_dir": "x", "commit": "abc"}', encoding="utf-8")
+    assert ec.modelmap_blocker(cfg, fm_diag) is None          # 有回执 → 放行
+    assert ec.modelmap_blocker(cfg, {"id": "model-audit"}) is None  # 自身豁免
+    assert ec.modelmap_blocker({}, fm_diag) is None           # 无 model_code → 不管
+
+
 def test_frontmatter_rejects_bad_trigger_material(tmp_path):
     p = tmp_path / "pb.md"
     p.write_text("---\nid: x\nname: x\ngoal: x\nstages:\n"

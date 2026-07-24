@@ -547,17 +547,31 @@ def context_status(cx, ctx):
 
 
 def context_embed_hint(cx, cfg):
-    """absent 上下文的嵌入执行提示：声明了 provider_skill 且触发材料到位 → 文案；
-    否则 None。执行本身（读 provider 的 SKILL.md 内联跑）是主 agent 的活，见
-    engine-core「嵌入执行 provider skill」。"""
-    prov = cx.get("provider_skill")
+    """absent 上下文的嵌入执行提示：声明了 provider_playbook/provider_skill 且触发材料
+    到位 → 文案；否则 None。执行本身（内联跑 provider playbook 或读 provider 的
+    SKILL.md）是主 agent 的活，见 engine-core「嵌入执行 provider skill」。"""
+    prov = cx.get("provider_playbook") or cx.get("provider_skill")
     if not prov:
         return None
+    kind = "playbook" if cx.get("provider_playbook") else "技能"
     trig = cx.get("trigger_material")
     if trig and material_status(cfg, trig) != "present":
         return None
-    return (f"可嵌入生产：AskUserQuestion 问用户要不要现在内联执行技能「{prov}」"
+    return (f"可嵌入生产：AskUserQuestion 问用户要不要现在内联执行{kind}「{prov}」"
             f"生成本上下文（跑完写 marker 回填 config，纪律见 engine-core「嵌入执行」）")
+
+
+def modelmap_blocker(cfg, fm):
+    """模型档案强制衔接（spec §4）：有模型代码就必须先有 .modelmap 回执。"""
+    if (fm or {}).get("id") == "model-audit":
+        return None
+    if material_status(cfg, "model_code") != "present":
+        return None
+    if os.path.exists("MODELMAP_RECEIPT.json"):
+        return None
+    return ("有模型代码（model_code=present）但无 .modelmap 档案回执——"
+            "先嵌入执行 playbook「model-audit」生成档案（MODELMAP_RECEIPT.json），"
+            "再回本 playbook 继续")
 
 
 # ---------------------------------------------------------------- project-context

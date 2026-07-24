@@ -263,6 +263,9 @@ def main():
             print(f"  [✗] 必答问题未答：{q['id']}（{q['why']}）")
         for mid, reason in mat_blocked:
             print(f"  [✗] 必需材料未就绪：{mid}（{reason}）")
+        mm = ec.modelmap_blocker(cfg, fm)
+        if mm:
+            print(f"  [✗] {mm}")
         print("  ⚑ 引擎级恒问五类·开工前自检（命中任一必停 AskUserQuestion，"
               "orient 不替你判，playbook 没声明也照问）：")
         print("    ① schema/单位/口径不明 ② 成功判据未定义 "
@@ -278,7 +281,7 @@ def main():
             print("    另：≥2 证据线按 upgrade_rule 一致才升『假设』；样本<阈值只报排名不报显著；")
             print("    收尾：写 CONCLUSION.md 前跑 provenance.py 附 Provenance 块，"
                   "写完直接呈现给用户不只丢路径。")
-        if ec.prereqs_ok(pr) and not blocked_qs and not mat_blocked:
+        if ec.prereqs_ok(pr) and not blocked_qs and not mat_blocked and not mm:
             print(f"→ 前置齐，可开工 Stage {target['id']}。")
         else:
             print("→ 有 ✗ 先补：缺答案 AskUserQuestion；缺产物回上一阶段；缺路径问用户后写 config。")

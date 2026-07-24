@@ -26,7 +26,7 @@ contexts:
     status_key: modelmap_status
     marker_files: [models.md]
     on_absent: ask
-    provider_skill: pv-model-analysis
+    provider_playbook: model-audit
     trigger_material: model_code
 ---
 正文占位。
@@ -76,9 +76,27 @@ def test_open_when_present_and_embed_hint(tmp_path):
             "model_code": {"status": "present", "paths": ["x.parquet"]}}
     out = run_orient(setup_pb(tmp_path, mats))
     assert "[✓present] predict (required)" in out
-    assert "→ 前置齐，可开工 Stage 0" in out
     # model_code present + 上下文 absent → 打印嵌入提示
-    assert "pv-model-analysis" in out and "嵌入" in out
+    assert "model-audit" in out and "嵌入" in out
+    # model_code present 但无 .modelmap 回执 → modelmap 全局阻塞，不可开工
+    assert "MODELMAP_RECEIPT" not in out or "model-audit" in out
+    assert "先嵌入执行 playbook「model-audit」" in out
+    assert "→ 前置齐，可开工 Stage 0" not in out
+
+
+def test_modelmap_receipt_unlocks_open(tmp_path):
+    """touch 回执后重跑 → modelmap 阻塞解除，可开工出现。"""
+    mats = {"predict": {"status": "present", "paths": ["x.parquet"],
+                        "schema": {"y_col": "y", "time_col": "ts"}},
+            "truth": {"status": "present", "paths": ["x.parquet"],
+                     "schema": {"y_col": "y", "time_col": "ts"}},
+            "model_code": {"status": "present", "paths": ["x.parquet"]}}
+    wd = setup_pb(tmp_path, mats)
+    (wd / "MODELMAP_RECEIPT.json").write_text(
+        '{"modelmap_dir": "x", "commit": "abc"}', encoding="utf-8")
+    out = run_orient(wd)
+    assert "先嵌入执行 playbook「model-audit」" not in out
+    assert "→ 前置齐，可开工 Stage 0" in out
 
 
 def test_degraded_absent_not_blocking(tmp_path):
