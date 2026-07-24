@@ -1,3 +1,4 @@
+import json
 import os
 from pointer import write_pointer, read_pointer, is_stale
 
@@ -25,3 +26,12 @@ def test_is_stale_commit_mismatch():
 def test_is_stale_no_git_never_stale():
     assert is_stale({"commit": "no-git"}, "anything") is False
     assert is_stale({"commit": ""}, "anything") is False
+
+def test_write_receipt(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    import pointer
+    pointer.write_receipt(modelmap_dir=str(tmp_path / "repo/.modelmap"),
+                          commit="abc1234")
+    rec = json.load(open("MODELMAP_RECEIPT.json", encoding="utf-8"))
+    assert rec["modelmap_dir"].endswith(".modelmap")
+    assert rec["commit"] == "abc1234" and rec["date"]

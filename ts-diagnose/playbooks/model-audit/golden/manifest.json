@@ -1,0 +1,29 @@
+{
+  "playbook": "model-audit",
+  "note": "精简金标准：本 playbook 是代码审计流程（Stage 0/1/2/4 靠人工读代码判断与人工自检，非可解析式生成的统计量，不建 golden——覆盖不了的阶段按 spec §5 在此说明，由正文声明的 machinery.md §5 自检清单兜底）。唯一可确定性验证的是 Stage 3 落盘收尾的回执纪律：write_pointer + write_receipt 两步都落盘、且 commit/modelmap 路径字段一致（playbook.md §7「两处回执都是阶段闸的产物判据」）。零随机、无外部输入文件，参数即金标准。",
+  "stages": {
+    "3": {
+      "desc": "回执纪律：pointer 与工作目录回执同步落盘，字段一致",
+      "inputs": [],
+      "args": [
+        "--modelmap-dir", "/repo/.modelmap",
+        "--repo", "/repo",
+        "--commit", "abc1234",
+        "--models", "M1,M2,ensemble",
+        "--date", "2026-07-24",
+        "--pointer-out", "model-ref.pointer",
+        "--receipt-out", "MODELMAP_RECEIPT.json",
+        "--out", "reconcile_summary.json"
+      ],
+      "reference": "reference/write_pointer_and_receipt.py",
+      "expect": [
+        {"file": "reconcile_summary.json", "path": "pointer.path", "op": "eq", "value": "/repo/.modelmap"},
+        {"file": "reconcile_summary.json", "path": "pointer.commit", "op": "eq", "value": "abc1234"},
+        {"file": "reconcile_summary.json", "path": "pointer.models", "op": "contains", "value": "ensemble"},
+        {"file": "reconcile_summary.json", "path": "receipt.modelmap_dir", "op": "eq", "value": "/repo/.modelmap"},
+        {"file": "reconcile_summary.json", "path": "receipt.commit", "op": "eq", "value": "abc1234"},
+        {"file": "reconcile_summary.json", "path": "consistent", "op": "eq", "value": true}
+      ]
+    }
+  }
+}

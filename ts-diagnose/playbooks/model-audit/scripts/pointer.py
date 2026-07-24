@@ -1,6 +1,7 @@
 """Read/write/validate the model-ref pointer that lets pv-result-analysis
 find the produced .modelmap docs. Format: plain `key: value` lines, UTF-8."""
 from __future__ import annotations
+import json
 import os
 
 def write_pointer(pointer_path, docs_path, repo, commit, models, date):
@@ -34,3 +35,12 @@ def is_stale(pointer, current_commit):
     if c in ("", "no-git"):
         return False
     return c != current_commit
+
+def write_receipt(modelmap_dir, commit, path="MODELMAP_RECEIPT.json"):
+    """在诊断工作目录写回执——orient 用它判定 model-audit 阶段完成与档案新鲜度。"""
+    import datetime as _dt
+    rec = {"modelmap_dir": modelmap_dir, "commit": commit,
+           "date": _dt.date.today().isoformat()}
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(rec, f, ensure_ascii=False, indent=2)
+    return rec
