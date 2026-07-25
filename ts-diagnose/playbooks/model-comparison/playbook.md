@@ -9,6 +9,8 @@ upstream:
     required: false
   - product: chart_sweep
     required: false
+  - product: metric_table
+    required: false
 stages:
   - id: 0
     name: 总差距事实
@@ -104,6 +106,11 @@ alignment_report.json 与各长表都在其中；本 playbook 不再写适配器
 ### Stage 0 总差距事实
 输入：`<setup>/predictions.csv` + `<setup>/alignment_report.json`（先读 dropped
 统计——不对称时后续结论必须声明对齐子集）。
+
+**metric_table 产物 built/linked 且 `metrics_summary.json` 的 `caliber` 与本次
+`metric-caliber` 答案一致** → 直接复用其汇总值为指标表，不重算；口径不一致视同
+absent（照常自算，FINDINGS 注明存在另一口径的指标表）。
+
 菜谱：写 `analysis_scripts/gap_metrics.py`，CLI 契约固定：
 `--pred <setup>/predictions.csv --pair A,B --out gap_summary.json`。
 计算（口径=rmse_192 时）：每 (model,unit,window) 行 RMSE → 每模型均值与排名；

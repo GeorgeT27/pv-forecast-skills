@@ -404,19 +404,23 @@ def test_modelmap_blocker_skips_playbooks_not_declaring_model_code(pbdir):
 # Phase 2 逐个转换的目标态：upstream 声明表 + contexts 必须清空。
 # 每转换一个 playbook 加一行——表驱动，红→绿即转换完成的机器判据。
 REAL_UPSTREAM = {
-    "model-comparison": {"setup": True, "model_profile": False, "chart_sweep": False},
-    "result-eval": {"setup": True, "model_profile": False, "chart_sweep": False},
+    "model-comparison": {"setup": True, "model_profile": False, "chart_sweep": False,
+                          "metric_table": False},
+    "result-eval": {"setup": True, "model_profile": False, "chart_sweep": False,
+                     "metric_table": False},
     "deployment-drift": {"setup": True, "model_profile": False, "chart_sweep": False},
     "robustness": {"setup": True, "chart_sweep": False},
     "feature-importance": {"setup": True},
     "subset-influence": {"setup": True, "model_profile": False, "eval_report": False},
     "training-sufficiency": {"setup": False},
+    "metric-eval": {"setup": True},
 }
 REAL_PRODUCES = {
     "data-setup": "setup",
     "model-audit": "model_profile",
     "fact-scan": "chart_sweep",
     "result-eval": "eval_report",
+    "metric-eval": "metric_table",
 }
 
 

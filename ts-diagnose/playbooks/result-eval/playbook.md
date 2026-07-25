@@ -13,6 +13,8 @@ upstream:
     required: false
   - product: chart_sweep
     required: false
+  - product: metric_table
+    required: false
 materials:
   required: [predict, truth]
   optional: [features, train_y, model_code, training_log, experiment_config]
@@ -119,6 +121,10 @@ done：`suspect_days.csv` 落盘。
 ### Stage 1：指标计算
 
 输入：Stage 0 质检通过的 predict/truth；`metric-caliber` 问题的答案。
+
+**metric_table 产物 built/linked 且 `metrics_summary.json` 的 `caliber` 与本次
+`metric-caliber` 答案一致** → 直接复用其汇总值为指标表，不重算；口径不一致视同
+absent（照常自算，FINDINGS 注明存在另一口径的指标表）。
 
 菜谱：按 `metric-caliber` 选定口径计算每个模型的指标（RMSE/MAE/ACC 等，视用户口径定义），
 产出模型集的指标表（Excel 或等价表格）。**模型集来自 intake 的 predict 材料盘点**——盘点
