@@ -2,6 +2,11 @@
 
 前置：Phase 1 已合入且 model-comparison 试点在真实数据上至少跑通一次。
 
+0. 通用纪律（用户 2026-07-25 明确要求）：可选生产者的存在必须靠机器问出来，
+   不靠 LLM 记得提——每个分析 playbook 把**所有对它适用的可选产物**
+   （model_profile / chart_sweep）逐条写进 upstream，orient 逐个打三分支问，
+   用户由此知晓 level-1 能力；prose 里"已有产物则复用"一律不算数。
+   （model-comparison 已于 Phase 1 收尾补上 chart_sweep optional。）
 1. 批量改造剩余 6 个 playbook（逐个 task，模式照 model-comparison 试点）：
    - result-eval / deployment-drift / robustness：upstream setup(required)，
      删各自适配对齐阶段，charts 收窄到目标核心集（result-eval 保留月度归因组；

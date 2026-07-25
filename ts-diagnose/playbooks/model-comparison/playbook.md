@@ -7,6 +7,8 @@ upstream:
     required: true
   - product: model_profile
     required: false
+  - product: chart_sweep
+    required: false
 stages:
   - id: 0
     name: 总差距事实
