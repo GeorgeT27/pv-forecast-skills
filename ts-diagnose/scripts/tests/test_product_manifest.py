@@ -66,3 +66,48 @@ def test_product_manifest_generic(tmp_path):
                      .read_text(encoding="utf-8"))
     assert man["product"] == "chart_sweep"
     assert set(man["inputs"]) == {"predict", "training_log"}
+
+
+def _seed_multipath(tmp_path):
+    """predict 材料声明两条真实存在的路径——终审抓到的 bug：只有第一条被指纹，
+    第 2..N 条文件变了，过期检测对它失明。"""
+    raw = _seed(tmp_path)
+    raw2 = tmp_path / "raw_predict_part2.parquet"
+    raw2.write_text("rawdata-part2", encoding="utf-8")
+    cfg = json.loads((tmp_path / "diagnose_config.json").read_text(encoding="utf-8"))
+    cfg["materials"]["predict"]["paths"] = [str(raw), str(raw2)]
+    (tmp_path / "diagnose_config.json").write_text(json.dumps(cfg), encoding="utf-8")
+    return raw, raw2
+
+
+def test_setup_manifest_multi_path_material_all_fingerprinted(tmp_path):
+    raw, raw2 = _seed_multipath(tmp_path)
+    r = subprocess.run([sys.executable,
+                        os.path.join(SCRIPTS_DIR, "setup_manifest.py")],
+                       cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    man = json.loads((tmp_path / "setup_manifest.json").read_text(encoding="utf-8"))
+    # 第一条路径仍用裸键（向后兼容）
+    assert man["inputs"]["predict"]["path"] == str(raw)
+    assert man["inputs"]["predict"]["fingerprint"] == ec.file_fingerprint(str(raw))
+    # 第二条路径不能被 setdefault 吞掉——必须以 predict#1 入指纹
+    assert man["inputs"]["predict#1"]["path"] == str(raw2)
+    assert man["inputs"]["predict#1"]["fingerprint"] == ec.file_fingerprint(str(raw2))
+    # 单路径材料（training_log）仍只用裸键，不产生 #0 后缀
+    assert "training_log#0" not in man["inputs"]
+    assert man["inputs"]["training_log"]["path"] == str(raw)
+
+
+def test_product_manifest_generic_multi_path_material_all_fingerprinted(tmp_path):
+    raw, raw2 = _seed_multipath(tmp_path)
+    r = subprocess.run([sys.executable,
+                        os.path.join(SCRIPTS_DIR, "product_manifest.py"),
+                        "--product", "chart_sweep",
+                        "--out", "chart_sweep_manifest.json"],
+                       cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    man = json.loads((tmp_path / "chart_sweep_manifest.json")
+                     .read_text(encoding="utf-8"))
+    assert man["inputs"]["predict"]["path"] == str(raw)
+    assert man["inputs"]["predict#1"]["path"] == str(raw2)
+    assert man["inputs"]["predict#1"]["fingerprint"] == ec.file_fingerprint(str(raw2))

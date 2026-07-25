@@ -276,7 +276,11 @@ def validate_upstream(fm, md_path):
 
 def _upstream_cycle_check(fm, idx, seen):
     for u in fm.get("upstream") or []:
-        producer = idx[u["product"]]["playbook"]
+        info = idx.get(u["product"])
+        if info is None:
+            raise ValueError(f"upstream 引用未声明的产物 '{u['product']}'"
+                             f"（已声明：{sorted(idx)}）")
+        producer = info["playbook"]
         if producer in seen:
             raise ValueError(f"upstream 依赖成环：{' → '.join(seen + [producer])}")
         pfm = _raw_frontmatter(find_playbook(producer))
@@ -722,6 +726,16 @@ def modelmap_blocker(cfg, fm):
         return None
     if material_status(cfg, "model_code") != "present":
         return None
+    # 声明了 materials 块、但 model_code 不在 required/optional 里 → 本 playbook
+    # 根本不消费模型代码（如内联生产 data-setup 时父 config 的 materials 被整块拷
+    # 入子目录，捎带了 model_code:present）——档案闸不适用，放行。
+    # 注意：未声明 materials 块的 playbook（如 training-sufficiency/robustness）
+    # 不在此列——它们仍受档案闸约束，不能因为“没声明”就被当成“声明了不用”。
+    declared = (fm or {}).get("materials")
+    if declared is not None:
+        req, opt = materials_of(fm or {})
+        if "model_code" not in req + opt:
+            return None
     if os.path.exists("MODELMAP_RECEIPT.json"):
         return None
     try:

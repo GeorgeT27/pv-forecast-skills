@@ -333,3 +333,16 @@ def test_modelmap_blocker_accepts_product(pbdir, tmp_path, monkeypatch):
     cfg["products"] = {"model_profile": {"workdir": "model_profile",
                                          "status": "built"}}
     assert ec.modelmap_blocker(cfg, fm) is None  # 产物 built → 放行
+
+
+def test_modelmap_blocker_skips_playbooks_not_declaring_model_code(pbdir):
+    """终审抓到的死锁：data-setup 类 playbook 不声明 model_code，内联生产时
+    被父 config 拷来的 model_code:present 触发档案闸——声明里不用模型代码的
+    playbook 应豁免。"""
+    cfg = {"materials": {"model_code": {"status": "present", "paths": ["m/"]}}}
+    fm_no_mc = {"id": "data-setup-like",
+                "materials": {"required": ["predict"], "optional": []}}
+    assert ec.modelmap_blocker(cfg, fm_no_mc) is None
+    fm_with_mc = {"id": "consumer-like",
+                  "materials": {"required": [], "optional": ["model_code"]}}
+    assert ec.modelmap_blocker(cfg, fm_with_mc)  # 声明了就仍要档案

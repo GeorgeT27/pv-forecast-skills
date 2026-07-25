@@ -11,7 +11,7 @@ feature-importance）——原先逐技能 description 的存在性/触发短语
 
 Task 12：单入口化。description 的「负面清单」与 pv-* 让位条款已删除（不再有让位对象），
 路由优先级由三级（固化代理 > 专用技能 > 引擎兜底）收成两级（固化代理 > 本引擎）。本文件
-新增断言锁住这两点，并把 9 个 playbook（含新并入的 result-eval/model-audit/subset-influence）
+新增断言锁住这两点，并把 10 个 playbook（含新并入的 result-eval/model-audit/subset-influence）
 都纳入 description 与路由表的存在性检查——防止收编回归、防止 SKILL.md 再长回 pv-* 负面清单。
 """
 import os
@@ -80,7 +80,7 @@ def test_routing_priority_is_two_level():
 
 
 def test_skill_md_line_budget_and_full_playbook_coverage():
-    """SKILL.md ≤60 行（与 test_layering 的预算口径一致），且路由表覆盖全部 9 个 playbook。"""
+    """SKILL.md ≤60 行（与 test_layering 的预算口径一致），且路由表覆盖全部 10 个 playbook。"""
     path = os.path.join(ENGINE_DIR, "SKILL.md")
     lines = open(path, encoding="utf-8").read().splitlines()
     assert len(lines) <= 60, f"SKILL.md {len(lines)} 行 > 60 行预算"

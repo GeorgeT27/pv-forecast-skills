@@ -21,10 +21,12 @@ def main():
     inputs = {}
     for mid, rec in ((ec.read_json(a.config) or {}).get("materials") or {}).items():
         if isinstance(rec, dict) and rec.get("status") == "present":
-            for p in rec.get("paths") or []:
+            for i, p in enumerate(rec.get("paths") or []):
                 if os.path.exists(p):
-                    inputs.setdefault(mid, {"path": p,
-                                            "fingerprint": ec.file_fingerprint(p)})
+                    key = mid if i == 0 else f"{mid}#{i}"
+                    inputs[key] = {"path": p, "fingerprint": ec.file_fingerprint(p)}
+                else:
+                    print(f"⚠ 材料 {mid} 的路径不存在，未入指纹（过期检测对它失明）：{p}")
     ec.dump_json({"product": a.product, "inputs": inputs}, a.out)
     print(f"{a.product} manifest → {a.out}（inputs={sorted(inputs)}）")
 

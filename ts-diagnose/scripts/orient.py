@@ -217,7 +217,8 @@ def main():
         elif req:  # absent + required → 自动内联生产，不问用户
             print(f"  ⛔ 必需上游产物「{pid}」缺失——主 agent 立即内联生产（不问用户）：")
             print(f"     1. mkdir -p {pid}，把本 config 的 materials/questions 块拷入 "
-                  f"{pid}/diagnose_config.json（沿用已答，不重复问）；")
+                  f"{pid}/diagnose_config.json（沿用已答，不重复问；"
+                  f"materials 里的相对路径先改写成绝对路径再拷）；")
             print(f"     2. 在 {pid}/ 内跑 orient --playbook {prod_pb} 并按其菜谱完成；")
             print(f"     3. 回本目录写 config.products.{pid}="
                   f"{{workdir:'{pid}',status:'built'}} 后重跑 orient。")

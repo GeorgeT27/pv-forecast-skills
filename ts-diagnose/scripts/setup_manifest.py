@@ -21,10 +21,12 @@ def _inputs_of(cfg):
     for mid, rec in ((cfg or {}).get("materials") or {}).items():
         if not isinstance(rec, dict) or rec.get("status") != "present":
             continue
-        for p in rec.get("paths") or []:
+        for i, p in enumerate(rec.get("paths") or []):
             if os.path.exists(p):
-                inputs.setdefault(mid, {"path": p,
-                                        "fingerprint": ec.file_fingerprint(p)})
+                key = mid if i == 0 else f"{mid}#{i}"
+                inputs[key] = {"path": p, "fingerprint": ec.file_fingerprint(p)}
+            else:
+                print(f"⚠ 材料 {mid} 的路径不存在，未入指纹（过期检测对它失明）：{p}")
     return inputs
 
 
