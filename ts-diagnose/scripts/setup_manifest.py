@@ -30,6 +30,23 @@ def _inputs_of(cfg):
     return inputs
 
 
+def _window_range(values):
+    """min/max 按时间序而非字典序（非 ISO 时间戳字典序会错，如 '2026/1/10' 应晚于
+    '2026/1/2'）。用 pd.Timestamp 而非 stdlib datetime.fromisoformat——后者在
+    Python 3.11 上对非补零月/日（'2026-1-2'）直接 ValueError，无法覆盖本函数
+    要修的场景；pandas 本就是本文件硬依赖，改用它不额外加依赖。"""
+    def _key(v):
+        s = str(v)
+        try:
+            return (0, pd.Timestamp(s))
+        except (ValueError, TypeError):
+            return (1, s)  # 解析不了退回字典序，同类比较
+    vs = [v for v in values if str(v).strip()]
+    if not vs:
+        return None
+    return [str(min(vs, key=_key)), str(max(vs, key=_key))]
+
+
 def build_manifest(pred_path, alignment_path, cfg):
     df = pd.read_csv(pred_path)
     align = ec.read_json(alignment_path) or {}
@@ -49,7 +66,7 @@ def build_manifest(pred_path, alignment_path, cfg):
         "models": sorted(df["model"].astype(str).unique().tolist()),
         "freq": align.get("freq"),
         "n_rows": int(len(df)),
-        "window_range": [str(df["window_ts"].min()), str(df["window_ts"].max())],
+        "window_range": _window_range(df["window_ts"].tolist()),
         "materials": (cfg or {}).get("materials") or {},
         "inputs": inputs,
     }

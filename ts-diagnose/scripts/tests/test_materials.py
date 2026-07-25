@@ -186,6 +186,17 @@ def test_modelmap_blocker(tmp_path, monkeypatch):
     assert ec.modelmap_blocker({}, fm_diag) is None           # 无 model_code → 不管
 
 
+def test_modelmap_blocker_declined_product_still_blocks(tmp_path, monkeypatch):
+    """Task 8 Step 3：model_profile 产物 status=declined（用户放弃档案）且
+    model_code present、无 MODELMAP_RECEIPT.json —— declined ≠ 有档案，闸照落。
+    用户放弃档案的路径是 conclusion 声明缺席，不是绕过 model-audit 强制。"""
+    monkeypatch.chdir(tmp_path)
+    cfg = {"materials": {"model_code": {"status": "present", "paths": ["/repo"]}},
+           "products": {"model_profile": {"status": "declined"}}}
+    fm = {"id": "model-comparison"}
+    assert ec.modelmap_blocker(cfg, fm) is not None
+
+
 # ---------------------------------------------------------------- profile 固化
 def test_merge_profile_materials():
     prof = {"profile_version": ec.PROFILE_VERSION, "playbook": "x",

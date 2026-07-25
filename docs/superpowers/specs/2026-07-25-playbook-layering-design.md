@@ -65,14 +65,17 @@ upstream:
 ## 5. Level-2 瘦身
 
 所有分析 playbook：删 Stage 0（由 `upstream: setup` 取代）、`charts:` 收窄到目标核心集、其余图留可加画池。试点 **model-comparison**：
-- 阶段 5 → 3：总差距 → 分解+归因 → 结论；
+- 阶段 5 → 4（0 总差距 → 1 分解 → 2 机制变体 → 3 结论）；
 - 图 14 → 5：`worst-slice-compare, model-error-correlation, oracle-gap, horizon-degradation, cross-dim-stability`。
 
 其余 playbook（含新并入的 result-eval / feature-importance / subset-influence 等）按同样手法逐个改造。
 
 ## 6. 引擎变更（orient.py + config）
 
-- `diagnose_config.json` 新增 products 注册表：`products.<id> = {workdir, status: built|linked|absent, manifest_hashes}`。
+- `diagnose_config.json` 新增 products 注册表：`products.<id> = {workdir, status, accept_stale}`
+  （as-built 勘误 2026-07-25：原设计的 `manifest_hashes` 字段未落地——指纹实际存在
+  各产物自己的 manifest.inputs 里，由 `product_status()` 对账，注册表本身只记
+  workdir/status/accept_stale 三项）。
 - 工作目录布局：一个会话根目录；生产者在产物 id 命名的子目录跑（`<root>/setup/`、`<root>/model-audit/`…），level-2 在 `<root>/<goal>/` 跑；config 在根目录。
 - orient 解析顺序：材料 → 上游产物（required 缺 → 打印立即执行指令；optional 缺 → 三分支问）→ 阶段推进。
 - 过期检测见 §3。

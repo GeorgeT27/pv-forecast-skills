@@ -200,6 +200,38 @@ def test_file_fingerprint_head_tail_detects_footer_change(tmp_path, monkeypatch)
     assert ec.file_fingerprint(str(p)) != f1
 
 
+def test_file_fingerprint_ht_sampling_pin(tmp_path, monkeypatch):
+    """Task 8 Step 1：头+尾采样的完整三断言钉（Phase 1 旧测试因 head/tail 重叠
+    只证明了走 ht 路径，没钉住"中段不采样"的显式接受残余风险）。
+    32 字节文件，FULL_HASH_MAX_BYTES=8 / SAMPLE_BYTES=4 → 头 4B + 尾 4B 采样，
+    中段 offset 4..27 完全不覆盖。"""
+    monkeypatch.setattr(ec, "FULL_HASH_MAX_BYTES", 8)
+    monkeypatch.setattr(ec, "SAMPLE_BYTES", 4)
+    p = tmp_path / "f.bin"
+    base = bytes(range(32))
+    p.write_bytes(base)
+    f1 = ec.file_fingerprint(str(p))
+    assert f1.startswith("v1:ht:32:")
+
+    # 中段字节（offset 16，头尾采样窗口之外）改变 → 指纹不变（显式接受的残余风险）
+    mid = bytearray(base)
+    mid[16] = (mid[16] + 1) % 256
+    p.write_bytes(bytes(mid))
+    assert ec.file_fingerprint(str(p)) == f1
+
+    # 只改最后 1 字节（尾采样窗口内）→ 指纹必须变
+    tail = bytearray(base)
+    tail[-1] = (tail[-1] + 1) % 256
+    p.write_bytes(bytes(tail))
+    assert ec.file_fingerprint(str(p)) != f1
+
+    # 只改第 1 字节（头采样窗口内）→ 指纹必须变
+    head = bytearray(base)
+    head[0] = (head[0] + 1) % 256
+    p.write_bytes(bytes(head))
+    assert ec.file_fingerprint(str(p)) != f1
+
+
 def test_product_status_missing_input_is_stale(pbdir, tmp_path):
     raw = tmp_path / "raw.parquet"
     raw.write_text("v1", encoding="utf-8")
@@ -311,6 +343,26 @@ def test_orient_stale_upstream_warns_and_blocks(pbdir, tmp_path):
     r = run_orient_env(tmp_path, pbdir)
     assert "[stale]" in r.stdout and "accept_stale" in r.stdout
     assert "可开工" not in r.stdout
+
+
+def test_orient_optional_stale_upstream_blocks_work_start(pbdir, tmp_path):
+    """Task 8 Step 2（optional-stale 行为钉）：optional 产物 built 后其输入变了——
+    Phase 1 Task 4 已定语义：optional 但 stale = 未决不一致，仍要阻塞开工，不能因为
+    "反正是可选的"就放行。钉死防回归：既要打印 accept_stale 指引，也要「有 ✗ 先补」。"""
+    _write_pb(pbdir, "cons-opt", OPT_CONSUMER)
+    raw = tmp_path / "raw.parquet"
+    raw.write_text("v1", encoding="utf-8")
+    fp = ec.file_fingerprint(str(raw))
+    _seed_setup_product(tmp_path, {"inputs": {"predict": {"path": str(raw),
+                                                          "fingerprint": fp}}})
+    raw.write_text("v2-changed", encoding="utf-8")   # built 后改上游输入内容
+    (tmp_path / "diagnose_config.json").write_text(json.dumps(_cfg(
+        "cons-opt", {"products": {"setup": {"workdir": "setup", "status": "built"}}})),
+        encoding="utf-8")
+    r = run_orient_env(tmp_path, pbdir)
+    assert "[stale]" in r.stdout and "accept_stale" in r.stdout
+    assert "可开工" not in r.stdout
+    assert "有 ✗ 先补" in r.stdout
 
 
 # ------------------------------------------------------------ modelmap 接产物

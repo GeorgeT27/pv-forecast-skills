@@ -17,6 +17,8 @@ def main():
     ap.add_argument("--product", required=True)
     ap.add_argument("--config", default=ec.CONFIG_PATH)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--input", action="append", default=[],
+                    metavar="KEY=PATH", help="额外输入指纹（如上游产物 manifest）")
     a = ap.parse_args()
     inputs = {}
     for mid, rec in ((ec.read_json(a.config) or {}).get("materials") or {}).items():
@@ -27,6 +29,14 @@ def main():
                     inputs[key] = {"path": p, "fingerprint": ec.file_fingerprint(p)}
                 else:
                     print(f"⚠ 材料 {mid} 的路径不存在，未入指纹（过期检测对它失明）：{p}")
+    for spec in a.input:
+        key, _, path = spec.partition("=")
+        if not path:
+            sys.exit(f"--input 需要 KEY=PATH 形式：{spec}")
+        if os.path.exists(path):
+            inputs[key] = {"path": path, "fingerprint": ec.file_fingerprint(path)}
+        else:
+            print(f"⚠ --input {key} 路径不存在，未入指纹：{path}")
     ec.dump_json({"product": a.product, "inputs": inputs}, a.out)
     print(f"{a.product} manifest → {a.out}（inputs={sorted(inputs)}）")
 

@@ -54,6 +54,25 @@ def test_setup_manifest_contract(tmp_path):
     assert man["inputs"]["_adapter_code"]["path"] == "analysis_scripts/adapter.py"
 
 
+def test_setup_manifest_window_range_chronological_not_lexicographic(tmp_path):
+    """Task 8 Step 4：非补零时间戳格式（'2026/1/2' vs '2026/1/10'）字典序会把
+    '1/10' 排在 '1/2' 之前——window_range 的 min/max 必须按真实时间序。"""
+    (tmp_path / "predictions.csv").write_text(
+        "window_ts,unit_id,model,horizon_step,y_true,y_pred\n"
+        "2026/1/2 00:00,S1,A,0,1.0,1.1\n"
+        "2026/1/10 00:00,S1,A,0,2.0,2.1\n", encoding="utf-8")
+    (tmp_path / "alignment_report.json").write_text(
+        json.dumps({"models": ["A"], "n_aligned": 1, "freq": "1d"}),
+        encoding="utf-8")
+    (tmp_path / "diagnose_config.json").write_text(json.dumps({}), encoding="utf-8")
+    r = subprocess.run([sys.executable,
+                        os.path.join(SCRIPTS_DIR, "setup_manifest.py")],
+                       cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    man = json.loads((tmp_path / "setup_manifest.json").read_text(encoding="utf-8"))
+    assert man["window_range"] == ["2026/1/2 00:00", "2026/1/10 00:00"]
+
+
 def test_product_manifest_generic(tmp_path):
     _seed(tmp_path)
     r = subprocess.run([sys.executable,
@@ -66,6 +85,41 @@ def test_product_manifest_generic(tmp_path):
                      .read_text(encoding="utf-8"))
     assert man["product"] == "chart_sweep"
     assert set(man["inputs"]) == {"predict", "training_log"}
+
+
+def test_product_manifest_extra_input_fingerprinted(tmp_path):
+    """Task 8 Step 5：--input KEY=PATH 追加外部输入指纹（chart_sweep→setup 依赖边），
+    使 chart_sweep 因 setup_manifest.json 指纹变化自动判 stale——图不落后于数据。"""
+    _seed(tmp_path)
+    setup_manifest = tmp_path / "setup_manifest.json"
+    setup_manifest.write_text(json.dumps({"models": ["A"]}), encoding="utf-8")
+    r = subprocess.run([sys.executable,
+                        os.path.join(SCRIPTS_DIR, "product_manifest.py"),
+                        "--product", "chart_sweep",
+                        "--out", "chart_sweep_manifest.json",
+                        "--input", f"setup_manifest={setup_manifest}"],
+                       cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    man = json.loads((tmp_path / "chart_sweep_manifest.json")
+                     .read_text(encoding="utf-8"))
+    assert man["inputs"]["setup_manifest"]["path"] == str(setup_manifest)
+    assert man["inputs"]["setup_manifest"]["fingerprint"] == \
+        ec.file_fingerprint(str(setup_manifest))
+
+
+def test_product_manifest_extra_input_missing_path_warns_not_fails(tmp_path):
+    _seed(tmp_path)
+    r = subprocess.run([sys.executable,
+                        os.path.join(SCRIPTS_DIR, "product_manifest.py"),
+                        "--product", "chart_sweep",
+                        "--out", "chart_sweep_manifest.json",
+                        "--input", "setup_manifest=/no/such/path.json"],
+                       cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "路径不存在" in r.stdout
+    man = json.loads((tmp_path / "chart_sweep_manifest.json")
+                     .read_text(encoding="utf-8"))
+    assert "setup_manifest" not in man["inputs"]
 
 
 def _seed_multipath(tmp_path):

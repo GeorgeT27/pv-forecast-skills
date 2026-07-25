@@ -51,10 +51,18 @@ chartbook 各 recipe 的 CLI 节），产物进 `charts/`。对比类图在单�
 抛 ValueError——捕获后在清单记「因模型数 <2 未画」，不算失败。
 判读各图 JSON 描述符 → FINDINGS.md 现象清单（每条：图 id + 描述符数字 + 一句
 现象陈述，禁机制词）。跳过的图逐条注明原因（缺材料/模型数）。
-画完建索引后跑 `python3 <ENGINE>/scripts/product_manifest.py --product chart_sweep
---out chart_sweep_manifest.json`，随后主 agent 写
+画完建索引后跑：
+
+```
+python3 <ENGINE>/scripts/product_manifest.py --product chart_sweep \
+  --out chart_sweep_manifest.json \
+  --input setup_manifest=<setup 产物 workdir>/setup_manifest.json
+```
+
+随后主 agent 写
 `config.products.chart_sweep = {workdir: ".", status: "built"}`（本 playbook
-直接在自己的工作目录产出，产物即工作目录）。
+直接在自己的工作目录产出，产物即工作目录）。setup 重建后 chart_sweep 因该指纹
+自动判 stale——图不落后于数据。
 done：charts/*.json ≥1 + FINDINGS.md 含「现象」→ 停顿汇报，**流程终点**。
 
 ## 3. 证据升级规则
