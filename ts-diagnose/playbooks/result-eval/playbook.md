@@ -2,6 +2,17 @@
 id: result-eval
 name: 预测结果评估与归因
 goal: 评估一次预测结果（指标口径可配，默认 rmse_192），画标准图集，把指标变化归因到时段/单元/输入
+produces:
+  id: eval_report
+  manifest: gate_reports/conclusion_gate.json
+  marker_files: [CONCLUSION.md]
+upstream:
+  - product: setup
+    required: true
+  - product: model_profile
+    required: false
+  - product: chart_sweep
+    required: false
 materials:
   required: [predict, truth]
   optional: [features, train_y, model_code, training_log, experiment_config]
@@ -11,6 +22,8 @@ stages:
     done_when:
       artifacts: ["suspect_days.csv"]
     prereqs:
+      - desc: setup 产物就绪
+        check: "product:setup"
       - desc: 口径问题已答
         check: "question:metric-caliber"
   - id: 1
@@ -28,9 +41,7 @@ stages:
       - desc: 指标已算
         check: "stage:1"
     charts: [error-breakdown, intraday-profile, worst-points,
-             horizon-degradation, rolling-stability, true-vs-pred-scatter,
-             train-test-drift, feature-error-conditional, feature-trend-overlay,
-             y-vs-feature-mapping, cross-dim-stability]
+             rolling-stability, cross-dim-stability]
   - id: 3
     name: 事实提取（现象清单，停顿点）
     done_when:
@@ -54,15 +65,6 @@ questions:
     why: "口径不同结论可反转"
     options: ["rmse_192（默认）", "指定子段", "自定义公式"]
     default: "rmse_192"
-contexts:
-  - id: model-profile
-    name: 模型架构档案
-    workdir_key: modelmap_dir
-    status_key: modelmap_status
-    marker_files: [models.md]
-    on_absent: ask
-    provider_playbook: model-audit
-    trigger_material: model_code
 ---
 
 # result-eval：预测结果评估与归因
@@ -86,7 +88,8 @@ orient 承接**（不再需要专属的 run_orient.py：orient 每次进入自�
 - **滚动窗口重叠陷阱**：若预测/真值以"每行一个窗口、行间滚动步进"的形式组织（相邻行窗口
   高度重叠），**任何分布统计（直方图、分位数、KS 检验）前必须先把滚动窗口重建为物理连续
   序列**，否则同一物理点会被重复计数几百次。是否是这种滚动窗口结构、重叠了多少步，属于
-  Stage 0 对齐时要确认的 schema 事实，不能凭经验假设。
+  Stage 0 对齐时要确认的 schema 事实，不能凭经验假设。滚动窗口结构与重叠步数在 setup
+  适配时已确认并记入 alignment_report——本 playbook 直接读，不重新猜。
 - **训练数据是可选输入，只用于漂移诊断**：`train_y` 不参与指标计算，唯一用途是给
   `train-test-drift` 一类图提供基准分布（回答"预测单元是不是落在训练没覆盖的分布里"）。
   没有 `train_y` 就跳过漂移类图，其余指标与图谱照常。
@@ -97,22 +100,17 @@ orient 承接**（不再需要专属的 run_orient.py：orient 每次进入自�
 
 ## 2. 逐阶段菜谱
 
-### Stage 0：路径与质检
+### Stage 0：质检（消费 setup 长表）
 
 输入：intake 盘点到的 `predict`/`truth`（及可选 `features`/`train_y`）材料路径。
 
 菜谱：
-1. 用户调用本 playbook 时通常会同时给出预测值与真值路径；缺任一直接问，不自行搜索猜测——
-   不同批次/模型会有多份候选文件，选错整个分析都错。
-2. 若用户的评估口径依赖一个外部指标脚本（原体系里的 `metric.py` 一类工具），路径由用户给，
-   本 playbook 不内置猜测逻辑；找不到用户指定路径时可在项目目录内按文件名搜索列候选，
-   由用户确认，不自行裁决。
-3. **质检先于一切指标计算**（坏 label 会污染所有下游结论）。复用
-   `<本 playbook 目录>/scripts/run_quality_check.py`（原技能固化脚本，逻辑不变，仅路径
-   随本次迁移调整）：schema 侦察（列名与脚本顶部 CONFIG 对不上只改 CONFIG 不改逻辑）、
-   基础完整性（重复戳/网格缺口/常值段）、滚动窗口一致性抽查（不一致则取点口径全不可信，
-   停下报告用户）、重建序列扫可疑日 → `suspect_days.csv`。
-4. **可疑日二分处理**：区分"错误"（录入/传感器故障 → 从统计剔除并记录）与"事件"（限电/
+1. **质检对象是 setup 产物的规范长表**（orient 注入的 manifest 摘要给出 predictions.csv
+   位置与模型清单，不再自行摸文件）。复用 `<本 playbook 目录>/scripts/run_quality_check.py`
+   （原技能固化脚本，逻辑不变，仅路径随本次迁移调整）：schema 侦察（列名与脚本顶部 CONFIG
+   对不上只改 CONFIG 不改逻辑）、基础完整性（重复戳/网格缺口/常值段）、滚动窗口一致性抽查
+   （不一致则取点口径全不可信，停下报告用户）、重建序列扫可疑日 → `suspect_days.csv`。
+2. **可疑日二分处理**：区分"错误"（录入/传感器故障 → 从统计剔除并记录）与"事件"（限电/
    停机/极端天气 → 保留数据、进 project-context 的事件台账、归因时显式考虑）——两者处理
    相反，不可一律当异常"修掉"。
 
@@ -143,6 +141,9 @@ done：`*.xlsx`（或用户口径约定的等价指标表）落盘。
 python3 <ENGINE>/chartbook/scripts/chart_<蛇形id>.py \
   --pred predictions.csv --truth truth.csv --out-dir charts/ [各图特有参数]
 ```
+
+**chart_sweep 产物 built/linked 时**：与本阶段声明重叠的图直接复用其 charts/*.json
+判读，不重画；只补画本组缺的图。
 
 画完跑 `<ENGINE>/scripts/build_index.py` 建 `INDEX.md`（阶段闸的产物判据之一）。
 每张图落盘 PNG + 同名 `.stats.json`；**PNG 只给人看，分析一律读 stats.json，不 Read
@@ -179,8 +180,8 @@ done：`FINDINGS.md` 含"现象"标记 → **停下来**：向用户报现象清
 - **"为什么某段变差了？"**：查台账/事件 → 定位口径/时段 → 定位坏样本 → 占比分解（构成
   变化 vs 能力变化）→ 分布漂移（有 train_y 时）→ 过反驳门写结论。
 - **"为什么模型 A 比 B 好（差）？"**：同质化程度 → 分组条件对比 → 定位时间/时效 →
-  对照模型架构档案（Stage 0 已声明的 `model-profile` 上下文，`model_code` present 时
-  经 model-audit 提供）验证机制 → 过反驳门。
+  对照模型架构档案（`model_profile` 上游产物，`model_code` present 时经 model-audit
+  提供）验证机制 → 过反驳门。
 
 下结论前必过**结论三道门**（稳健性门槛 → 假设登记 → 反驳门），细则见本目录
 `references/analysis-discipline.md`；机制结论必须引用假设登记文档中的一条 H-ID。
@@ -230,29 +231,29 @@ Stage 2 画图与 Stage 3 逐图事实提取天然可并发：一个图组/一�
   `y-vs-feature-mapping` 三张输入侧图跳过，Stage 4 的"输入原料变化"反驳门条目降级为
   "未排除，缺特征侧证据"。
 - `train_y` 缺：`train-test-drift` 跳过，Stage 4 分布外/漂移反驳门条目降级为"未排除"。
-- `model_code` 缺：`model-profile` 上下文保持 absent，Stage 4 的模型对比归因只能停在
-  现象/统计层面，机制层面的"为什么"标注"缺代码锚定的架构档案，暂不可深究"。
+- `model_code` 缺：`model_profile` 产物保持 absent/declined，Stage 4 的模型对比归因只能
+  停在现象/统计层面，机制层面的"为什么"标注"缺代码锚定的架构档案，暂不可深究"。
 - `training_log`/`experiment_config` 缺：不阻塞主线，仅在核验训练窗口/超参相关假设时
   少一路交叉验证来源，缺席记 `open-questions.md`。
 
 ## 8. chartbook 覆盖声明
 
-声明进 Stage 2 charts：error-breakdown、intraday-profile、worst-points、
-horizon-degradation、rolling-stability、true-vs-pred-scatter、train-test-drift、
-feature-error-conditional、feature-trend-overlay、y-vs-feature-mapping、
-cross-dim-stability。
+声明进 Stage 2 charts（月度/时段归因组）：error-breakdown、intraday-profile、
+worst-points、rolling-stability、cross-dim-stability。
 
-跳过：model-error-correlation / oracle-gap / worst-slice-compare /
-model-rank-significance / baseline-skill——五者定位是"多模型/多方案对比"，本 playbook
-的模型集大小不预设，present ≥2 个预测列时这些图仍可按需临时加画（图表选择门的可加画池），
-只是不作为默认草绘集，因为本目标的核心主线是单一预测结果自身的质量归因而非多方案竞赛；
-global-attribution / local-waterfall / lookback-decay——三者需要 `serving_api`（在线
-预测服务），本 playbook 的 materials 未声明该材料，结构性不适用；
-bad-window-clustering / good-bad-contrast——聚焦"坏样本聚类/对比"，与 Stage 3 的现象
-提取存在功能重叠，默认不进草绘集但保留在可加画池供用户按需补充；
-error-acf / pp-calibration / theil-decomposition / time-shift-diagnosis /
-horizon-error-quantiles——均为误差结构的补充切面，默认不进草绘集（Stage 2 的 11 张
-已覆盖误差结构/时间稳定性/输入侧/跨维度四大主线），用户按需可加画。
+跳过（默认不画，可经图表选择门加画或复用 chart_sweep 产物；逐条理由）：
+true-vs-pred-scatter / horizon-degradation——单结果广谱体检图，体检类 playbook
+的 chart_sweep 产物覆盖，按需复用；
+train-test-drift——漂移专项（需 train_y），归 Stage 4 深挖时按需加画；
+feature-error-conditional / feature-trend-overlay / y-vs-feature-mapping——输入侧
+归因三件套（需 features），Stage 4 点名输入侧假设时加画；
+model-error-correlation / oracle-gap / worst-slice-compare /
+model-rank-significance / baseline-skill——多模型对比定位，本目标主线是单一结果
+质量归因，present ≥2 模型时可加画；
+global-attribution / local-waterfall / lookback-decay——需 serving_api，结构性不适用；
+bad-window-clustering / good-bad-contrast / error-acf / pp-calibration /
+theil-decomposition / time-shift-diagnosis / horizon-error-quantiles——误差结构
+补充切面，可加画池。
 
 ## 9. 运行后回顾
 

@@ -346,3 +346,35 @@ def test_modelmap_blocker_skips_playbooks_not_declaring_model_code(pbdir):
     fm_with_mc = {"id": "consumer-like",
                   "materials": {"required": [], "optional": ["model_code"]}}
     assert ec.modelmap_blocker(cfg, fm_with_mc)  # 声明了就仍要档案
+
+
+# ------------------------------------------------------------ 真实 playbook 转换守卫
+# Phase 2 逐个转换的目标态：upstream 声明表 + contexts 必须清空。
+# 每转换一个 playbook 加一行——表驱动，红→绿即转换完成的机器判据。
+REAL_UPSTREAM = {
+    "model-comparison": {"setup": True, "model_profile": False, "chart_sweep": False},
+    "result-eval": {"setup": True, "model_profile": False, "chart_sweep": False},
+}
+REAL_PRODUCES = {
+    "data-setup": "setup",
+    "model-audit": "model_profile",
+    "fact-scan": "chart_sweep",
+    "result-eval": "eval_report",
+}
+
+
+def test_real_playbooks_upstream_table():
+    for pid, expect in REAL_UPSTREAM.items():
+        path = os.path.join(ec.PLAYBOOKS_DIR, pid, "playbook.md")
+        fm = ec.load_frontmatter(path)
+        ups = {u["product"]: bool(u.get("required"))
+               for u in (fm.get("upstream") or [])}
+        assert ups == expect, f"{pid} upstream 声明与目标态不符：{ups}"
+        assert not fm.get("contexts"), f"{pid} 已转换却仍残留 contexts 声明"
+
+
+def test_real_playbooks_produces_table():
+    idx = ec.products_index()
+    for pid, prod in REAL_PRODUCES.items():
+        assert prod in idx and idx[prod]["playbook"] == pid, \
+            f"产物 {prod} 应由 {pid} 生产，实际：{idx.get(prod)}"
