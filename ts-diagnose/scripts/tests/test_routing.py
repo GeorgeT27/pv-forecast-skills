@@ -22,7 +22,7 @@ ENGINE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 ALL_PLAYBOOK_IDS = (
     "training-sufficiency", "robustness", "feature-importance",
     "model-comparison", "deployment-drift", "fact-scan",
-    "model-audit", "result-eval", "subset-influence",
+    "model-audit", "result-eval", "subset-influence", "data-setup",
 )
 
 
@@ -57,8 +57,8 @@ def test_engine_routes_deployment_drift():
     assert "退化" in text
 
 
-def test_engine_description_enumerates_all_nine_playbooks():
-    """单入口化后 description 必须正面枚举全部 9 个 playbook id（含本轮并入的三个）。"""
+def test_engine_description_enumerates_all_playbooks():
+    """单入口化后 description 必须正面枚举全部 playbook id（Phase1 起含 data-setup 共 10 个）。"""
     d = description_of(ENGINE_DIR)
     missing = [pid for pid in ALL_PLAYBOOK_IDS if pid not in d]
     assert not missing, f"引擎 description 缺 playbook id：{missing}"
