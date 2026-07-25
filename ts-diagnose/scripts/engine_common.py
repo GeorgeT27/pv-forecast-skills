@@ -678,7 +678,9 @@ def has_chart_stage(fm):
 
 
 def modelmap_blocker(cfg, fm):
-    """模型档案强制衔接（spec §4）：有模型代码就必须先有 .modelmap 回执。"""
+    """模型档案强制衔接（spec §4）：有模型代码就必须先有 .modelmap 回执。
+    2026-07-25 裁决：保留本闸不降级为 upstream 声明——variants 无法表达 material 触发的
+    optional→required 升级（phase2-TODO 第 4 条）。"""
     if (fm or {}).get("id") == "model-audit":
         return None
     if material_status(cfg, "model_code") != "present":

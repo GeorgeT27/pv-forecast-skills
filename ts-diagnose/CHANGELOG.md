@@ -51,3 +51,30 @@
 - model-audit 升格生产者（model_profile）；fact-scan 消费 setup、产 chart_sweep。
 - 试点 model-comparison：图 14→5（对比核心集），阶段 5→4，contexts 改 upstream。
 - 向后兼容：无 upstream 声明的 playbook 行为不变；contexts: 迁移期保留，Phase 2 退役。
+
+## 2026-07-25 分层机制 Phase 2（批量转两层 + contexts 退役 + metric-eval，全量落地）
+
+- 剩余 6 个分析 playbook 批量转两层（逐个 task，模式照 model-comparison 试点）：
+  result-eval（新产物 eval_report，图 11→5）、deployment-drift（适配器出 Stage 0
+  归 setup，图 10→4）、robustness（基线复算改消费 setup 长表）、feature-importance
+  （对齐让渡 setup，features 升 required）、subset-influence（heldout-eval 上下文
+  改 eval_report 产物三分支）、training-sufficiency（setup 作可选加速器，日志位置
+  从 manifest 免问）——至此 7 个分析 playbook 全部声明 upstream，`contexts` 全零命中。
+- contexts: 机制退役：engine_common 删 context_status/context_embed_hint 两函数、
+  orient 删 contexts 循环、test_engine 删配套用例；upstream 产物机制全面接管。
+- Phase 1 终审移交加固五件：尾采样钉、optional-stale 钉、modelmap declined 钉、
+  window_range 时间序修正、chart_sweep→setup 依赖边补齐。
+- 新生产者 metric-eval（产物 metric_table）：只算指标不归因，口径由用户指定
+  （默认 rmse_192）；result-eval/model-comparison 声明其为 optional 上游，口径
+  匹配即复用免重算。引擎 4 生产者（data-setup/model-audit/fact-scan/metric-eval）
+  + 7 分析 playbook，共 11 个 playbook。
+- 文档收尾与裁决落笔：question-discipline.md 补「上游产物拥有的问题」一节
+  （生产者拥有领域问题，消费者不得重复声明同 id 问题，validate_upstream 机器拒绝）；
+  crystallize.md 补一行（products 登记不入 profile，同 degraded_ok 现场事实不固化）；
+  modelmap_blocker docstring 落笔裁决（不降级为 upstream 声明——variants 无法表达
+  material 触发的 optional→required 升级）；README 两层表随全量落地更新（10→11
+  playbook，metric-eval 生产者行，result-eval 兼产 eval_report 注记）；
+  phase2-TODO.md 转为完成记录（保留文件作沿革）。
+- 全阶段零 golden stage 键平移（各 playbook 只挖改/收窄内容，未触发阶段重编号）。
+- 验证：`python3 -m pytest ts-diagnose/scripts/tests -q` 全绿；`grep -rn "contexts"
+  ts-diagnose/playbooks/*/playbook.md` 零命中。

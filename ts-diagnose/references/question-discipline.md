@@ -43,4 +43,11 @@
 
 `source` 枚举：`user`（本次问的）/ `profile`（固化技能带来）/ `default`（按声明默认）/ `experiment-line`（project-context 实验线预填）。**answer 存原话**（尤其样例行），不要存你的转述——转述丢信息且没法核对。派生出的结构化配置（路径、列名映射）另存 config 其他键，问答对保持原始。
 
+## 上游产物拥有的问题
+
+生产者 playbook 拥有其领域的形状问题（data-setup：freq、align-keys），消费者
+**不得重复声明同 id 问题**——validate_upstream 在 load_frontmatter 时机器拒绝，
+不是约定是闸。消费者要用答案时读上游产物的 manifest（orient 已注入摘要），
+不再问用户第二遍。目标特有口径问题（metric-caliber、model-set 等）留在消费者。
+
 这份 questions 块是 crystallize 的核心原料：固化 = 把其中"跨次稳定"的条目搬进 profile.yaml。

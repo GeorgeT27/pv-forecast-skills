@@ -1,4 +1,4 @@
-# Playbook 分层 Phase 2 待办（试点验证后另出实施计划）
+# 已全部落地（2026-07-25，分支 playbook-layering-phase2）
 
 前置：Phase 1 已合入且 model-comparison 试点在真实数据上至少跑通一次。
 
@@ -6,7 +6,7 @@
    不靠 LLM 记得提——每个分析 playbook 把**所有对它适用的可选产物**
    （model_profile / chart_sweep）逐条写进 upstream，orient 逐个打三分支问，
    用户由此知晓 level-1 能力；prose 里"已有产物则复用"一律不算数。
-   （model-comparison 已于 Phase 1 收尾补上 chart_sweep optional。）
+   （model-comparison 已于 Phase 1 收尾补上 chart_sweep optional。）→ 落在 Task 1-6。
 1. 批量改造剩余 6 个 playbook（逐个 task，模式照 model-comparison 试点）：
    - result-eval / deployment-drift / robustness：upstream setup(required)，
      删各自适配对齐阶段，charts 收窄到目标核心集（result-eval 保留月度归因组；
@@ -18,13 +18,20 @@
    - training-sufficiency：不依赖 setup（记录源是训练日志不是预测长表）——
      改为读 setup manifest 的 training_log 位置作可选加速（optional），
      Stage 0 探测记录源保留。
+   → 落在 Task 1-6（result-eval/deployment-drift/robustness/feature-importance/
+   subset-influence/training-sufficiency 各一个 task，逐个转两层并跑绿）。
 2. 各 playbook golden manifest 的 stage 键随阶段重编号平移；正文阶段号与
-   gen_gate --stage 参数同步。
+   gen_gate --stage 参数同步。→ 零平移见计划裁决：本阶段不做任何阶段重编号，
+   全计划零 golden stage 键平移（本条按此落空，属预期）。
 3. contexts: 机制退役：spec 删 §contexts、engine_common 删 context_status/
    context_embed_hint、orient 删 contexts 循环、test_engine 删对应用例——
-   前提：grep 确认全部 playbook 无 contexts 声明。
+   前提：grep 确认全部 playbook 无 contexts 声明。→ 落在 Task 7。
 4. modelmap_blocker 评估是否降级为普通 upstream 声明（model_code present 时
-   model_profile 自动升 required 的规则能否用 variants 表达）。
+   model_profile 自动升 required 的规则能否用 variants 表达）。→ 保留裁决：
+   本闸不降级——variants 无法表达 material 触发的 optional→required 升级；
+   裁决落笔见 `ts-diagnose/scripts/engine_common.py` 的 `modelmap_blocker` docstring。
 5. 固化（crystallize）与 profile 机制对 products 的兼容：profile 是否允许携带
    products 登记（倾向不允许——产物是每次运行的现场事实，如 degraded_ok 同理）。
+   → 落笔于 `ts-diagnose/references/crystallize.md`：products 登记不入 profile。
 6. 提问纪律文档（question-discipline.md）补「上游产物拥有的问题」一节。
+   → 落在 Task 10（文档收尾，与本文件的收口同批次落笔）。
