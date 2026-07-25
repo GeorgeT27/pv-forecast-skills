@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把剩余 6 个分析 playbook（result-eval / deployment-drift / robustness / feature-importance / subset-influence / training-sufficiency）改造到 produces/upstream 机制，退役 contexts: 机制，落地 Phase 1 终审移交的加固项。
+**Goal:** 把剩余 6 个分析 playbook（result-eval / deployment-drift / robustness / feature-importance / subset-influence / training-sufficiency）改造到 produces/upstream 机制，退役 contexts: 机制，落地 Phase 1 终审移交的加固项，并新增 level-1 生产者 **metric-eval**（产物 `metric_table`：只算指标不做归因，用户 2026-07-25 提出——"给 predict/truth parquet，问我要什么指标，算出来"，且指标表可被 result-eval / model-comparison 复用免重算）。
 
 **Architecture:** 沿用 Phase 1 已落地的机制（`produces`/`upstream` frontmatter + orient 机器裁决 + products 注册表 + 指纹过期检测），本阶段只做声明改造与 prose 手术，不加新机制——唯二的引擎代码变更是 contexts 代码路径删除（Task 7）与 product_manifest.py 的 `--input` 扩展 + setup_manifest 时间序修正（Task 8）。**本阶段不做任何阶段重编号**：deployment-drift 的 Stage 0 只挖掉适配器部分保留误差序列计算，全部 golden manifest 的 stage 键原样不动。
 
@@ -11,11 +11,12 @@
 ## Global Constraints
 
 - 每个 task 结束时 `python3 -m pytest ts-diagnose/scripts/tests -q` 全绿（初始 160 个，逐 task 递增）。
-- SKILL.md ≤60 行（test_routing 锁定）；本计划不改 SKILL.md。
+- SKILL.md ≤60 行（test_routing 锁定）。Task 9 新增 metric-eval 后引擎共 **11 个 playbook**：SKILL.md description 与路由表加 metric-eval（触发语「只算指标/算个 RMSE/给我指标表」），`test_routing.ALL_PLAYBOOK_IDS` 同步加 `"metric-eval"`，行数预算内完成。
 - **Layer-1 独立性守卫**（test_layering）：playbook 正文出现另一 playbook 的字面 id，仅当对方是自己声明的 provider（contexts.provider_playbook ∪ upstream 推导的生产者）才合法。改造后 upstream 推导即白名单；prose 若触守卫且不该声明依赖，按 Phase 1 判例改写为非 id 措辞（如「体检类 playbook」）。
 - **提问去重守卫**（validate_upstream，load_frontmatter 时执行）：消费者不得重复声明生产者拥有的问题。data-setup 拥有 `freq` 与 `align-keys`——声明 `upstream: setup` 的 playbook 必须删掉自己的同 id 问题。
 - **materials 块除 Task 4（feature-importance）外一律不动**：robustness / training-sufficiency 现在不声明 materials，modelmap_blocker 对它们照常生效（Phase 1 豁免收窄的前提），加 materials 块会静默改变闸行为。
-- **产物 id 全引擎唯一**：本计划新增 `eval_report`（生产者 result-eval）。生产者工作目录按产物 id 命名（`<root>/eval_report/`）。
+- **产物 id 全引擎唯一**：本计划新增 `eval_report`（生产者 result-eval）与 `metric_table`（生产者 metric-eval，Task 9）。生产者工作目录按产物 id 命名（`<root>/eval_report/`、`<root>/metric_table/`）。
+- **口径问题归属**：`metric-caliber` 仍归各消费者（默认值随目标不同：result-eval rmse_192、deployment-drift rmse_window）；metric-eval 拥有的新问题 id 为 **`metric-spec`**（不与 metric-caliber 冲突）。消费者复用 metric_table 前必须核对口径匹配——口径不匹配视同 absent，不许拿错口径的数字。
 - 可选生产者必须写进 upstream 逐条机器问（用户 2026-07-25 明确要求，见 phase2-TODO 第 0 条）：凡消费图的分析 playbook 声明 `chart_sweep (optional)`；机制归因类声明 `model_profile (optional)`。
 - 提交信息风格：`feat(ts-diagnose): <一句话>——<机制/理由>`，中文。
 - 分支：`playbook-layering-phase2`，自 main 切出。
@@ -30,6 +31,9 @@
 | feature-importance | setup(req) | — | （本无） | 无 charts，维持 | importance-scope 去路径问 |
 | subset-influence | setup(req) + model_profile(opt) + eval_report(opt) | — | 删 heldout-eval | 无 charts，维持 | 无 |
 | training-sufficiency | setup(**opt**) | — | （本无） | 无 charts，维持 | 无（prose 注记免问日志位置） |
+| **metric-eval**（新，Task 9） | setup(req) | **metric_table**（新） | — | 无 charts | 新问题 `metric-spec` |
+
+（Task 9 同时给 result-eval 与 model-comparison 追加 `metric_table (optional)` upstream 并更新 REAL_UPSTREAM 两行——消费者接线放在生产者声明之后，products_index 校验才通得过。）
 
 设计裁决记录（执行者不需重新决策）：
 - **不重编号**：deployment-drift 原 Stage 0「口径与对齐」= 薄适配器 + error_series.py 两件事。适配器归 setup，error_series.py 是分析活留下——Stage 0 更名「误差序列（口径）」，1..5 原样。全计划零 golden stage 键平移（phase2-TODO 第 2 条按此落空，属预期）。
@@ -594,7 +598,98 @@ git commit -m "fix(ts-diagnose): Phase1 终审移交加固五件——尾采样�
 
 ---
 
-### Task 9: 文档收尾与裁决落笔
+### Task 9: 新生产者 metric-eval（产物 metric_table）+ 消费者接线
+
+**Files:**
+- Create: `ts-diagnose/playbooks/metric-eval/playbook.md`
+- Create: `ts-diagnose/playbooks/metric-eval/golden/make_golden.py`、`golden/manifest.json`、`golden/reference/stage0_metrics.py`
+- Modify: `ts-diagnose/playbooks/result-eval/playbook.md`、`ts-diagnose/playbooks/model-comparison/playbook.md`（各加 metric_table optional upstream + 复用 prose）
+- Modify: `ts-diagnose/SKILL.md`（description + 路由行）
+- Test: `ts-diagnose/scripts/tests/test_routing.py`（ALL_PLAYBOOK_IDS）、`test_products.py`（REAL_PRODUCES/REAL_UPSTREAM 更新）
+
+**Interfaces:**
+- Produces: 产物 `metric_table`——manifest `metric_table_manifest.json`（product_manifest.py 产，纯 staleness 用），markers `metrics.csv`（逐模型×逐单元长表）+ `metrics_summary.json`（自足：口径定义原文 + 逐模型汇总值 + n_rows + 窗口范围——**下游只读这个**，不重摸 csv）。
+- 问题 `metric-spec` 归 metric-eval 所有。
+
+- [ ] **Step 1: 守卫先红**——`test_routing.py` 的 `ALL_PLAYBOOK_IDS` 加 `"metric-eval"`；`test_products.py` 的 `REAL_PRODUCES` 加 `"metric-eval": "metric_table"`，`REAL_UPSTREAM` 加：
+
+```python
+    "metric-eval": {"setup": True},
+```
+
+并把 `"result-eval"` 与 `"model-comparison"` 两行的期望改为各含 `"metric_table": False`。
+
+Run: `python3 -m pytest ts-diagnose/scripts/tests/test_routing.py ts-diagnose/scripts/tests/test_products.py -q` → FAIL。
+
+- [ ] **Step 2: 写 playbook**。`metric-eval/playbook.md` frontmatter：
+
+```yaml
+---
+id: metric-eval
+name: 指标计算（只算不评）
+goal: 按用户指定口径从 setup 长表算逐模型指标表，产 metric_table 产物——终点即数字，不画图不归因不下结论
+produces:
+  id: metric_table
+  manifest: metric_table_manifest.json
+  marker_files: [metrics.csv, metrics_summary.json]
+upstream:
+  - product: setup
+    required: true
+stages:
+  - id: 0
+    name: 口径确认与计算
+    done_when:
+      artifacts: [metrics.csv, metrics_summary.json]
+    prereqs:
+      - desc: setup 产物就绪
+        check: "product:setup"
+      - desc: 指标口径已确认
+        check: "question:metric-spec"
+  - id: 1
+    name: 产物清单落盘
+    done_when:
+      artifacts: [metric_table_manifest.json]
+    prereqs:
+      - desc: 指标表就绪
+        check: "stage:0"
+materials:
+  required: [predict, truth]
+questions:
+  - id: metric-spec
+    stage: 0
+    ask: "要算什么指标？（可多选；默认 rmse_192=每行全部 horizon 点的 RMSE；外部脚本则给路径与调用方式）"
+    why: "口径是本 playbook 的全部语义——猜口径等于白算"
+    options: ["rmse_192（默认）", "指定 horizon 子段 RMSE", "MAE/ACC 等其他标准指标", "用户外部指标脚本（给路径）"]
+    default: null
+---
+```
+
+（default 故意为 null：**必问不许默认跳过**——这是"问用户要什么指标"的机器强制。）
+
+正文骨架（照 data-setup 的体例写全 8 节，要点）：
+- §1 陷阱：①口径必须落 metrics_summary.json 的 `caliber` 字段原文（含取点/聚合定义），下游核对口径匹配靠它；②外部脚本先对账（任选一段自算 vs 脚本输出，相对差 <1% 才算理解一致——沿 result-eval Stage 1 现行纪律）；③只算不评——数字大小不解读，解读是 result-eval 的活。
+- §2 Stage 0 菜谱：从 setup 的 predictions.csv 逐模型按口径算；生成脚本 `analysis_scripts/metrics.py` 过生成闸 `gen_gate.py --playbook metric-eval --stage 0`；落 metrics.csv（列：model,unit_id,window_ts,metric,value）+ metrics_summary.json（`{"caliber": str, "models": {name: value}, "n_rows": int, "window_range": [...]}`）。
+- §2 Stage 1：`python3 <ENGINE>/scripts/product_manifest.py --product metric_table --out metric_table_manifest.json --input predictions=<setup workdir>/predictions.csv --input setup_manifest=<setup workdir>/setup_manifest.json`，回父目录登记 `config.products.metric_table = {workdir, status: "built"}`。（--input 由 Task 8 引入——本 task 依赖 Task 8 先完成。）
+- §7 降级：predict/truth 缺 → 不可做；§8 chartbook：全部 28 recipe 跳过，理由「结构性不适用——本 playbook 不画图」。
+
+- [ ] **Step 3: golden**。`make_golden.py` 确定性生成小 predictions.csv（2 模型 × 2 窗 × 4 步，手算 RMSE 已知）；`manifest.json` stage 键 `"0"`：expect = 两模型 rmse_192 精确值；`reference/stage0_metrics.py` 为可过闸参考实现（CLI：`--pred predictions.csv --caliber rmse_192 --out metrics.csv --summary metrics_summary.json`）。
+
+- [ ] **Step 4: 消费者接线**：
+  1. result-eval frontmatter upstream 追加 `- {product: metric_table, required: false}`；Stage 1 正文开头补：「**metric_table 产物 built/linked 且 metrics_summary.json 的 caliber 与本次 metric-caliber 答案一致** → 直接复用其汇总值为指标表，不重算；口径不一致视同 absent（照常自算，FINDINGS 注明存在另一口径的指标表）。」
+  2. model-comparison frontmatter upstream 追加同条目；Stage 0 正文补同样的复用/口径核对句。
+- [ ] **Step 5: SKILL.md**：description 与路由表加 metric-eval 行（触发语：「只算指标 / 算个 RMSE / 给我指标表，不用分析」→ metric-eval）。`wc -l` 确认 ≤60。
+
+- [ ] **Step 6: 全量测试** → 全绿。
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add ts-diagnose/ && git commit -m "feat(ts-diagnose): 新生产者 metric-eval——metric_table 产物只算指标不归因，result-eval/model-comparison 口径匹配即复用"
+```
+
+---
+
+### Task 10: 文档收尾与裁决落笔
 
 **Files:**
 - Modify: `ts-diagnose/references/question-discipline.md`（新节）
@@ -618,7 +713,7 @@ git commit -m "fix(ts-diagnose): Phase1 终审移交加固五件——尾采样�
 
 - [ ] **Step 3**: `engine_common.py` 的 `modelmap_blocker` docstring 补：「2026-07-25 裁决：保留本闸不降级为 upstream 声明——variants 无法表达 material 触发的 optional→required 升级（phase2-TODO 第 4 条）。」
 
-- [ ] **Step 4**: `README.md`：分析层表格加一列说明 result-eval 兼产 `eval_report`；删除第 31 行「（分层机制 Phase 1 已落地…phase2-TODO.md）」括号段，改为「（分层机制已全量落地：3 生产者 + 7 分析 playbook 全部声明上游；contexts 机制已退役。）」。
+- [ ] **Step 4**: `README.md`：生产者层表加 metric-eval 行（产物 metric_table）；分析层表说明 result-eval 兼产 `eval_report`；「10 个 playbook」全文改「11 个 playbook」；删除第 31 行「（分层机制 Phase 1 已落地…phase2-TODO.md）」括号段，改为「（分层机制已全量落地：4 生产者 + 7 分析 playbook 全部声明上游；contexts 机制已退役。）」。
 
 - [ ] **Step 5**: `phase2-TODO.md` 内容整体替换为完成记录（保留文件作沿革）：首行「# 已全部落地（2026-07-25，分支 playbook-layering-phase2）」+ 原 6 条逐条一行标注落在哪个 task（0→Task1-6、1→Task1-6、2→零平移见计划裁决、3→Task7、4→保留裁决见 engine_common docstring、5→crystallize.md、6→Task9）。
 
@@ -637,4 +732,4 @@ git commit -m "docs(ts-diagnose): Phase 2 收尾——提问归属节/裁决落�
 
 ## 完成判据
 
-全部 9 task 提交、全量 pytest 绿、`grep -rn "contexts" ts-diagnose/playbooks/*/playbook.md` 零命中、REAL_UPSTREAM 表覆盖全部 7 个分析 playbook。之后走 finishing-a-development-branch（合并方式用户定）。
+全部 10 task 提交、全量 pytest 绿、`grep -rn "contexts" ts-diagnose/playbooks/*/playbook.md` 零命中、REAL_UPSTREAM 表覆盖全部 7 个分析 playbook + metric-eval、SKILL.md 11 playbook 且 ≤60 行。之后走 finishing-a-development-branch（合并方式用户定）。
