@@ -97,3 +97,21 @@ upstream:
 - 通用 DAG 调度器 / 拓扑排序（两三层深的图用递归解析即可；若未来出现 level-2 产物再被别的 level-2 消费的三层以上链，才重新评估）；
 - 独立的 training-setup-discovery playbook（并入 data-setup manifest）;
 - pv-* 旧技能路径的改造（已并入，按新 playbook 身份统一处理）。
+
+## 10. 第二轮研究复核（2026-07-25，执行前校验实现方案）
+
+三路独立调研的结论与由此产生的设计修订：
+
+1. **Claude Code 原生能力**：skills 规范无任何依赖/产物字段，hooks/workflows/插件依赖均不覆盖
+   产物级 staleness 语义 → 自建机制成立。可选加固（不改设计）：PostToolBatch hook 自动跑产物核验。
+2. **技能生态横评**：官方 skills 仓库与 superpowers 全是指令式交接（正是本设计要防的"被跳过"
+   失效模式）；最强先例是 Dagster 的 software-defined assets（built/absent/stale 物化状态模型，
+   与本设计同构）。采纳 CrewAI 教训：**产物 built 时 orient 注入 manifest 摘要而非仅指针**，
+   下游不再自行摸文件。纪律固化：frontmatter 声明=意图，orient 解析状态=观测事实，agent 只写
+   登记字段不改判定。
+3. **指纹方案修订（重要）**：原「大小+前 1MB sha256」不安全——parquet footer 在文件尾部，同尺寸
+   重写会误判"新鲜"；无任何构建/数据工具拿头部哈希当新鲜度权威（jdupes 只用作否定预筛，imohash
+   特意采样文件尾）。修订为：**≤64MB 全量 sha256（权威）；更大用 大小+头 1MB+尾 1MB**；指纹带
+   算法版本前缀（v1:）；**输入文件消失=stale**（redo 教训）；**适配器脚本指纹入 manifest.inputs**
+   （Snakemake 7.8 教训：代码也是依赖）。同尺寸只改中段的超大文件改动为显式接受的残余风险。
+   另确认：浅层递归足够——各工具的复杂度来自触发范围（代码/参数入依赖）而非图深度。

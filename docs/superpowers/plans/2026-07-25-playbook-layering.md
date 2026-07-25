@@ -61,8 +61,16 @@ upstream:                         # 可选。声明本 playbook 消费的上游�
 ——`built` = 本会话内联生产；`linked` = 用户链接已有目录；`declined` = 用户放弃（仅 optional 允许，结论须声明）。
 生产者在**产物 id 命名的子目录**跑（`./setup/`、`./model_profile/`……），有自己的 diagnose_config.json；
 内联生产时把父 config 的 materials/questions 块拷入子 config（沿用已答，不重复问用户）。
-过期检测：manifest 的 `inputs.{材料id: {path, fingerprint}}` 与当前材料文件指纹对账（`engine_common.file_fingerprint`
-= 文件大小 + 前 1MB sha256），不一致 → status=stale，须用户确认重建或写 `accept_stale: true` 留痕。
+过期检测：manifest 的 `inputs.{材料id: {path, fingerprint}}` 与当前材料文件指纹对账。
+指纹（`engine_common.file_fingerprint`）：≤64MB 全量 sha256（权威）；更大用 大小+头 1MB+尾 1MB
+sha256——尾部覆盖 parquet footer 的 EOF 元数据（imohash 模式；头部单独哈希不安全，无任何构建/数据
+工具拿它当新鲜度权威）；指纹带算法版本前缀 `v1:`，未来换算法不至于全体产物 stale 或不可解析；
+**输入文件消失同样算 stale**（redo 教训）。同尺寸且只改中段的超大文件改动检测不到——显式接受的
+残余风险（要更强改 FULL_HASH_MAX_BYTES 走全量）。不一致 → status=stale，须用户确认重建或写
+`accept_stale: true` 留痕。**代码也是依赖**（Snakemake 7.8 教训）：setup manifest 把适配器脚本
+指纹一并记入 inputs——适配逻辑变了，产物即过期。
+纪律：frontmatter 声明 = 意图，orient 解析出的状态 = 观测事实——agent 只写 config.products 的登记
+字段（workdir/status/accept_stale），绝不手改判定结果。
 上游产物拥有的问题（如 setup 的 freq/align-keys）**下游不得重复声明**（加载期查重报错）；
 生产者自己也可声明 upstream（fact-scan 依赖 setup），加载期做环检测。
 ```
@@ -416,6 +424,29 @@ def test_file_fingerprint_changes_with_content(tmp_path):
     f1 = ec.file_fingerprint(str(p))
     p.write_text("bbb", encoding="utf-8")
     assert ec.file_fingerprint(str(p)) != f1
+    assert f1.startswith("v1:full:")
+
+
+def test_file_fingerprint_head_tail_detects_footer_change(tmp_path, monkeypatch):
+    monkeypatch.setattr(ec, "FULL_HASH_MAX_BYTES", 8)   # 压小阈值走 头+尾 采样路径
+    p = tmp_path / "big.parquet"
+    p.write_bytes(b"HEAD" + b"x" * 100 + b"FOOT")
+    f1 = ec.file_fingerprint(str(p))
+    assert f1.startswith("v1:ht:")
+    p.write_bytes(b"HEAD" + b"x" * 100 + b"F00T")       # 只改尾部（parquet footer 场景）
+    assert ec.file_fingerprint(str(p)) != f1
+
+
+def test_product_status_missing_input_is_stale(pbdir, tmp_path):
+    raw = tmp_path / "raw.parquet"
+    raw.write_text("v1", encoding="utf-8")
+    fp = ec.file_fingerprint(str(raw))
+    _seed_setup_product(tmp_path, {"inputs": {"predict": {"path": str(raw),
+                                                          "fingerprint": fp}}})
+    cfg = {"products": {"setup": {"workdir": "setup", "status": "built"}}}
+    raw.unlink()                                  # 输入文件消失（redo 教训）
+    s = ec.product_status(cfg, "setup")
+    assert s["status"] == "stale" and s["stale_inputs"] == ["predict"]
 
 
 def test_check_product_dsl(pbdir, tmp_path):
@@ -441,15 +472,28 @@ Expected: 新 4 项 FAIL（`no attribute 'product_status'` / DSL "未知 DSL 表
 3b. Task 2 的 products 节末尾追加：
 
 ```python
-FINGERPRINT_HEAD_BYTES = 1 << 20  # 指纹只哈希前 1MB + 记文件大小——大 parquet 不全量读
+FULL_HASH_MAX_BYTES = 64 << 20   # ≤64MB 全量哈希（权威）；更大走 头+尾 采样（imohash 模式）
+SAMPLE_BYTES = 1 << 20           # 采样块：头 1MB + 尾 1MB（尾部覆盖 parquet footer 的 EOF 元数据）
+FINGERPRINT_ALGO = "v1"          # 算法版本前缀——未来换算法不至于全体产物 stale
 
 
 def file_fingerprint(path):
-    """产物过期检测用指纹：'文件大小:前1MB sha256'。"""
+    """产物过期检测用指纹。≤FULL_HASH_MAX_BYTES 全量 sha256；更大取 头+尾 各 1MB
+    ——头部单独哈希对列式格式不安全（footer 在 EOF）。同尺寸只改中段的超大文件
+    检测不到：显式接受的残余风险（spec §2）。"""
+    size = os.path.getsize(path)
     h = hashlib.sha256()
     with open(path, "rb") as f:
-        h.update(f.read(FINGERPRINT_HEAD_BYTES))
-    return f"{os.path.getsize(path)}:{h.hexdigest()}"
+        if size <= FULL_HASH_MAX_BYTES:
+            for chunk in iter(lambda: f.read(SAMPLE_BYTES), b""):
+                h.update(chunk)
+            mode = "full"
+        else:
+            h.update(f.read(SAMPLE_BYTES))
+            f.seek(max(size - SAMPLE_BYTES, 0))
+            h.update(f.read(SAMPLE_BYTES))
+            mode = "ht"
+    return f"{FINGERPRINT_ALGO}:{mode}:{size}:{h.hexdigest()}"
 
 
 def product_status(cfg, pid):
@@ -474,8 +518,11 @@ def product_status(cfg, pid):
     stale = []
     for mid, fp in (manifest.get("inputs") or {}).items():
         path = (fp or {}).get("path")
-        if path and os.path.exists(path) \
-                and file_fingerprint(path) != fp.get("fingerprint"):
+        if not path:
+            continue
+        if not os.path.exists(path):
+            stale.append(mid)      # 输入文件消失也算过期（redo/apenwarr 教训）
+        elif file_fingerprint(path) != fp.get("fingerprint"):
             stale.append(mid)
     if stale and not rec.get("accept_stale"):
         return {"status": "stale", "workdir": workdir, "stale_inputs": sorted(stale)}
@@ -498,7 +545,7 @@ def upstream_report(fm, cfg):
 
 - [ ] **Step 4: 跑测试确认通过 + 全量回归**
 
-Run: `python3 -m pytest ts-diagnose/scripts/tests/test_products.py -q` → PASS（12 项）。
+Run: `python3 -m pytest ts-diagnose/scripts/tests/test_products.py -q` → PASS（14 项）。
 Run: `python3 -m pytest ts-diagnose/scripts/tests/ -q` → 全绿。
 
 - [ ] **Step 5: Commit**
@@ -559,12 +606,15 @@ def test_orient_required_upstream_missing_blocks(pbdir, tmp_path):
 
 
 def test_orient_required_upstream_built_unblocks(pbdir, tmp_path):
-    _seed_setup_product(tmp_path)
+    _seed_setup_product(tmp_path, {"inputs": {}, "models": ["A", "B"],
+                                   "n_rows": 3, "freq": "1h"})
     (tmp_path / "diagnose_config.json").write_text(json.dumps(_cfg(
         "cons-b", {"products": {"setup": {"workdir": "setup", "status": "built"}}})),
         encoding="utf-8")
     r = run_orient_env(tmp_path, pbdir)
     assert "上游产物「setup」[built]" in r.stdout
+    # CrewAI 教训：注入摘要而非指针——下游不再自行摸文件
+    assert "manifest 摘要" in r.stdout and '"models": ["A", "B"]' in r.stdout
     assert "可开工 Stage 0" in r.stdout
 
 
@@ -600,7 +650,7 @@ Expected: 新 4 项 FAIL（orient 输出无上游区块）。
 
 - [ ] **Step 3: 实现 —— orient.py 两处修改**
 
-3a. 在 contexts 循环（`for cx in fm.get("contexts") or []:`，约 188 行）**之前**插入上游产物区块：
+3a. orient.py 头部 import 区加 `import json`；然后在 contexts 循环（`for cx in fm.get("contexts") or []:`，约 188 行）**之前**插入上游产物区块：
 
 ```python
     ups = ec.upstream_report(fm, cfg)
@@ -614,6 +664,12 @@ Expected: 新 4 项 FAIL（orient 输出无上游区块）。
             note = (f" ⚠ 输入已变但用户确认沿用（accept_stale）：{s['stale_inputs']}"
                     if s.get("stale_inputs") else "")
             print(f"  上游产物「{pid}」[{s['status']}]: {s['workdir']}{note}")
+            man = ec.read_json(os.path.join(s["workdir"], idx[pid]["manifest"])) or {}
+            digest = {k: man[k] for k in ("tables", "models", "freq", "n_rows",
+                                          "window_range") if k in man}
+            if digest:
+                print(f"    manifest 摘要：{json.dumps(digest, ensure_ascii=False)}"
+                      "（下游直接用，不再自行摸文件）")
         elif s["status"] == "declined":
             print(f"  上游产物「{pid}」[declined]：用户已放弃——结论须声明缺此产物。")
         elif s["status"] == "stale":
@@ -723,6 +779,9 @@ def _seed(tmp_path):
         encoding="utf-8")
     raw = tmp_path / "raw_predict.parquet"
     raw.write_text("rawdata", encoding="utf-8")
+    (tmp_path / "analysis_scripts").mkdir()
+    (tmp_path / "analysis_scripts" / "adapter.py").write_text(
+        "# adapter v1", encoding="utf-8")
     (tmp_path / "diagnose_config.json").write_text(json.dumps({
         "materials": {"predict": {"status": "present", "paths": [str(raw)],
                                   "schema": {"y_col": "y", "time_col": "ts"}},
@@ -750,6 +809,8 @@ def test_setup_manifest_contract(tmp_path):
     assert man["inputs"]["predict"]["fingerprint"] == ec.file_fingerprint(str(raw))
     # absent 材料不产指纹
     assert "truth" not in man["inputs"]
+    # 代码也是依赖（Snakemake 7.8 教训）：适配器脚本指纹入 inputs
+    assert man["inputs"]["_adapter_code"]["path"] == "analysis_scripts/adapter.py"
 
 
 def test_product_manifest_generic(tmp_path):
@@ -813,6 +874,12 @@ def build_manifest(pred_path, alignment_path, cfg):
     for extra in ("features.csv", "train_y.csv"):
         if os.path.exists(extra):
             tables[extra.split(".")[0]] = extra
+    inputs = _inputs_of(cfg)
+    # 代码也是依赖（Snakemake 7.8 教训）：适配逻辑变了 → setup 产物即过期
+    if os.path.exists("analysis_scripts/adapter.py"):
+        inputs["_adapter_code"] = {
+            "path": "analysis_scripts/adapter.py",
+            "fingerprint": ec.file_fingerprint("analysis_scripts/adapter.py")}
     return {
         "product": "setup",
         "tables": tables,
@@ -821,7 +888,7 @@ def build_manifest(pred_path, alignment_path, cfg):
         "n_rows": int(len(df)),
         "window_range": [str(df["window_ts"].min()), str(df["window_ts"].max())],
         "materials": (cfg or {}).get("materials") or {},
-        "inputs": _inputs_of(cfg),
+        "inputs": inputs,
     }
 
 
@@ -988,7 +1055,7 @@ done：三个产物落盘。
 `python3 <ENGINE>/scripts/setup_manifest.py --pred predictions.csv --alignment alignment_report.json --out setup_manifest.json`。
 manifest 记录表路径/模型清单/freq/行数/窗口范围/**完整材料清单（含 training_log 与
 experiment_config 的位置与格式——下游训练类 playbook 由此获知日志在哪，不再另问）**/
-输入文件指纹（过期检测）。
+输入文件指纹（过期检测）/适配器脚本指纹（代码也是依赖——适配逻辑变了 setup 即过期）。
 done：setup_manifest.json 落盘。随后主 agent 回父工作目录写
 `config.products.setup = {workdir, status: "built"}`。
 
