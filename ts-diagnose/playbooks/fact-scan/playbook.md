@@ -1,23 +1,23 @@
 ---
 id: fact-scan
 name: 图谱体检（只看现象不下结论）
-goal: 把手头材料能画的标准分析图一次画全，产出现象清单——终点即停顿，不进任何归因
+goal: 把手头材料能画的标准分析图一次画全，产出现象清单与 chart_sweep 产物——终点即停顿，不进任何归因
+produces:
+  id: chart_sweep
+  manifest: chart_sweep_manifest.json
+  marker_files: [INDEX.md, FINDINGS.md]
+upstream:
+  - product: setup
+    required: true
 stages:
   - id: 0
-    name: 口径与对齐
-    done_when:
-      artifacts: ["alignment_report.json"]
-    prereqs:
-      - desc: 步长/口径已确认
-        check: "question:scan-caliber"
-  - id: 1
     name: 画图与现象清单（终点）
     done_when:
-      artifacts: ["charts/*.json", "INDEX.md"]
+      artifacts: ["charts/*.json", "INDEX.md", "chart_sweep_manifest.json"]
       findings_marker: "现象"
     prereqs:
-      - desc: 对齐完成
-        check: "stage:0"
+      - desc: setup 产物就绪
+        check: "product:setup"
     pause_after: true
     charts: [error-breakdown, intraday-profile, worst-points,
              horizon-degradation, rolling-stability, true-vs-pred-scatter,
@@ -27,12 +27,6 @@ stages:
 materials:
   required: [predict, truth]
   optional: [features, train_y]
-questions:
-  - id: scan-caliber
-    stage: 0
-    ask: "horizon 步长（freq）是多少？单模型还是多模型？（对比类图需 ≥2 模型）"
-    why: "freq 错则 hour/tod 维度全错；模型数决定哪些图可画"
-    default: null
 ---
 
 # fact-scan：图谱体检
@@ -43,21 +37,24 @@ questions:
 FINDINGS.md 只许「现象」状态、禁一切机制语言（"因为/导致/说明模型…"都不许出现）。
 首要陷阱：把体检写成诊断——发现的形态只登记，归因走别的 playbook（用户想深挖时
 回路由层重新选择；本清单与图 JSON 全部可复用，materials 盘点结果同样复用）。
+本 playbook 的图产物（charts/*.json + INDEX.md + 现象清单）就是 chart_sweep
+产物——下游 playbook 声明它为可选上游时，重叠图直接复用判读、不重画。
 
 ## 2. 逐阶段菜谱
 
-### Stage 0 口径与对齐
-同标准 intake：薄适配器 → 规范长表 → 对账两关（样例
-chartbook/golden/example_adapter/）→ `alignment_report.json`
-（schema：`{"models":[...], "n_rows":int, "freq":str}`）。单模型数据合法
-（对比类图会自动因 <2 模型不可画，跳过即可，不算失败）。
-
-### Stage 1 画图与现象清单（终点）
+### Stage 0 画图与现象清单（终点）
+输入：setup 产物（config.products.setup.workdir 下的 predictions.csv 等长表与
+setup_manifest.json——模型数、freq 从 manifest 读，不再问用户）。图命令的 --pred
+一律指向 <setup_workdir>/predictions.csv。
 orient 已按材料/模型数标好可画集；逐图跑 chartbook 预写脚本（命令模板同
 chartbook 各 recipe 的 CLI 节），产物进 `charts/`。对比类图在单模型数据上会
 抛 ValueError——捕获后在清单记「因模型数 <2 未画」，不算失败。
 判读各图 JSON 描述符 → FINDINGS.md 现象清单（每条：图 id + 描述符数字 + 一句
 现象陈述，禁机制词）。跳过的图逐条注明原因（缺材料/模型数）。
+画完建索引后跑 `python3 <ENGINE>/scripts/product_manifest.py --product chart_sweep
+--out chart_sweep_manifest.json`，随后主 agent 写
+`config.products.chart_sweep = {workdir: ".", status: "built"}`（本 playbook
+直接在自己的工作目录产出，产物即工作目录）。
 done：charts/*.json ≥1 + FINDINGS.md 含「现象」→ 停顿汇报，**流程终点**。
 
 ## 3. 证据升级规则
@@ -79,5 +76,6 @@ done：charts/*.json ≥1 + FINDINGS.md 含「现象」→ 停顿汇报，**流�
 
 ## 7. 材料降级说明
 
-predict/truth 缺 → 不可做；features 缺 → 输入关联三图跳过；train_y 缺 → 漂移图
-跳过。跳过永远注明、永远不算失败——体检报告如实写"未查项"。
+predict/truth 缺 → setup 产物本身不可建，本 playbook 连带不可做；features 缺 →
+输入关联三图跳过；train_y 缺 → 漂移图跳过。跳过永远注明、永远不算失败——体检
+报告如实写"未查项"。

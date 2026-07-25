@@ -6,7 +6,7 @@
     "oracle_mean": 1.25
   },
   "stages": {
-    "1": {
+    "0": {
       "desc": "代表图关键数字：A 的 argmax 单元格与 oracle 均值",
       "inputs": [
         "predictions.csv"
