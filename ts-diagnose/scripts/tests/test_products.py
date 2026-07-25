@@ -221,3 +221,73 @@ def test_check_product_dsl(pbdir, tmp_path):
     assert ec.check("product:setup", ctx)
     with pytest.raises(ValueError, match="未知产物"):
         ec.check("product:no-such", ctx)
+
+
+# ------------------------------------------------------------ orient e2e
+ORIENT = os.path.join(SCRIPTS_DIR, "orient.py")
+FIVE_OK = {mid: {"status": "absent-confirmed", "source": "user"}
+           for mid in ("training_log", "truth", "train_y", "checkpoint", "model_code")}
+
+OPT_CONSUMER = CONSUMER.replace("id: cons-b", "id: cons-opt").replace(
+    "required: true", "required: false")
+
+
+def run_orient_env(cwd, pbroot, *args):
+    env = dict(os.environ, TSD_PLAYBOOKS_DIR=str(pbroot))
+    return subprocess.run([sys.executable, ORIENT, *args], cwd=cwd,
+                          capture_output=True, text=True, timeout=60, env=env)
+
+
+def _cfg(playbook, extra=None):
+    cfg = {"playbook": playbook, "materials": dict(FIVE_OK)}
+    cfg.update(extra or {})
+    return cfg
+
+
+def test_orient_required_upstream_missing_blocks(pbdir, tmp_path):
+    (tmp_path / "diagnose_config.json").write_text(
+        json.dumps(_cfg("cons-b")), encoding="utf-8")
+    r = run_orient_env(tmp_path, pbdir)
+    assert r.returncode == 0, r.stderr
+    assert "⛔ 必需上游产物「setup」缺失" in r.stdout
+    assert "prod-a" in r.stdout                      # 指令点名生产者 playbook
+    assert "[✗] 必需上游产物未就绪：setup" in r.stdout
+    assert "可开工" not in r.stdout
+
+
+def test_orient_required_upstream_built_unblocks(pbdir, tmp_path):
+    _seed_setup_product(tmp_path, {"inputs": {}, "models": ["A", "B"],
+                                   "n_rows": 3, "freq": "1h"})
+    (tmp_path / "diagnose_config.json").write_text(json.dumps(_cfg(
+        "cons-b", {"products": {"setup": {"workdir": "setup", "status": "built"}}})),
+        encoding="utf-8")
+    r = run_orient_env(tmp_path, pbdir)
+    assert "上游产物「setup」[built]" in r.stdout
+    # CrewAI 教训：注入摘要而非指针——下游不再自行摸文件
+    assert "manifest 摘要" in r.stdout and '"models": ["A", "B"]' in r.stdout
+    assert "可开工 Stage 0" in r.stdout
+
+
+def test_orient_optional_upstream_asks_three_branch(pbdir, tmp_path):
+    _write_pb(pbdir, "cons-opt", OPT_CONSUMER)
+    (tmp_path / "diagnose_config.json").write_text(
+        json.dumps(_cfg("cons-opt")), encoding="utf-8")
+    r = run_orient_env(tmp_path, pbdir)
+    assert "三分支" in r.stdout and "declined" in r.stdout
+    assert "⛔ 必需上游产物" not in r.stdout
+    assert "可开工 Stage 0" in r.stdout               # optional 缺不阻塞
+
+
+def test_orient_stale_upstream_warns_and_blocks(pbdir, tmp_path):
+    raw = tmp_path / "raw.parquet"
+    raw.write_text("v1", encoding="utf-8")
+    fp = ec.file_fingerprint(str(raw))
+    _seed_setup_product(tmp_path, {"inputs": {"predict": {"path": str(raw),
+                                                          "fingerprint": fp}}})
+    raw.write_text("v2", encoding="utf-8")
+    (tmp_path / "diagnose_config.json").write_text(json.dumps(_cfg(
+        "cons-b", {"products": {"setup": {"workdir": "setup", "status": "built"}}})),
+        encoding="utf-8")
+    r = run_orient_env(tmp_path, pbdir)
+    assert "[stale]" in r.stdout and "accept_stale" in r.stdout
+    assert "可开工" not in r.stdout

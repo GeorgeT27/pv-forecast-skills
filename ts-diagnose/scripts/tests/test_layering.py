@@ -109,12 +109,15 @@ def test_layer0_routes_every_playbook():
 # ——防止未来 playbook 把 model-audit（或任何 provider）的说明文字贴进正文却不声明
 # provider 关系，从而绕过本守卫（见 fix round 1 报告）。
 def _declared_providers(playbook_path):
-    """读取 playbook frontmatter 的 contexts[].provider_playbook 声明集合。"""
+    """读取 playbook 的合法跨引用集合：contexts[].provider_playbook（迁移期）
+    ∪ upstream[] 各产物的生产者 playbook（分层机制）。"""
     fm = ec.load_frontmatter(playbook_path)
-    return frozenset(
-        ctx["provider_playbook"]
-        for ctx in (fm.get("contexts") or [])
-        if isinstance(ctx, dict) and ctx.get("provider_playbook"))
+    provs = {ctx["provider_playbook"] for ctx in (fm.get("contexts") or [])
+             if isinstance(ctx, dict) and ctx.get("provider_playbook")}
+    idx = ec.products_index()
+    provs |= {idx[u["product"]]["playbook"] for u in (fm.get("upstream") or [])
+              if isinstance(u, dict) and u.get("product") in idx}
+    return frozenset(provs)
 
 
 def _assert_no_undeclared_cross_reference(a, text, providers, b):

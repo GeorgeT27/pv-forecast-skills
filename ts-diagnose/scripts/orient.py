@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import os
 import sys
 
@@ -185,6 +186,47 @@ def main():
         print("  🚪 写/改 CONCLUSION.md 后必须跑 python3 <ENGINE>/scripts/"
               "conclusion_gate.py（不过则结论不算交付，receipt 是结论阶段完成判据）。")
 
+    ups = ec.upstream_report(fm, cfg)
+    up_blocked = []
+    idx = ec.products_index() if ups else {}
+    for u, s in ups:
+        pid, req = u["product"], bool(u.get("required"))
+        prod_pb = idx[pid]["playbook"]
+        print("-" * 62)
+        if s["status"] in ("built", "linked"):
+            note = (f" ⚠ 输入已变但用户确认沿用（accept_stale）：{s['stale_inputs']}"
+                    if s.get("stale_inputs") else "")
+            print(f"  上游产物「{pid}」[{s['status']}]: {s['workdir']}{note}")
+            man = ec.read_json(os.path.join(s["workdir"], idx[pid]["manifest"])) or {}
+            digest = {k: man[k] for k in ("tables", "models", "freq", "n_rows",
+                                          "window_range") if k in man}
+            if digest:
+                print(f"    manifest 摘要：{json.dumps(digest, ensure_ascii=False)}"
+                      "（下游直接用，不再自行摸文件）")
+        elif s["status"] == "declined":
+            print(f"  上游产物「{pid}」[declined]：用户已放弃——结论须声明缺此产物。")
+        elif s["status"] == "stale":
+            print(f"  ⚠ 上游产物「{pid}」[stale]：输入材料已变 {s['stale_inputs']}——"
+                  f"AskUserQuestion 二选一：回 {prod_pb} 重建，或用户确认沿用后写 "
+                  f"config.products.{pid}.accept_stale=true（结论须声明）。")
+            up_blocked.append((u, s))
+        elif s["status"] == "invalid":
+            print(f"  ⚠ 上游产物「{pid}」[invalid]：登记了但核验失败"
+                  f"（缺 {s.get('missing_markers')}）——修复或回 {prod_pb} 重建后再消费。")
+            up_blocked.append((u, s))
+        elif req:  # absent + required → 自动内联生产，不问用户
+            print(f"  ⛔ 必需上游产物「{pid}」缺失——主 agent 立即内联生产（不问用户）：")
+            print(f"     1. mkdir -p {pid}，把本 config 的 materials/questions 块拷入 "
+                  f"{pid}/diagnose_config.json（沿用已答，不重复问）；")
+            print(f"     2. 在 {pid}/ 内跑 orient --playbook {prod_pb} 并按其菜谱完成；")
+            print(f"     3. 回本目录写 config.products.{pid}="
+                  f"{{workdir:'{pid}',status:'built'}} 后重跑 orient。")
+            up_blocked.append((u, s))
+        else:      # absent + optional → 三分支问
+            print(f"  ⚠ 上游产物「{pid}」[absent]（可选）：AskUserQuestion 三分支——"
+                  f"现在内联生产（{prod_pb}）/ 链接已有目录（写 workdir+status=linked）/ "
+                  f"放弃（status=declined，结论须声明缺此产物与代价）。")
+
     for cx in fm.get("contexts") or []:
         cs = ec.context_status(cx, ctx)
         print("-" * 62)
@@ -271,6 +313,8 @@ def main():
         mm = ec.modelmap_blocker(cfg, fm)
         if mm:
             print(f"  [✗] {mm}")
+        for u, s in up_blocked:
+            print(f"  [✗] 必需上游产物未就绪：{u['product']}（{s['status']}）")
         print("  ⚑ 引擎级恒问五类·开工前自检（命中任一必停 AskUserQuestion，"
               "orient 不替你判，playbook 没声明也照问）：")
         print("    ① schema/单位/口径不明 ② 成功判据未定义 "
@@ -288,7 +332,8 @@ def main():
                   "写完直接呈现给用户不只丢路径。")
             print("    收尾后必须跑：python3 <ENGINE>/scripts/conclusion_gate.py"
                   "（不过则结论不算交付，receipt 是本阶段完成判据）")
-        if ec.prereqs_ok(pr) and not blocked_qs and not mat_blocked and not mm:
+        if ec.prereqs_ok(pr) and not blocked_qs and not mat_blocked and not mm \
+                and not up_blocked:
             print(f"→ 前置齐，可开工 Stage {target['id']}。")
         else:
             print("→ 有 ✗ 先补：缺答案 AskUserQuestion；缺产物回上一阶段；缺路径问用户后写 config。")
