@@ -2,12 +2,17 @@
 id: feature-importance
 name: 变量重要性/归因
 goal: 找出哪些输入变量对目标指标（预测误差/性能）影响最大，为特征取舍与数据投入排优先级
+upstream:
+  - product: setup
+    required: true
 stages:
   - id: 0
-    name: 数据对齐与相关筛查（无需模型）
+    name: 相关筛查（对齐由 setup 承接）
     done_when:
       artifacts: ["correlation_screen.json"]
     prereqs:
+      - desc: setup 产物就绪
+        check: "product:setup"
       - desc: 目标口径已答
         check: "question:importance-scope"
       - desc: 候选变量与泄漏风险已答
@@ -75,6 +80,7 @@ stages:
     pause_after: false
     subagent_ok: true
 materials:
+  required: [predict, truth, features]
   optional: [feature_true, serving_api]
 variants:
   - id: rerun
@@ -92,7 +98,7 @@ variants:
 questions:
   - id: importance-scope
     stage: 0
-    ask: "『重要』对什么口径说？（整体误差 / 某类时段或条件下的误差 / 某个业务指标）目标列与数据路径？"
+    ask: "『重要』对什么口径说？（整体误差 / 某类时段或条件下的误差 / 某个业务指标）目标列取 setup 长表的哪个误差口径？"
     why: "同一变量对整体和对突变时段的重要性可以完全相反"
     default: null
   - id: feature-list
@@ -141,8 +147,8 @@ upgrade_rule: "变量重要性排名要升「假设」：≥2 条证据线（per
 `python3 <ENGINE>/scripts/gen_gate.py --script analysis_scripts/<name>.py --playbook feature-importance --stage 0`
 （金标准植入了主导变量 x1 与泄漏列 x3，筛查必须隔离泄漏、排出 x1；CLI 契约见 `golden/manifest.json`，示例见 `golden/reference/`）。算错 → 改脚本，不改期望。Stage 1/2 需真实模型入口，用菜谱声明的植入回收验证步。
 
-### Stage 0：数据对齐与相关筛查 → `correlation_screen.json`
-- 变量与目标误差对齐成一张分析表（对齐键与丢行数落盘披露）；逐变量算与误差的 Spearman/互信息 + 分位条件均值（误差最高 10% 时段里各变量的分布偏移）；共线组检测（|ρ|>0.9 聚组）。
+### Stage 0：相关筛查（对齐由 setup 承接） → `correlation_screen.json`
+- 分析表 = **setup 产物的 features.csv × predictions.csv 逐窗误差**（orient 注入 manifest 摘要定位两表；对齐键与丢行数由 setup 的 alignment_report 披露，本阶段只做特征×误差的合表核对）；逐变量算与误差的 Spearman/互信息 + 分位条件均值（误差最高 10% 时段里各变量的分布偏移）；共线组检测（|ρ|>0.9 聚组）。
 - schema：`{n_rows, dropped_rows, features: {col: {spearman_vs_error, mi, tail_shift}}, collinear_groups: [...], leakage_flagged: [...]}`。
 - **验证步（对账）**：对齐后行数与原表核对，丢行原因分类列出（缺失/时间对不上），不许静默丢。
 
@@ -278,6 +284,8 @@ pv-feature-blame（2026-07-24 并入：预写脚本在 `<本 playbook 目录>/sc
 **cf_summary.json**（本阶段 done 判据）。
 
 ### 两变体的材料降级说明
+
+predict/truth/features 缺 → 本 playbook 不可做（升为 required，setup 内联生产时同样要求）。
 
 - `feature_true` unknown → 变体不解锁（§7 硬规则）；absent-confirmed → 用户知情后可走窗口
   重叠重建降级（证据降一级）。Stage 5/6 未激活不阻塞主线 Stage 0-4。

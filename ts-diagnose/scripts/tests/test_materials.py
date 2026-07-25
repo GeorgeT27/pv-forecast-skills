@@ -131,13 +131,14 @@ def test_blocking_materials(tmp_path):
 def test_existing_playbooks_still_load():
     """向后兼容：无 materials 键的 playbook，加载与判定不受影响。
     （feature-importance 自 2026-07-24 feature-blame 方法并入后声明了
-    materials.optional=[feature_true, serving_api]，改为断言其声明值——
-    optional 材料 unknown 不阻塞，向后兼容语义不变。）"""
+    materials.optional=[feature_true, serving_api]；2026-07-25 两层改造
+    将 predict/truth/features 升为 required——改为断言其现声明值。）"""
     for pid in ("training-sufficiency", "robustness"):
         fm = ec.load_frontmatter(ec.find_playbook(pid))
         assert ec.materials_of(fm) == ([], [])
     fm = ec.load_frontmatter(ec.find_playbook("feature-importance"))
-    assert ec.materials_of(fm) == ([], ["feature_true", "serving_api"])
+    assert ec.materials_of(fm) == (
+        ["predict", "truth", "features"], ["feature_true", "serving_api"])
 
 
 # ---------------------------------------------------------------- material: DSL
