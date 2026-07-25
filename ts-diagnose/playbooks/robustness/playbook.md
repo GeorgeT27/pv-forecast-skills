@@ -2,12 +2,19 @@
 id: robustness
 name: 鲁棒性分析
 goal: 检验结论/模型表现在扰动（剔极端、子期、切片、重采样）下稳不稳——区分"真差异"与"个别极端单位/特定窗口驱动的假差异"
+upstream:
+  - product: setup
+    required: true
+  - product: chart_sweep
+    required: false
 stages:
   - id: 0
     name: 基线复算（被检结论的原始数字）
     done_when:
       artifacts: ["baseline_metrics.json"]
     prereqs:
+      - desc: setup 产物就绪
+        check: "product:setup"
       - desc: 被检结论清单已答
         check: "question:conclusions-under-test"
       - desc: 指标与配对单位已答
@@ -64,7 +71,7 @@ questions:
     default: null
   - id: metric-and-pairing
     stage: 0
-    ask: "评估指标是什么、按什么单位配对？（如按天配对的 RMSE、按 fold 配对的 loss）数据路径与列名？"
+    ask: "评估指标是什么、按什么单位配对？（如按天配对的 RMSE、按 fold 配对的 loss；数据一律来自 setup 产物的规范长表，不再另给路径）"
     why: "配对单位决定 Wilcoxon/剔除的粒度；猜错配对粒度检验无效"
     default: null
   - id: perturbation-families
@@ -102,6 +109,10 @@ upgrade_rule: "结论要升「假设」：≥2 个独立扰动族下方向不变
 
 ## 2. 逐阶段菜谱
 
+广谱图形证据（如切片翻向的可视化）不属本 playbook 默认产物——chart_sweep 产物
+built/linked 时直接复用其图 JSON；需要跨维稳定图时经图表选择门加画
+cross-dim-stability。
+
 脚本生成进 `analysis_scripts/`，验证步过了才可信（记 PROGRESS.md）。
 
 **生成闸（硬规则）**：Stage 1 的脚本生成后、碰真实数据前，必须先过金标准闸——
@@ -109,7 +120,7 @@ upgrade_rule: "结论要升「假设」：≥2 个独立扰动族下方向不变
 （金标准 = 一组"差异全由 2 个极端单位驱动"的假差异数据，脚本必须抓得出来；CLI 契约见 `golden/manifest.json`，示例见 `golden/reference/`）。算错 → 改脚本，不改期望。Stage 0 基线要对用户原始数字对账，无法预置金标准。
 
 ### Stage 0：基线复算 → `baseline_metrics.json`
-- 按 `metric-and-pairing` 答案重算被检结论涉及的全部指标（**不信任来路数字，自己算一遍**），逐配对单位落长表 + 汇总。schema：`{conclusions: [{id, claim, baseline_diff, n_units}], per_unit: <路径或内嵌>}`。
+- 按 `metric-and-pairing` 答案，**从 setup 产物的 predictions.csv**（orient 注入 manifest 摘要）重算被检结论涉及的全部指标（**不信任来路数字，自己算一遍**），逐配对单位落长表 + 汇总。schema：`{conclusions: [{id, claim, baseline_diff, n_units}], per_unit: <路径或内嵌>}`。
 - **验证步（对账）**：汇总值与用户提供的原始数字比对，相对差 >1% 必须解释（口径/窗口/取点差异），解释不了不许继续。
 
 ### Stage 1：扰动矩阵 → `perturbation_matrix.json`
