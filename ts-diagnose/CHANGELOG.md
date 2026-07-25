@@ -40,3 +40,14 @@
 - 2026-07-24 | 弱模型加固 C：密集散文改即时打印编号清单——orient.py 图表选择门印 4 步编号清单（多选默认全勾/删图不静默记 PROGRESS+CONCLUSION/可加画/画完出 INDEX 再停顿），产 CONCLUSION.md 的结论阶段印「三道门自检」清单（门1 稳健·门2 假设登记·门3 反驳门 + 证据线/功效/provenance 收尾，just-in-time 不靠模型追 mechanisms.md 指针）；engine-core 同步两处 prose→编号清单（test_engine 三道门正/负例、test_charts_decl 清单断言，110 绿） | 用户："do c and commit and push"（弱模型加固 A+B 之后） | 弱模型失效模式之一=多分支密集散文只执行一支、指针懒得追；把最判断重的两处（画图门/结论三门）在该动手的那一回合直接打到眼前
 - 2026-07-24 | 单入口化收口：四个 pv-* 专用技能（pv-result-analysis/pv-station-influence/pv-model-analysis/pv-feature-blame）方法全部收编为引擎 playbook（result-eval/subset-influence/model-audit/feature-importance 扩展含特征质量归因与反事实），技能壳删除；SKILL.md description 删除全部「负面清单」与 pv-* 让位条款，改为正面枚举 9 个 playbook 触发词；路由优先级由三级（固化代理 > 专用技能 > 引擎兜底）收成两级（固化代理 > 本引擎）；路由表补齐 result-eval/model-audit/subset-influence 三行并清理各行残留的「非光伏标准评估场景」措辞（收编后不再有对照对象）；test_routing.py 随删壳精简后再加 5 项断言（description 枚举全 9 playbook、无负面清单残留、优先级两级措辞、SKILL.md ≤60 行覆盖全 9 playbook）；CHANGELOG/README 同步 | 用户："do task 12"（四技能收编 Task 5/7/8/11 之后的收口任务） | 收编完成后 description/路由表若仍挂着已删技能的让位条款，是死链接且误导路由判断；两级优先级是收编后的真实状态，三级是历史包袱
 - 2026-07-24 | 验证记录：弱模型场景端到端冒烟（三道闸复演本项目起因的翻车路径，临时目录外仓跑，见 .superpowers/sdd/task-13-report.md） | —— | 四步全 PASS：①空目录 `orient.py --playbook model-comparison` → 输出含「BLOCKED: 材料盘点未完成」且不含任何 `Stage ` 菜单行；②五件套（training_log/train_y/checkpoint/model_code 皆 absent-confirmed+source=user+degraded_ok，truth 连同 required 的 predict 均 present 带 paths+schema.y_col+schema.time_col）落盘后重跑 orient → 「Stage 0 口径与对齐 [← 当前]」连同完整阶段菜单打出；③同状态下 `orient.py --goto 4` → 输出含「⛔ 拒绝直达 Stage 4：前置不齐」；④CONCLUSION.md 故意不写「## 模型结构依据」节，跑 `conclusion_gate.py` → 打印「缺「## 模型结构依据」节」且进程 exit code=1。全仓终验：`python3 -m pytest ts-diagnose/ -q` → 353 passed（0 warnings）
+
+## 2026-07-25 分层机制 Phase 1（produces/upstream）
+
+- 新机制：playbook 可声明 produces（产物）与 upstream（依赖）；orient 机器裁决——
+  required 缺 → 自动内联生产指令并阻塞开工；optional 缺 → 三分支问；输入指纹过期
+  检测（stale 须用户确认）。加载期校验：产物 id 唯一、引用存在、依赖无环、问题去重。
+- 新 playbook data-setup（必需前置）：适配器+对齐+setup manifest（含材料清单与
+  训练日志位置，全下游复用）；golden 植入不对称覆盖难例。
+- model-audit 升格生产者（model_profile）；fact-scan 消费 setup、产 chart_sweep。
+- 试点 model-comparison：图 14→5（对比核心集），阶段 5→4，contexts 改 upstream。
+- 向后兼容：无 upstream 声明的 playbook 行为不变；contexts: 迁移期保留，Phase 2 退役。
