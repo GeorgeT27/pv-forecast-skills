@@ -354,6 +354,7 @@ def test_modelmap_blocker_skips_playbooks_not_declaring_model_code(pbdir):
 REAL_UPSTREAM = {
     "model-comparison": {"setup": True, "model_profile": False, "chart_sweep": False},
     "result-eval": {"setup": True, "model_profile": False, "chart_sweep": False},
+    "deployment-drift": {"setup": True, "model_profile": False, "chart_sweep": False},
 }
 REAL_PRODUCES = {
     "data-setup": "setup",

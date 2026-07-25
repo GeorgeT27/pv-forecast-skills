@@ -2,16 +2,23 @@
 id: deployment-drift
 name: 部署后退化/漂移诊断
 goal: 判定上线模型是否真的退化、定位起始时点（区分渐变/突变、双点齐报）、把退化归因到候选诱因
+upstream:
+  - product: setup
+    required: true
+  - product: model_profile
+    required: false
+  - product: chart_sweep
+    required: false
 stages:
   - id: 0
-    name: 口径与对齐
+    name: 误差序列（口径）
     done_when:
       artifacts: ["error_series_summary.json"]
     prereqs:
+      - desc: setup 产物就绪
+        check: "product:setup"
       - desc: 考核口径已定
         check: "question:metric-caliber"
-      - desc: 对齐键已定
-        check: "question:align-keys"
       - desc: 上线/训练截止时间已知
         check: "question:deploy-timeline"
   - id: 1
@@ -30,10 +37,7 @@ stages:
       - desc: 变点事实已知
         check: "stage:1"
     pause_after: true
-    charts: [rolling-stability, error-breakdown, intraday-profile,
-             horizon-degradation, true-vs-pred-scatter, worst-points,
-             feature-error-conditional, feature-trend-overlay,
-             y-vs-feature-mapping, train-test-drift]
+    charts: [rolling-stability, intraday-profile, error-breakdown, train-test-drift]
   - id: 3
     name: 诱因筛查（变体）
     done_when:
@@ -46,8 +50,8 @@ stages:
     done_when:
       findings_marker: "假设"
     prereqs:
-      - desc: 模型档案上下文已解决（linked 或 declined）
-        check: "config:model_profile_status"
+      - desc: 模型档案产物已解决（built/linked 或 declined）
+        check: "config:products.model_profile.status"
   - id: 5
     name: 结论
     done_when:
@@ -73,12 +77,6 @@ questions:
     why: "口径不同，退化时点与幅度可能都变"
     options: ["rmse_window（默认）", "指定 horizon 子段", "自定义公式"]
     default: "rmse_window"
-  - id: align-keys
-    stage: 0
-    ask: "预测与真值按什么键对齐？缺窗如何处理？（默认 window_ts+unit_id 内连接）"
-    why: "对齐错位会把覆盖差异误判成退化"
-    options: ["window_ts+unit_id 内连接（默认）", "其他"]
-    default: "window_ts+unit_id 内连接"
   - id: deploy-timeline
     stage: 0
     ask: "模型什么时候上线？训练数据截止到哪天？上线后有没有重训/改配置？"
@@ -90,15 +88,6 @@ questions:
     why: "判据不同结论可分岔；默认即菜谱方法，避免两套判据并存"
     options: ["两段最大分离 + 置换基线 + 渐变双点（默认）", "固定基线窗对比（需给窗长）", "自定义"]
     default: "两段最大分离 + 置换基线 + 渐变双点"
-contexts:
-  - id: model-profile
-    name: 模型架构档案
-    workdir_key: model_profile_dir
-    status_key: model_profile_status
-    marker_files: ["models.md"]
-    on_absent: ask
-    provider_playbook: model-audit
-    trigger_material: model_code
 evidence_lines:
   - id: error-changepoint
     stage: 1
@@ -124,13 +113,10 @@ upgrade_rule: "被点名特征的 onset 与误差侧 onset 重合（±7 窗）�
 
 ## 2. 逐阶段菜谱
 
-### Stage 0 口径与对齐
-输入：materials 盘点后的 predict/truth 原始数据。
-菜谱：写薄适配器 `analysis_scripts/adapter.py`（用户格式 → 规范长表 predictions，
-见 chartbook/_recipe-spec.md §2；有 features/train_y 材料时同步产 features/train_y
-长表），过**对账两关**（行数守恒 + 抽 3 窗数值核对，样例
-chartbook/golden/example_adapter/），记录写 PROGRESS.md。随后写
-`analysis_scripts/error_series.py`：按口径逐窗算误差 → `error_series.csv`
+### Stage 0 误差序列（口径）
+输入：setup 产物的规范长表 predictions.csv（orient 注入 manifest 摘要；
+features/train_y 长表若 setup 产了同样直接用）。
+菜谱：写 `analysis_scripts/error_series.py`：按口径逐窗算误差 → `error_series.csv`
 （window_idx,window_ts,rmse）+ `error_series_summary.json`（schema：
 `{"n":int, "caliber":str, "range":[ts,ts], "n_dropped":int, "deploy_ts":str,
 "train_cutoff_ts":str, "note":"缺窗不对称说明"}`，自足）。
@@ -159,6 +145,8 @@ chartbook 豁免），orient 已按材料标好可画/跳过；命令模板：
     python3 <ENGINE>/chartbook/scripts/chart_<蛇形id>.py \
       --pred predictions.csv --out-dir charts/ [各图特有参数]
 
+**chart_sweep 产物 built/linked 时**：重叠图直接复用其 charts/*.json 判读，不重画。
+
 （D 组图加 `--features features.csv`；train-test-drift 加 `--train-y train_y.csv`。）
 判读读各图 JSON 描述符（recipe 判读节），重点：rolling-stability 的时间形态是否与
 Stage 1 双点吻合、intraday-profile 的误差时段集中度（退化集中在哪些物理时刻）、
@@ -177,7 +165,8 @@ shift_z 与 Welch p、与误差序列全期秩相关、特征自身 onset（同�
 done：cause_screen.json 落盘。
 
 ### Stage 4 机制归因（变体，material:model_code 解锁）
-输入：model-profile 上下文（linked 目录 models.md 的桥接假设）+ Stage 2/3 产物。
+输入：model_profile 产物（upstream 机制：built/linked 的工作目录下 models.md 的
+桥接假设；declined → 本阶段虽解锁也只能停在现象，结论声明缺档案）+ Stage 2/3 产物。
 菜谱：逐条桥接假设 → 找它预言的图形态 → 对照实际描述符；按 upgrade_rule 判定
 升级。产出写回 FINDINGS.md（状态用保留字）。
 done：FINDINGS.md 出现「假设」。
@@ -235,9 +224,14 @@ Provenance 块。特有反驳门（写结论前逐条自问并记录）：
 
 ## 8. chartbook 覆盖声明
 
-声明进 Stage 2 charts：rolling-stability（时间形态主图）、error-breakdown、
-intraday-profile、horizon-degradation、true-vs-pred-scatter、worst-points、
-feature-error-conditional、feature-trend-overlay、y-vs-feature-mapping、
-train-test-drift。跳过：model-error-correlation / oracle-gap /
-worst-slice-compare / cross-dim-stability——四者均需 ≥2 模型（配对/组合结构），
-本目标单模型；单模型的正交稳定性由 Stage 1 interleave 与口径子段复算承担。
+声明进 Stage 2 charts（时序稳定组）：rolling-stability（时间形态主图）、
+intraday-profile（退化的物理时刻集中度）、error-breakdown（前后段构成对照，
+喂反驳门③）、train-test-drift（"世界变了"候选）。
+
+跳过（可加画池或复用 chart_sweep 产物）：horizon-degradation /
+true-vs-pred-scatter / worst-points——广谱体检切面，体检类 playbook 覆盖；
+feature-error-conditional / feature-trend-overlay / y-vs-feature-mapping——
+输入侧三件套，Stage 3 诱因筛查有专用脚本 cause_screen.py，图形佐证按需加画；
+model-error-correlation / oracle-gap / worst-slice-compare /
+cross-dim-stability——需 ≥2 模型，本目标单模型；单模型正交稳定性由 Stage 1
+interleave 与口径子段复算承担。
