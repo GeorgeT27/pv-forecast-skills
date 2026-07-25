@@ -721,6 +721,11 @@ def modelmap_blocker(cfg, fm):
         return None
     if os.path.exists("MODELMAP_RECEIPT.json"):
         return None
+    try:
+        if product_status(cfg, "model_profile")["status"] in ("built", "linked"):
+            return None
+    except ValueError:
+        pass  # model_profile 产物未声明（model-audit 未升格的部署形态）——退回 receipt 判定
     return ("有模型代码（model_code=present）但无 .modelmap 档案回执——"
             "先嵌入执行 playbook「model-audit」生成档案（MODELMAP_RECEIPT.json），"
             "再回本 playbook 继续")

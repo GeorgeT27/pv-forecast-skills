@@ -291,3 +291,25 @@ def test_orient_stale_upstream_warns_and_blocks(pbdir, tmp_path):
     r = run_orient_env(tmp_path, pbdir)
     assert "[stale]" in r.stdout and "accept_stale" in r.stdout
     assert "可开工" not in r.stdout
+
+
+# ------------------------------------------------------------ modelmap 接产物
+def test_modelmap_blocker_accepts_product(pbdir, tmp_path, monkeypatch):
+    # 在沙箱里造一个 model_profile 生产者声明，让 product_status 可解析
+    _write_pb(pbdir, "audit-x",
+              PRODUCER.replace("id: prod-a", "id: audit-x")
+              .replace("id: setup", "id: model_profile")
+              .replace("manifest: setup_manifest.json",
+                       "manifest: MODELMAP_RECEIPT.json")
+              .replace("marker_files: [predictions.csv]",
+                       "marker_files: [MODELMAP_RECEIPT.json]")
+              .replace("id: freq", "id: audit-q"))
+    fm = {"id": "cons-b"}
+    cfg = {"materials": {"model_code": {"status": "present", "paths": ["m/"]}}}
+    assert ec.modelmap_blocker(cfg, fm)          # 无 receipt、无产物 → 阻塞
+    d = tmp_path / "model_profile"
+    d.mkdir()
+    (d / "MODELMAP_RECEIPT.json").write_text("{}", encoding="utf-8")
+    cfg["products"] = {"model_profile": {"workdir": "model_profile",
+                                         "status": "built"}}
+    assert ec.modelmap_blocker(cfg, fm) is None  # 产物 built → 放行

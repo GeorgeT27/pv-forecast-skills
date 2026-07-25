@@ -2,6 +2,10 @@
 id: model-audit
 name: 模型代码审计（生成 .modelmap 档案）
 goal: 把模型代码目录固化为「代码锚定」的模型参考档案（.modelmap/ + 工作目录回执），供其他 playbook 机制归因消费
+produces:
+  id: model_profile
+  manifest: MODELMAP_RECEIPT.json
+  marker_files: [MODELMAP_RECEIPT.json]
 materials:
   required: [model_code]
   optional: [train_y, experiment_config, data_profile]
@@ -48,7 +52,7 @@ questions:
 给定模型代码目录，生成 `<repo>/.modelmap/` 文档集并写 pointer + 工作目录回执。既能从零生成，
 也能对已有产物按代码增量核验（reconcile）。纪律与产物格式见 `references/`。
 
-产物固定位置：`<repo>/.modelmap/`；pointer 固定路径见 `references/output-spec.md`。
+产物固定位置：`<repo>/.modelmap/`；pointer 固定路径见 `references/output-spec.md`。作为分层机制的生产者，本 playbook 的产物注册名为 model_profile（manifest = 工作目录回执 MODELMAP_RECEIPT.json；回执不含 inputs 指纹，产物过期检测对它空转——代码变更后的重审计时机由用户判断）。
 
 ## 1. 问题框定与首要陷阱
 
