@@ -26,7 +26,7 @@ stages:
     done_when:
       artifacts: ["changepoint_summary.json"]
     prereqs:
-      - desc: 对齐完成
+      - desc: 误差序列已建
         check: "stage:0"
   - id: 2
     name: 结构分解（事实）
@@ -143,11 +143,12 @@ done：changepoint_summary.json 落盘。
 chartbook 豁免），orient 已按材料标好可画/跳过；命令模板：
 
     python3 <ENGINE>/chartbook/scripts/chart_<蛇形id>.py \
-      --pred predictions.csv --out-dir charts/ [各图特有参数]
+      --pred <setup>/predictions.csv --out-dir charts/ [各图特有参数]
 
 **chart_sweep 产物 built/linked 时**：重叠图直接复用其 charts/*.json 判读，不重画。
 
-（D 组图加 `--features features.csv`；train-test-drift 加 `--train-y train_y.csv`。）
+（D 组图加 `--features <setup>/features.csv`；train-test-drift 加
+`--train-y <setup>/train_y.csv`。）
 判读读各图 JSON 描述符（recipe 判读节），重点：rolling-stability 的时间形态是否与
 Stage 1 双点吻合、intraday-profile 的误差时段集中度（退化集中在哪些物理时刻）、
 构成对照（同类时段前后段对比，喂反驳门③）。产出 FINDINGS.md 现象清单——只写
@@ -156,7 +157,7 @@ done：charts/*.json 至少一个 + FINDINGS.md 含「现象」→ **pause_after
 
 ### Stage 3 诱因筛查（变体，material:features 解锁）
 菜谱：写 `analysis_scripts/cause_screen.py`，CLI 契约固定：
-`--features features.csv --series error_series.csv --split <Stage1的split_index>
+`--features <setup>/features.csv --series error_series.csv --split <Stage1的split_index>
 --out cause_screen.json`。逐窗聚合公式**写在脚本内**（默认逐窗 K 点均值——口径
 进闸，不许外置未验证的整形脚本）。每特征：基线段（与误差侧同 buffer）→ 偏移
 shift_z 与 Welch p、与误差序列全期秩相关、特征自身 onset（同一首离判据）。

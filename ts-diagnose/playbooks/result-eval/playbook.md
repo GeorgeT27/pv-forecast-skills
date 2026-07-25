@@ -104,7 +104,8 @@ orient 承接**（不再需要专属的 run_orient.py：orient 每次进入自�
 
 ### Stage 0：质检（消费 setup 长表）
 
-输入：intake 盘点到的 `predict`/`truth`（及可选 `features`/`train_y`）材料路径。
+输入：setup 产物的规范长表（`<setup>/predictions.csv`，orient 注入的 manifest 摘要给出
+位置与模型清单）。
 
 菜谱：
 1. **质检对象是 setup 产物的规范长表**（orient 注入的 manifest 摘要给出 predictions.csv
@@ -145,7 +146,7 @@ done：`*.xlsx`（或用户口径约定的等价指标表）落盘。
 
 ```bash
 python3 <ENGINE>/chartbook/scripts/chart_<蛇形id>.py \
-  --pred predictions.csv --truth truth.csv --out-dir charts/ [各图特有参数]
+  --pred <setup>/predictions.csv --out-dir charts/ [各图特有参数]
 ```
 
 **chart_sweep 产物 built/linked 时**：与本阶段声明重叠的图直接复用其 charts/*.json

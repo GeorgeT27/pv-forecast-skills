@@ -25,11 +25,14 @@ prompt**（`<...>` 占位换实参）。用通用 subagent（general-purpose）�
 ——先跑留出站的 result-eval playbook（见 playbook.md §4 与引擎 `references/engine-core.md`
 「上游产物三分支」纪律）。
 **为什么由主 agent 亲自编排**：subagent 不能再派 subagent，且 result-eval 自身 Stage 3→4
-的停顿要问用户——所以嵌入运行的 Brief A/B 派发必须由主 agent 做。
+的停顿点（是否深挖）由主 agent 代为最小化决策以跑满至 CONCLUSION.md（§4 要求
+eval_report 产物状态为 built，不可停在 Stage 3）——所以嵌入运行的 Brief A/B 派发必须由
+主 agent 做。
 
 ```
-1. mkdir <influence 工作目录>/result_analysis_<留出站拼音>/（独立目录——绝不写其他实验线的
-   任何已有分析目录）。在其中写 analysis_config.json：
+1. mkdir <会话根目录>/eval_report/（独立目录——绝不写其他实验线的任何已有分析目录）。
+   在其中跑 result-eval 的 setup 前置得到规范长表；随后写 result-eval 所需的
+   analysis_config 等输入：
      station      = "<留出站拼音>"
      metric_py    = <主线同一个 metric.py>
      true_label   = influence_config.test_label（同一份留出站真值）
@@ -40,16 +43,20 @@ prompt**（`<...>` 占位换实参）。用通用 subagent（general-purpose）�
 2. cd 该目录跑 `python3 "<result-eval playbook 目录>/../../scripts/orient.py" --playbook
    result-eval`；随后照 result-eval playbook 的 `references/subagent-briefs.md` 派发：
    Brief B（metric）×1 → 完成后 Brief A（figure+fact）×N 并行。
-   参数覆盖：工作目录 = result_analysis_<留出站拼音> 绝对路径；Brief B 已通用
-   （figures/<留出站拼音>/，站名以 analysis_config.station 为准），无需改写该句。
-3. 跑到 result-eval Stage 3 现象清单为止（其 Stage 4 深归因不跑——由本技能 Stage 2–5 接管）。
-4. 回 influence 工作目录：往 influence_config.json 回填
-   result_analysis_workdir=<该目录绝对路径> + result_analysis_status="linked"；
-   把现象清单摘要（≤15 行）记入 PROGRESS.md；重跑 orient 确认 [linked]；继续 Stage 0。
+   参数覆盖：工作目录 = eval_report 绝对路径；Brief B 已通用（figures/<留出站拼音>/，
+   站名以 analysis_config.station 为准），无需改写该句。
+3. 跑满 result-eval 全部阶段直至 CONCLUSION.md（Stage 4 深归因可按需最小化——只求
+   `gate_reports/conclusion_gate.json` 与 CONCLUSION.md 落盘，不必穷尽假设；深归因不是
+   本步重点，本技能 Stage 2–5 自己接管留出站的归因）。CONCLUSION.md + conclusion_gate
+   receipt 缺一样产物核验就过不了，不可只停在 Stage 3 现象清单。
+4. 回 influence 工作目录：往 diagnose_config.json 回填
+   `config.products.eval_report = {workdir: <eval_report 绝对路径>, status: "built"}`；
+   把现象清单摘要（≤15 行）记入 PROGRESS.md；重跑 orient 确认 [built]；继续 Stage 0。
 ```
 
-用户拒绝 → 回填 `result_analysis_status="declined"`，继续 influence-only；
-FINDINGS/CONCLUSION 里注明"缺预测侧上下文（基线指标/天气分型/数据质量未核）"。
+用户拒绝 → 不登记 `config.products.eval_report`（保持 absent/declined），继续
+influence-only；FINDINGS/CONCLUSION 里注明"缺预测侧上下文（基线指标/天气分型/数据质量
+未核）"。
 
 ---
 
@@ -147,13 +154,13 @@ FINDINGS/CONCLUSION 里注明"缺预测侧上下文（基线指标/天气分型/
 
 influence 工作目录：<绝对路径>
 result-eval playbook 目录 MAIN：ts-diagnose/playbooks/result-eval
-预测侧上下文：<linked 时给 result_analysis_workdir；否则写 "无">
+预测侧上下文：<config.products.eval_report 为 built 时给其 workdir；否则写 "无">
 
 任务：
 1. 定位运行目录：
-   - linked：cd <result_analysis_workdir>（其 analysis_config.json 已含 train_stations
+   - built：cd <eval_report workdir>（其 analysis_config.json 已含 train_stations
      全部训练站路径）。若 figures/<留出站拼音>/drift/ 已有产物且新于配置 → 不重跑直接读。
-   - 无 linked：在 influence 工作目录写一个**最小** analysis_config.json
+   - 非 built：在 influence 工作目录写一个**最小** analysis_config.json
      （station="<留出站拼音>"、true_label=influence_config.test_label、
      train_stations=<全部训练站逐站 parquet，向主 agent 要>）——该文件只服务 run_drift，
      不代表跑过主技能；绝不碰任何已有分析目录。
@@ -167,7 +174,8 @@ result-eval playbook 目录 MAIN：ts-diagnose/playbooks/result-eval
 （禁止"为什么"；红旗站只标记，数据质量核查是主 agent 反驳门#3 的活。）
 ```
 
-**主 agent 收到后**：现象入 FINDINGS →（linked 时）对照 suspect_days/event-log 走反驳门 →
+**主 agent 收到后**：现象入 FINDINGS →（eval_report built 时）对照 suspect_days/event-log
+走反驳门 →
 两法一致 + 有机制解释的站升"假设"（登记 H-XSTN-*）→ 决定是否进 Stage 5。
 
 ---
