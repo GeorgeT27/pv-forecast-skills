@@ -1,6 +1,6 @@
 {
   "playbook": "model-comparison",
-  "note": "金标准由 make_golden.py 确定性生成（零随机）；期望值来自 reference/ 实跑留容差。Stage 0 依赖真实数据格式（适配器+对账验证步兜底）；Stage 2 的图脚本本体由 chartbook 自带 golden 闸住，此处钉的是切片证据线契约（含置换基线 seed=0/n_perm=200，改种子=改期望）。伪 stage 键 2-crossdim 钉跨维稳定性证据线——gen_gate 的 stage 键只作 manifest 查找，不要求等于 playbook 阶段 id。改期望先改 make_golden.py 并重跑 pytest。",
+  "note": "金标准由 make_golden.py 确定性生成（零随机）；期望值来自 reference/ 实跑留容差。Stage 0 依赖真实数据格式（适配器+对账验证步兜底）；Stage 2 的图脚本本体由 chartbook 自带 golden 闸住，此处钉的是切片证据线契约（含置换基线 seed=0/n_perm=200，改种子=改期望）。伪 stage 键 1-crossdim 钉跨维稳定性证据线——gen_gate 的 stage 键只作 manifest 查找，不要求等于 playbook 阶段 id。改期望先改 make_golden.py 并重跑 pytest。",
   "planted": {
     "overall_better": "A",
     "a_worst_slice": "2024-02",
@@ -11,7 +11,7 @@
     "caliber_flip": true
   },
   "stages": {
-    "1": {
+    "0": {
       "desc": "总差距：A 总体更好但差距未过噪声线（|z|<2），配对统计精确回收",
       "inputs": [
         "predictions.csv"
@@ -84,7 +84,7 @@
       ],
       "reference": "reference/stage1_gap.py"
     },
-    "2": {
+    "1": {
       "desc": "切片证据线：A 最差片 2024-02、片内 B 反超、gap 全集中且过置换基线（seed=0：真实 worst_slice_gap=1.0，null 典型 0.575/0.15）",
       "inputs": [
         "predictions.csv"
@@ -158,7 +158,7 @@
       ],
       "reference": "reference/stage2_slice.py"
     },
-    "2-crossdim": {
+    "1-crossdim": {
       "desc": "跨维稳定性证据线：时间对半 A 两半均领先（各 −0.1333）、口径切换翻转（pooled A 1.5843 > B 1.5）",
       "inputs": [
         "predictions.csv"
