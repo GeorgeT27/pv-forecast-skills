@@ -212,6 +212,26 @@ def test_product_status_missing_input_is_stale(pbdir, tmp_path):
     assert s["status"] == "stale" and s["stale_inputs"] == ["predict"]
 
 
+def test_product_status_resolves_workdir_relative_input_paths(pbdir, tmp_path):
+    """Task 10 冒烟抓到的 bug：manifest 由生产者在 setup/ 里写，inputs 记的是
+    workdir 相对路径——消费者 cwd 下核验必须以 workdir 为基准解析，否则新建
+    产物被误判 stale（输入"消失"）。"""
+    d = tmp_path / "setup"
+    d.mkdir()
+    (d / "predictions.csv").write_text("x", encoding="utf-8")
+    (d / "raw.csv").write_text("rawdata", encoding="utf-8")
+    fp = ec.file_fingerprint(str(d / "raw.csv"))
+    (d / "setup_manifest.json").write_text(
+        json.dumps({"inputs": {"predict": {"path": "raw.csv",
+                                           "fingerprint": fp}}}),
+        encoding="utf-8")
+    cfg = {"products": {"setup": {"workdir": "setup", "status": "built"}}}
+    s = ec.product_status(cfg, "setup")            # cwd = tmp_path（消费者视角）
+    assert s["status"] == "built", s
+    (d / "raw.csv").write_text("changed", encoding="utf-8")
+    assert ec.product_status(cfg, "setup")["status"] == "stale"
+
+
 def test_check_product_dsl(pbdir, tmp_path):
     fm = ec.load_frontmatter(str(pbdir / "cons-b" / "playbook.md"))
     ctx = {"cfg": {}, "fm": fm, "state": {}}

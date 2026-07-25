@@ -332,6 +332,9 @@ def product_status(cfg, pid):
         path = (fp or {}).get("path")
         if not path:
             continue
+        # manifest 由生产者在自己的 workdir 里写，相对路径以 workdir 为基准解析
+        if not os.path.isabs(path):
+            path = os.path.join(workdir, path)
         if not os.path.exists(path):
             stale.append(mid)      # 输入文件消失也算过期（redo/apenwarr 教训）
         elif file_fingerprint(path) != fp.get("fingerprint"):
