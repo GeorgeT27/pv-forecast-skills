@@ -24,6 +24,15 @@ stages:                           # 必填，按执行顺序；id 为整数（�
     charts: [horizon-degradation]     # 可选。本阶段消费的 chartbook recipe id（须存在于 chartbook/recipes/）；orient 按 needs_materials × 盘点结果逐图报可画/缺材料自动跳过
                                        # 阶段闸：声明了 charts 的阶段，done_when.artifacts 必须含 "INDEX.md"（build_index.py 产物）——画完不建索引不算阶段完成（加载期 _validate_frontmatter 校验，见 test_materials.py::test_chart_stage_requires_index_artifact）
                                        # 结论闸：done_when.artifacts 含 "CONCLUSION.md" 的阶段，必须同时含 "gate_reports/conclusion_gate.json"（conclusion_gate.py 的 receipt）——结论闸 receipt 即完成判据，缺则加载期 _validate_frontmatter 直接 ValueError（见 test_materials.py::test_conclusion_stage_requires_gate_receipt_artifact）
+produces:                         # 可选。声明本 playbook 是生产者（level-1）
+  id: setup                       #   产物 id，引擎内唯一（products_index 加载期查重）
+  manifest: setup_manifest.json   #   机器契约文件名（产物工作目录内）；含 inputs 指纹则启用过期检测
+  marker_files: [predictions.csv] #   有效性核验：产物工作目录下这些文件必须存在
+upstream:                         # 可选。声明本 playbook 消费的上游产物（level-2）
+  - product: setup                #   引用某 playbook 的 produces.id（未声明的 id 加载期报错）
+    required: true                #   true：缺 → orient 打「立即内联生产」指令并阻塞开工（不问用户）
+  - product: model_profile        #   false：缺 → 三分支问（现跑 / 链接已有 / declined 并声明代价）
+    required: false
 materials:                        # 可选。本 playbook 的材料需求（intake 引擎级机制）
   required: [predict, truth]      #   unknown/absent 均阻塞开工（absent 可经用户确认降级）
   optional: [model_code]          #   不阻塞；驱动变体/图表可用性
@@ -39,7 +48,7 @@ questions:                        # 提问声明（引擎提问纪律的载体�
     options: ["结构化 CSV/JSON", "文本日志", "只在 checkpoint 里", "没记录"]
     default: null                 # null = 必问；非 null = 可默认（orient 标 ✓默认，不阻塞）
     skip_if: "artifact:loss_records.csv"   # 可选：DSL 成立 = 证据自答，不问不阻塞
-contexts:                         # 可选。外部分析上下文（泛化 ask-then-embed 三分支）
+contexts:                         # 可选。外部分析上下文（泛化 ask-then-embed 三分支）；⚠ 弃用中：新 playbook 一律用 upstream:；contexts 仅为迁移期兼容保留（Phase 2 退役）
   - id: upstream-analysis
     name: 预测侧上下文
     workdir_key: linked_workdir   # config 里存路径的键
@@ -70,6 +79,25 @@ crystallize_min_cases: 5          # 可选。固化三关之关1（多样性）�
 | `question:<qid>` | 该问题已答（含 profile/默认/实验线/证据自答） |
 | `material:<id>` | config.materials 该材料 status 为 present（id 必须 ∈ engine_common.MATERIAL_IDS，拼错报错） |
 | `not <expr>` | 取反（只允许一层） |
+| `product:<id>` | 该产物已就绪：config.products 登记 status ∈ {built, linked} 且 marker_files 核验通过、无未确认过期（id 必须是某 playbook 的 produces.id，拼错报错） |
+
+产物注册在消费者 `diagnose_config.json` 的 `products` 块：
+`products.<id> = {"workdir": "<产物目录>", "status": "built|linked|declined", "accept_stale": bool?}`
+——`built` = 本会话内联生产；`linked` = 用户链接已有目录；`declined` = 用户放弃（仅 optional 允许，结论须声明）。
+生产者在**产物 id 命名的子目录**跑（`./setup/`、`./model_profile/`……），有自己的 diagnose_config.json；
+内联生产时把父 config 的 materials/questions 块拷入子 config（沿用已答，不重复问用户）。
+过期检测：manifest 的 `inputs.{材料id: {path, fingerprint}}` 与当前材料文件指纹对账。
+指纹（`engine_common.file_fingerprint`）：≤64MB 全量 sha256（权威）；更大用 大小+头 1MB+尾 1MB
+sha256——尾部覆盖 parquet footer 的 EOF 元数据（imohash 模式；头部单独哈希不安全，无任何构建/数据
+工具拿它当新鲜度权威）；指纹带算法版本前缀 `v1:`，未来换算法不至于全体产物 stale 或不可解析；
+**输入文件消失同样算 stale**（redo 教训）。同尺寸且只改中段的超大文件改动检测不到——显式接受的
+残余风险（要更强改 FULL_HASH_MAX_BYTES 走全量）。不一致 → status=stale，须用户确认重建或写
+`accept_stale: true` 留痕。**代码也是依赖**（Snakemake 7.8 教训）：setup manifest 把适配器脚本
+指纹一并记入 inputs——适配逻辑变了，产物即过期。
+纪律：frontmatter 声明 = 意图，orient 解析出的状态 = 观测事实——agent 只写 config.products 的登记
+字段（workdir/status/accept_stale），绝不手改判定结果。
+上游产物拥有的问题（如 setup 的 freq/align-keys）**下游不得重复声明**（加载期查重报错）；
+生产者自己也可声明 upstream（fact-scan 依赖 setup），加载期做环检测。
 
 不追求图灵完备：组合逻辑写不下就拆成多条 prereq，或用 `manual`。
 
