@@ -21,7 +21,8 @@ except ImportError:  # 明确报错好过神秘 ImportError 栈
     raise SystemExit("缺 pyyaml：pip install -r <仓库根>/requirements.txt")
 
 ENGINE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PLAYBOOKS_DIR = os.path.join(ENGINE_DIR, "playbooks")
+PLAYBOOKS_DIR = os.environ.get("TSD_PLAYBOOKS_DIR") \
+    or os.path.join(ENGINE_DIR, "playbooks")
 
 CONFIG_PATH = "diagnose_config.json"
 STATE_PATH = "diagnose_state.json"
@@ -80,6 +81,19 @@ def save_config(cfg, path=CONFIG_PATH):
 
 
 # ---------------------------------------------------------------- playbook
+def _raw_frontmatter(md_path):
+    """轻解析：只切 YAML，不做校验（products_index/validate_upstream 内部用，
+    避免 load_frontmatter ↔ 全目录扫描的递归）。解析不动 → None。"""
+    text = _read_text(md_path)
+    if not text.startswith("---"):
+        return None
+    end = text.find("\n---", 3)
+    if end < 0:
+        return None
+    fm = yaml.safe_load(text[3:end])
+    return fm if isinstance(fm, dict) else None
+
+
 def load_frontmatter(md_path):
     """切出 md 文件头部 --- ... --- 的 YAML 块并解析。没有 frontmatter → ValueError。"""
     text = _read_text(md_path)
@@ -168,6 +182,20 @@ def _validate_frontmatter(fm, md_path):
                 f"{md_path} context '{cx.get('id')}' 的 trigger_material='{trig}' "
                 f"未声明在 materials.required/optional 里——其状态永远无法盘点，"
                 f"embed hint 永远不会触发，须补进 materials.required/optional")
+    pr = fm.get("produces")
+    if pr is not None:
+        if not isinstance(pr, dict):
+            raise ValueError(f"{md_path} produces 须为 dict（_playbook-spec §produces）")
+        for key in ("id", "manifest", "marker_files"):
+            if not pr.get(key):
+                raise ValueError(f"{md_path} produces 缺 {key}（_playbook-spec §produces）")
+        if not isinstance(pr["marker_files"], list):
+            raise ValueError(f"{md_path} produces.marker_files 须为 list")
+    ups = fm.get("upstream")
+    if ups is not None:
+        if not isinstance(ups, list):
+            raise ValueError(f"{md_path} upstream 须为 list（_playbook-spec §upstream）")
+        validate_upstream(fm, md_path)
 
 
 def find_playbook(name):
@@ -202,6 +230,57 @@ def list_playbooks():
         except ValueError:
             continue
     return out
+
+
+# ---------------------------------------------------------------- products（分层）
+def products_index():
+    """全引擎 produces 声明扫描 → {产物id: {playbook, manifest, marker_files}}。
+    产物 id 冲突（两个 playbook 声明同一 id）→ ValueError。"""
+    out = {}
+    for p in sorted(glob.glob(os.path.join(PLAYBOOKS_DIR, "*", "playbook.md"))):
+        fm = _raw_frontmatter(p)
+        if not fm or not fm.get("produces"):
+            continue
+        pr = fm["produces"]
+        pid = pr.get("id")
+        if pid in out:
+            raise ValueError(f"产物 id '{pid}' 重复声明：{out[pid]['playbook']} 与 "
+                             f"{fm.get('id')}（produces.id 引擎内唯一）")
+        out[pid] = {"playbook": fm.get("id"), "manifest": pr.get("manifest"),
+                    "marker_files": list(pr.get("marker_files") or [])}
+    return out
+
+
+def validate_upstream(fm, md_path):
+    """upstream 声明的加载期校验：引用存在、不自引用、问题不与生产者重复、依赖不成环。"""
+    idx = products_index()
+    my_product = (fm.get("produces") or {}).get("id")
+    qids_own = {q["id"] for q in fm.get("questions") or []}
+    for u in fm.get("upstream") or []:
+        if not isinstance(u, dict) or not u.get("product"):
+            raise ValueError(f"{md_path} upstream 条目缺 product 键（_playbook-spec §upstream）")
+        pid = u["product"]
+        if pid not in idx:
+            raise ValueError(f"{md_path} upstream 引用未声明的产物 '{pid}'"
+                             f"（已声明：{sorted(idx)}）")
+        if pid == my_product:
+            raise ValueError(f"{md_path} 自引用：既 produces 又 upstream '{pid}'")
+        prod_fm = _raw_frontmatter(find_playbook(idx[pid]["playbook"])) or {}
+        dup = qids_own & {q["id"] for q in prod_fm.get("questions") or []}
+        if dup:
+            raise ValueError(f"{md_path} 重复声明了生产者 {idx[pid]['playbook']} "
+                             f"拥有的问题 {sorted(dup)}——上游产物的问题只在生产者处问一次")
+    _upstream_cycle_check(fm, idx, [fm.get("id")])
+
+
+def _upstream_cycle_check(fm, idx, seen):
+    for u in fm.get("upstream") or []:
+        producer = idx[u["product"]]["playbook"]
+        if producer in seen:
+            raise ValueError(f"upstream 依赖成环：{' → '.join(seen + [producer])}")
+        pfm = _raw_frontmatter(find_playbook(producer))
+        if pfm:
+            _upstream_cycle_check(pfm, idx, seen + [producer])
 
 
 # ---------------------------------------------------------------- check-DSL
