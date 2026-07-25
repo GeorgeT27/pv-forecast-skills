@@ -228,23 +228,6 @@ def main():
                   f"现在内联生产（{prod_pb}）/ 链接已有目录（写 workdir+status=linked）/ "
                   f"放弃（status=declined，结论须声明缺此产物与代价）。")
 
-    for cx in fm.get("contexts") or []:
-        cs = ec.context_status(cx, ctx)
-        print("-" * 62)
-        if cs["status"] == "linked":
-            miss = cs.get("missing_markers")
-            flag = f" ⚠ 缺核验文件 {miss}（有效性存疑，先复核再消费）" if miss else ""
-            print(f"  上下文「{cx['name']}」[linked]: {cs['workdir']}{flag}")
-        elif cs["status"] == "declined":
-            print(f"  上下文「{cx['name']}」[declined]：用户已拒绝——结论须注明缺此上下文。")
-        else:
-            print(f"  ⚠ 上下文「{cx['name']}」[absent]：主 agent 必须先 AskUserQuestion"
-                  f"（要不要先建立该上下文？做法见 playbook 正文），"
-                  f"答案回填 config.{cx['status_key']}（+{cx['workdir_key']}）。")
-            hint = ec.context_embed_hint(cx, cfg)
-            if hint:
-                print(f"    {hint}")
-
     mat_rows = ec.materials_report(fm, cfg)
     mat_blocked = ec.blocking_materials(fm, cfg)
     if mat_rows:

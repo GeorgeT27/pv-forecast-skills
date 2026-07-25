@@ -21,9 +21,9 @@ prompt**（`<...>` 占位换实参）。用通用 subagent（general-purpose）�
 
 ## 嵌入式 result-eval playbook 运行（主 agent 的编排程序，非 brief）
 
-**何时**：orient 报预测侧上下文 [absent] 且用户同意先跑留出站的 result-eval playbook
-（`provider_playbook: result-eval`，见 playbook.md §4 与引擎 `references/engine-core.md`
-「嵌入执行 provider skill」纪律）。
+**何时**：orient 报上游产物「eval_report」[absent]（可选）且用户在三分支里选了「现在内联生产」
+——先跑留出站的 result-eval playbook（见 playbook.md §4 与引擎 `references/engine-core.md`
+「上游产物三分支」纪律）。
 **为什么由主 agent 亲自编排**：subagent 不能再派 subagent，且 result-eval 自身 Stage 3→4
 的停顿要问用户——所以嵌入运行的 Brief A/B 派发必须由主 agent 做。
 

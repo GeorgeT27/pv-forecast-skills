@@ -76,13 +76,14 @@ python3 "<ENGINE>/scripts/orient.py" --goto 3                        # 直达校
   **选择门＝画前定范围，停顿点＝画后定深挖，两者不同不可合并。**
 - **生成闸**：playbook 的 `golden/manifest.json` 覆盖到的阶段，脚本必须先过 `scripts/gen_gate.py`（静态检查 + 在结果已知的金标准输入上跑一遍），PASS 才许碰真实数据；FAIL → 改脚本不改期望。闸报告落工作目录 `gate_reports/`。
 - **事实阶段 ⏸**：playbook 标 `pause_after` 的事实提取阶段产「现象清单」（观察+数字+来源，**禁机制语言**），完成后停下向用户汇报，等用户点名要深挖的项再进结论阶段。用户给模糊授权（"挑最强的/你看着办"）时的操作判据：**效应量最大且样本数过功效阈值**的那条现象（并列取来源产物证据线更多者），选了哪条、按什么判据，记 PROGRESS.md 一行。
-- **上下文三分支**：playbook 声明的外部上下文（contexts）absent 时必须先问用户（要不要先建立/嵌入跑），linked 时核验 marker 文件才消费，declined 时结论注明缺失。
-- **嵌入执行 provider playbook**：context 声明了 `provider_playbook` 且 orient 给出嵌入提示 →
-  AskUserQuestion 问用户要不要现在生产（列大致成本）。同意 → **主 agent 内联执行该
-  playbook 完整正文**（保留提问权；不经 subagent——subagent 无提问权），产物落盘、按
-  marker_files 核验、写回 config 的 workdir_key/status_key=linked，PROGRESS.md 记
-  「嵌入执行 <playbook> 开始/完成」两行，回来重跑 orient 继续主流程。拒绝 → status_key=declined。
-  （`provider_skill` 为兼容外部技能的旧键，engine 内 playbook 一律用 `provider_playbook`。）
+- **上游产物三分支**：playbook 声明的 `upstream[]` 产物 absent 时——`required: true` 由主 agent
+  **立即内联生产**（不问用户：在 `<product-id>/` 子目录内跑生产方 playbook 的完整正文，写回
+  `config.products.<id>={workdir,status:'built'}` 后重跑 orient）；`required: false` 走
+  AskUserQuestion 三分支（现在内联生产 / 链接已有目录写 `workdir+status=linked` / 放弃
+  `status=declined` 且结论须声明缺此产物与代价）。linked/built 时核验 manifest 与
+  marker_files 才消费；stale（输入材料已变）须用户二选一：重建或 `accept_stale=true` 确认沿用
+  （结论须声明）。产物内联生产即「upstream 产物内联生产」——不是外部技能接线，是引擎内
+  playbook 间既定的生产者/消费者关系，见 `_playbook-spec.md` §`produces`/`upstream`。
 - **subagent 编排**：重活（大日志解析、批量计算、逐产物事实提取）外包，brief 模板见 `subagent-briefs.md`；分片各写各的 `--out`，主 agent 合并；`diagnose_config/diagnose_state/PROGRESS/FINDINGS` 只由主 agent 写。
 - **上下文预算**：产物自足（json 带完整数字与形状描述），判读读 json 不读 PNG、不读原始大文件；每阶段落盘可断点续跑。
 
@@ -107,13 +108,13 @@ python3 "<ENGINE>/scripts/orient.py" --goto 3                        # 直达校
 - ❌ 跨 series/模型 pool 不可比量纲的数值（只比排名）。
 - ❌ subagent 写 state/PROGRESS/FINDINGS/config，或两个 subagent 追加同一个文件（分片各写各的 `--out`）。
 - ❌ 把 PNG/原始日志/大 parquet 读进上下文（一切解析与计算在脚本内落盘）。
-- ❌ 上下文 [absent] 不问用户就开跑，或 linked 时不核验 marker 就消费。
+- ❌ 上游产物 [absent] 不按三分支处理就开跑，或 linked/built 时不核验 manifest/marker 就消费。
 - ❌ 用户的任务其实命中专用技能（见 SKILL.md 路由优先级与 description 负面清单）却用引擎从头问一遍。
 - ❌ 忘了把运行中补齐的实验线【待补】路径写回 project-context（下次还得问）。
 - ❌ orient 报「必需材料未就绪」却跳过盘点直接开工，或材料 unknown 时按"大概有"处理
   （unknown ≠ absent-confirmed：前者必须问，后者才允许走确认过的降级）。
-- ❌ 嵌入执行 provider skill 时丢给 subagent（其流程含必须用户裁决的问题），或跑完
-  不写 marker/config 回填就继续（下次 orient 仍报 absent，白跑）。
+- ❌ 内联生产 upstream 产物时丢给 subagent（其流程含必须用户裁决的问题），或跑完
+  不写 manifest/marker/config 回填就继续（下次 orient 仍报 absent，白跑）。
 
 ## 运行后回顾（每次实跑收尾必做）
 

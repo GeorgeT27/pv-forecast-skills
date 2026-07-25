@@ -28,7 +28,8 @@ produces:                         # 可选。声明本 playbook 是生产者（l
   id: setup                       #   产物 id，引擎内唯一（products_index 加载期查重）
   manifest: setup_manifest.json   #   机器契约文件名（产物工作目录内）；含 inputs 指纹则启用过期检测
   marker_files: [predictions.csv] #   有效性核验：产物工作目录下这些文件必须存在
-upstream:                         # 可选。声明本 playbook 消费的上游产物（level-2）
+upstream:                         # 可选。声明本 playbook 消费的上游产物（level-2）；
+                                   # contexts 机制已全面迁移完成并退役（Phase 2），upstream 是唯一现行的跨 playbook 产物消费声明方式
   - product: setup                #   引用某 playbook 的 produces.id（未声明的 id 加载期报错）
     required: true                #   true：缺 → orient 打「立即内联生产」指令并阻塞开工（不问用户）
   - product: model_profile        #   false：缺 → 三分支问（现跑 / 链接已有 / declined 并声明代价）
@@ -48,16 +49,6 @@ questions:                        # 提问声明（引擎提问纪律的载体�
     options: ["结构化 CSV/JSON", "文本日志", "只在 checkpoint 里", "没记录"]
     default: null                 # null = 必问；非 null = 可默认（orient 标 ✓默认，不阻塞）
     skip_if: "artifact:loss_records.csv"   # 可选：DSL 成立 = 证据自答，不问不阻塞
-contexts:                         # 可选。外部分析上下文（泛化 ask-then-embed 三分支）；⚠ 弃用中：新 playbook 一律用 upstream:；contexts 仅为迁移期兼容保留（Phase 2 退役）
-  - id: upstream-analysis
-    name: 预测侧上下文
-    workdir_key: linked_workdir   # config 里存路径的键
-    status_key: linked_status     # config 里存状态的键：linked / declined /（空 = absent）
-    marker_files: ["FINDINGS.md"] # linked 有效性核验：目录下这些文件须存在
-    on_absent: ask                # absent 时主 agent 必须先问用户（orient 只打印指引）
-    provider_playbook: model-audit      # 可选：谁能生产本上下文（触发嵌入执行提示，engine 内 playbook 用此字段）
-    # provider_skill: pv-model-analysis  # 二选一的旧式/外部形态：provider 是外部技能而非 engine 内 playbook 时用这个（legacy，engine 内一律用 provider_playbook）
-    trigger_material: model_code        # 可选：该材料 present 才提议嵌入（须为合法材料 id）
 evidence_lines:                   # 可选。独立证据线登记（多证据线一致性判定的依据）
   - id: composition-regression
     stage: 3

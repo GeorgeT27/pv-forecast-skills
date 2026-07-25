@@ -197,21 +197,6 @@ def test_blocking_questions_by_stage(fm, workdir):
     assert len(ec.blocking_questions(fm, ctx)) == 3  # 全局：external-metric/fig-style 有 default
 
 
-# ---------------------------------------------------------------- contexts
-def test_context_status_branches(fm, workdir):
-    cx = {"id": "up", "name": "上游", "workdir_key": "up_dir", "status_key": "up_status",
-          "marker_files": ["FINDINGS.md"]}
-    assert ec.context_status(cx, ctx_of(fm, {}))["status"] == "absent"
-    assert ec.context_status(cx, ctx_of(fm, {"up_status": "declined"}))["status"] == "declined"
-    up = workdir / "up"
-    up.mkdir()
-    cs = ec.context_status(cx, ctx_of(fm, {"up_status": "linked", "up_dir": str(up)}))
-    assert cs["status"] == "linked" and cs["missing_markers"] == ["FINDINGS.md"]
-    (up / "FINDINGS.md").write_text("现象", encoding="utf-8")
-    cs = ec.context_status(cx, ctx_of(fm, {"up_status": "linked", "up_dir": str(up)}))
-    assert cs["missing_markers"] == []
-
-
 # ---------------------------------------------------------------- 合并
 def test_merge_experiment_line(fm, workdir):
     exp = {"name": "l1", "held_out_station": "X", "models": ["A", "B"],

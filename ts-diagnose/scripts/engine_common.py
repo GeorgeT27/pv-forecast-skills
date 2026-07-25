@@ -171,18 +171,6 @@ def _validate_frontmatter(fm, md_path):
     overlap = set(req) & set(opt)
     if overlap:
         raise ValueError(f"{md_path} 材料 {sorted(overlap)} 既是 required 又是 optional")
-    has_materials_key = "materials" in fm
-    for cx in fm.get("contexts") or []:
-        trig = cx.get("trigger_material")
-        if trig and trig not in MATERIAL_IDS:
-            raise ValueError(
-                f"{md_path} context '{cx.get('id')}' 的 trigger_material='{trig}' "
-                f"不是合法材料 id（见 MATERIAL_IDS）")
-        if trig and has_materials_key and trig not in req + opt:
-            raise ValueError(
-                f"{md_path} context '{cx.get('id')}' 的 trigger_material='{trig}' "
-                f"未声明在 materials.required/optional 里——其状态永远无法盘点，"
-                f"embed hint 永远不会触发，须补进 materials.required/optional")
     pr = fm.get("produces")
     if pr is not None:
         if not isinstance(pr, dict):
@@ -687,37 +675,6 @@ def addable_recipes(fm, cfg):
 def has_chart_stage(fm):
     """本 playbook 是否存在声明了 charts: 的阶段（图表选择门是否适用）。"""
     return any(st.get("charts") for st in fm.get("stages") or [])
-
-
-# ---------------------------------------------------------------- contexts
-def context_status(cx, ctx):
-    """泛化 ask-then-embed 三分支：linked / declined / absent（+linked 时的有效性核验）。"""
-    cfg = ctx["cfg"]
-    status = cfg.get(cx["status_key"]) or ""
-    workdir = cfg.get(cx["workdir_key"]) or ""
-    if status == "declined":
-        return {"status": "declined"}
-    if status == "linked" and workdir:
-        missing = [m for m in cx.get("marker_files") or []
-                   if not glob.glob(os.path.join(workdir, "**", m), recursive=True)
-                   and not os.path.exists(os.path.join(workdir, m))]
-        return {"status": "linked", "workdir": workdir, "missing_markers": missing}
-    return {"status": "absent"}
-
-
-def context_embed_hint(cx, cfg):
-    """absent 上下文的嵌入执行提示：声明了 provider_playbook/provider_skill 且触发材料
-    到位 → 文案；否则 None。执行本身（内联跑 provider playbook 或读 provider 的
-    SKILL.md）是主 agent 的活，见 engine-core「嵌入执行 provider skill」。"""
-    prov = cx.get("provider_playbook") or cx.get("provider_skill")
-    if not prov:
-        return None
-    kind = "playbook" if cx.get("provider_playbook") else "技能"
-    trig = cx.get("trigger_material")
-    if trig and material_status(cfg, trig) != "present":
-        return None
-    return (f"可嵌入生产：AskUserQuestion 问用户要不要现在内联执行{kind}「{prov}」"
-            f"生成本上下文（跑完写 marker 回填 config，纪律见 engine-core「嵌入执行」）")
 
 
 def modelmap_blocker(cfg, fm):

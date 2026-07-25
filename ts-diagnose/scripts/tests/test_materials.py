@@ -174,34 +174,6 @@ def test_material_dsl_drives_variant(tmp_path):
     assert ec.variant_active(fm, ctx) == {"model-side": True}
 
 
-# ---------------------------------------------------------------- provider_skill
-CX = {"id": "model-profile", "name": "模型参考档案",
-      "workdir_key": "modelmap_dir", "status_key": "modelmap_status",
-      "marker_files": ["models.md"], "on_absent": "ask",
-      "provider_skill": "pv-model-analysis", "trigger_material": "model_code"}
-
-
-def test_context_embed_hint():
-    cfg_has = {"materials": {"model_code": {"status": "present"}}}
-    hint = ec.context_embed_hint(CX, cfg_has)
-    assert "pv-model-analysis" in hint and "嵌入" in hint
-    # 触发材料不 present → 不提议嵌入
-    assert ec.context_embed_hint(CX, {}) is None
-    # 无 provider_skill → 永远 None
-    cx2 = {k: v for k, v in CX.items() if k != "provider_skill"}
-    assert ec.context_embed_hint(cx2, cfg_has) is None
-    # 无 trigger_material → 只要有 provider_skill 就提议
-    cx3 = {k: v for k, v in CX.items() if k != "trigger_material"}
-    assert ec.context_embed_hint(cx3, {}) is not None
-
-
-def test_context_embed_hint_provider_playbook():
-    cx = {**{k: v for k, v in CX.items() if k != "provider_skill"},
-          "provider_playbook": "model-audit"}
-    hint = ec.context_embed_hint(cx, {"materials": {"model_code": {"status": "present"}}})
-    assert "model-audit" in hint and "嵌入" in hint
-
-
 def test_modelmap_blocker(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg = {"materials": {"model_code": {"status": "present", "paths": ["/repo"]}}}
@@ -212,45 +184,6 @@ def test_modelmap_blocker(tmp_path, monkeypatch):
     assert ec.modelmap_blocker(cfg, fm_diag) is None          # 有回执 → 放行
     assert ec.modelmap_blocker(cfg, {"id": "model-audit"}) is None  # 自身豁免
     assert ec.modelmap_blocker({}, fm_diag) is None           # 无 model_code → 不管
-
-
-def test_frontmatter_rejects_bad_trigger_material(tmp_path):
-    p = tmp_path / "pb.md"
-    p.write_text("---\nid: x\nname: x\ngoal: x\nstages:\n"
-                 "  - id: 0\n    name: a\n    done_when: {artifacts: ['a.json']}\n"
-                 "contexts:\n"
-                 "  - id: c\n    name: c\n    workdir_key: w\n    status_key: s\n"
-                 "    trigger_material: nope\n---\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="trigger_material"):
-        ec.load_frontmatter(str(p))
-
-
-def test_frontmatter_rejects_trigger_material_not_in_declared_materials(tmp_path):
-    """playbook 声明了 materials 但 context 的 trigger_material 不在 required/optional 里
-    → 该材料状态永远不会被盘点，embed hint 永远不触发，须在加载期就报错。"""
-    p = tmp_path / "pb.md"
-    p.write_text("---\nid: x\nname: x\ngoal: x\n"
-                 "materials:\n  required: [predict]\n"
-                 "stages:\n"
-                 "  - id: 0\n    name: a\n    done_when: {artifacts: ['a.json']}\n"
-                 "contexts:\n"
-                 "  - id: c\n    name: c\n    workdir_key: w\n    status_key: s\n"
-                 "    trigger_material: model_code\n---\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="materials.required/optional"):
-        ec.load_frontmatter(str(p))
-
-
-def test_frontmatter_no_materials_key_trigger_material_still_loads(tmp_path):
-    """playbook 完全没有 materials 键（legacy/partial playbook）→ trigger_material
-    不做"须属已声明材料集"的校验，只做合法材料 id 校验（旧行为不变）。"""
-    p = tmp_path / "pb.md"
-    p.write_text("---\nid: x\nname: x\ngoal: x\nstages:\n"
-                 "  - id: 0\n    name: a\n    done_when: {artifacts: ['a.json']}\n"
-                 "contexts:\n"
-                 "  - id: c\n    name: c\n    workdir_key: w\n    status_key: s\n"
-                 "    trigger_material: model_code\n---\n", encoding="utf-8")
-    fm = ec.load_frontmatter(str(p))
-    assert fm["contexts"][0]["trigger_material"] == "model_code"
 
 
 # ---------------------------------------------------------------- profile 固化

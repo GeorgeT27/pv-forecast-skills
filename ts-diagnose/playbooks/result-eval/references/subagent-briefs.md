@@ -87,7 +87,7 @@ Stage 1 收益主要在算指标（不占图像上下文），单跑一个 subag
      - 额外：`git -C <pointer.repo> rev-parse HEAD` 与 `pointer.commit` 不一致 → 提示"模型档案可能
        已过时，建议重跑 model-audit playbook"，但先用现有档案继续（不阻塞分析）。
    - pointer 不存在，或 `path` 不在盘上 → 向用户要模型代码目录路径，嵌入执行
-     **model-audit** playbook（`provider_playbook: model-audit`，见 engine-core.md「嵌入执行
-     provider skill」纪律）于该目录；产出 `.modelmap/` + pointer 后再读 models.md。
+     **model-audit** playbook（orient 的 modelmap 档案闸提示「先嵌入执行 playbook「model-audit」」，
+     见 `engine_common.modelmap_blocker`）于该目录；产出 `.modelmap/` + pointer 后再读 models.md。
 2. 消费纪律：只引用带 ✅/📊/📐 且前提清晰的字段；⚠️/待确认/缺失一律按未知，不编造。
 3. 桥接假设里的 H-ID 直接对应 `references/hypotheses.md`；落 FINDINGS 前照常过 H-ID 门。

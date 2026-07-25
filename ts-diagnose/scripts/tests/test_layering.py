@@ -32,6 +32,16 @@ def test_playbook_discovery_covers_min_set():
     missing = MIN_PLAYBOOK_IDS - set(PLAYBOOK_IDS)
     assert not missing, f"playbooks/ 目录缺已知 playbook：{sorted(missing)}"
 
+
+def test_no_contexts_declarations_remain():
+    """contexts 机制已退役——任何真实 playbook 不得再声明。"""
+    for pid in PLAYBOOK_IDS:
+        path = os.path.join(ENGINE_DIR, "playbooks", pid, "playbook.md")
+        if not os.path.isfile(path):
+            continue
+        fm = ec.load_frontmatter(path)
+        assert not fm.get("contexts"), f"{pid} 仍声明 contexts——机制已退役"
+
 LINE_BUDGET = 60
 TOKEN_BUDGET = 6000
 
@@ -100,23 +110,21 @@ def test_layer0_routes_every_playbook():
     assert os.path.exists(os.path.join(ENGINE_DIR, "references", "engine-core.md"))
 
 
-# model-audit 是跨 playbook 共享的档案供应方（`contexts[].provider_playbook` 机制 +
-# engine_common.modelmap_blocker 全局阻塞，见 3b0ed11）：一个 playbook 若在自己的
-# frontmatter `contexts[]` 里显式声明某 id 为 provider_playbook，它以该 id 引用对方
-# 触发嵌入执行提示——这不是方法内容内联，是引擎既定的 provider 接线，按共享库豁免，
-# 而非 Layer 1 独立性违例。豁免按「声明」颗粒度收窄：只有 a 自己声明了 b 为
-# provider_playbook，a 全文提及 b 才合法；未声明的 playbook 提及任何其他 id 一律 0 次
+# model-audit 是跨 playbook 共享的档案供应方（upstream[] 分层机制 +
+# engine_common.modelmap_blocker 全局阻塞，见 3b0ed11；旧的迁移期兼容机制
+# 已全面退役）：一个 playbook 若在自己的 frontmatter
+# `upstream[]` 里声明某产物、其生产者恰好是 model-audit，它以该 id 引用对方
+# 触发内联生产提示——这不是方法内容内联，是引擎既定的 provider 接线，按共享库豁免，
+# 而非 Layer 1 独立性违例。豁免按「声明」颗粒度收窄：只有 a 自己声明了消费 b 生产的
+# 产物，a 全文提及 b 才合法；未声明的 playbook 提及任何其他 id 一律 0 次
 # ——防止未来 playbook 把 model-audit（或任何 provider）的说明文字贴进正文却不声明
-# provider 关系，从而绕过本守卫（见 fix round 1 报告）。
+# upstream 关系，从而绕过本守卫（见 fix round 1 报告）。
 def _declared_providers(playbook_path):
-    """读取 playbook 的合法跨引用集合：contexts[].provider_playbook（迁移期）
-    ∪ upstream[] 各产物的生产者 playbook（分层机制）。"""
+    """读取 playbook 的合法跨引用集合：upstream[] 各产物的生产者 playbook（分层机制）。"""
     fm = ec.load_frontmatter(playbook_path)
-    provs = {ctx["provider_playbook"] for ctx in (fm.get("contexts") or [])
-             if isinstance(ctx, dict) and ctx.get("provider_playbook")}
     idx = ec.products_index()
-    provs |= {idx[u["product"]]["playbook"] for u in (fm.get("upstream") or [])
-              if isinstance(u, dict) and u.get("product") in idx}
+    provs = {idx[u["product"]]["playbook"] for u in (fm.get("upstream") or [])
+             if isinstance(u, dict) and u.get("product") in idx}
     return frozenset(provs)
 
 
@@ -124,7 +132,7 @@ def _assert_no_undeclared_cross_reference(a, text, providers, b):
     """独立性守卫的单点判据：b 只有在 a 声明它为 provider 时才允许出现在 a 的正文里。"""
     if b in providers:
         return
-    assert b not in text, f"playbook {a} 内联引用了 {b}（未在 contexts[] 声明为 provider）"
+    assert b not in text, f"playbook {a} 内联引用了 {b}（未在 upstream[] 声明为 provider）"
 
 
 def test_layer1_guard_rejects_undeclared_provider_mention():
@@ -145,7 +153,7 @@ def test_layer1_guard_rejects_undeclared_provider_mention():
         "\n"
         "# decoy\n"
         "\n"
-        "本 playbook 没有在 contexts[] 里把 model-audit 声明为 provider_playbook，"
+        "本 playbook 没有在 upstream[] 里声明消费 model-audit 生产的产物，"
         "但正文这里贴了一段提到 model-audit 的说明文字（模拟未来误粘贴）。\n")
     with tempfile.TemporaryDirectory() as td:
         path = os.path.join(td, "playbook.md")
@@ -163,7 +171,7 @@ def test_layer1_guard_rejects_undeclared_provider_mention():
 
 def test_layer1_playbooks_independent():
     """全部 playbook 之间零共享内联：互不引用对方 id（动态发现，新增自动纳管），
-    但仅当 a 在自己 frontmatter 的 contexts[] 里把 b 声明为 provider_playbook 时，
+    但仅当 a 在自己 frontmatter 的 upstream[] 里声明消费 b 生产的产物时，
     a 才允许在正文提及 b（见上，颗粒度=每个 playbook 自己声明了什么，而非固定豁免表）。
     """
     for a in PLAYBOOK_IDS:

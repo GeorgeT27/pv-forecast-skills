@@ -19,15 +19,6 @@ stages:
   - id: 0
     name: 起步
     done_when: {artifacts: ['stage0.json']}
-contexts:
-  - id: model-profile
-    name: 模型参考档案
-    workdir_key: modelmap_dir
-    status_key: modelmap_status
-    marker_files: [models.md]
-    on_absent: ask
-    provider_playbook: model-audit
-    trigger_material: model_code
 ---
 正文占位。
 """
@@ -68,7 +59,7 @@ def test_blocked_when_unknown(tmp_path):
     assert "追问" in out
 
 
-def test_open_when_present_and_embed_hint(tmp_path):
+def test_open_when_present_and_modelmap_blocked(tmp_path):
     mats = {"predict": {"status": "present", "paths": ["x.parquet"],
                         "schema": {"y_col": "y", "time_col": "ts"}},
             "truth": {"status": "present", "paths": ["x.parquet"],
@@ -76,10 +67,9 @@ def test_open_when_present_and_embed_hint(tmp_path):
             "model_code": {"status": "present", "paths": ["x.parquet"]}}
     out = run_orient(setup_pb(tmp_path, mats))
     assert "[✓present] predict (required)" in out
-    # model_code present + 上下文 absent → 打印嵌入提示
-    assert "model-audit" in out and "嵌入" in out
     # model_code present 但无 .modelmap 回执 → modelmap 全局阻塞，不可开工；
-    # 阻塞行必须点名缺的具体回执文件，不能只说"缺档案"让人猜
+    # 阻塞行必须点名缺的具体回执文件与嵌入执行指引，不能只说"缺档案"让人猜
+    assert "model-audit" in out and "嵌入" in out
     assert "MODELMAP_RECEIPT.json" in out
     assert "先嵌入执行 playbook「model-audit」" in out
     assert "→ 前置齐，可开工 Stage 0" not in out
