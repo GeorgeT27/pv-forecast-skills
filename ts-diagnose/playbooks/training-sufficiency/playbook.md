@@ -2,6 +2,9 @@
 id: training-sufficiency
 name: 训练充分性/训练动力学
 goal: 判断训练是否充分（收敛/平台期/batch与数据量瓶颈），并解释训练分配（chunk/fold/run 构成）如何影响 loss 动力学
+upstream:
+  - product: setup
+    required: false
 stages:
   - id: 0
     name: 探测记录源与结构确认
@@ -153,7 +156,7 @@ CLI 与产物最小 schema 以 `golden/manifest.json` 为准（可执行示例�
 
 ### Stage 0：探测记录源与结构确认 → `probe_summary.json`
 
-- **输入**：question `loss-source` / `unit-structure` 的答案；config 里的日志/记录路径。
+- **输入**：question `loss-source` / `unit-structure` 的答案；config 里的日志/记录路径。**setup 产物 built/linked 时**：先读其 setup_manifest.json 的 materials 清单——training_log / experiment_config 的位置与格式已在 setup 盘点时记录，『在哪』免问直接用，`loss-source` 只补格式细节与样例行。
 - **菜谱**：生成 `analysis_scripts/probe.py`——按记录源类型扫描：能否找到 loss 记录、覆盖哪些 series/iteration/unit/epoch 范围、抽 3-5 条样例行原文；落 `probe_summary.json`：`{loss_found, sample_lines, coverage: {series: [...], n_iterations, n_units, epochs_per_unit}, gaps: [...]}`。
 - **验证步**：样例行人工比对用户描述的格式；coverage 与用户宣称的训练规模一致（不一致 → 问用户，不猜）。
 - **无记录分支**：`loss_found=false` 且拿不到 checkpoint 内 loss → 本 playbook 只剩外部指标线可做（Stage 4 独立于 loss 也可跑外部指标自身的充分性形态），FINDINGS 注明"loss 侧无料"。

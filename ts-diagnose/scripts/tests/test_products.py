@@ -358,6 +358,7 @@ REAL_UPSTREAM = {
     "robustness": {"setup": True, "chart_sweep": False},
     "feature-importance": {"setup": True},
     "subset-influence": {"setup": True, "model_profile": False, "eval_report": False},
+    "training-sufficiency": {"setup": False},
 }
 REAL_PRODUCES = {
     "data-setup": "setup",
