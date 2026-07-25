@@ -357,6 +357,7 @@ REAL_UPSTREAM = {
     "deployment-drift": {"setup": True, "model_profile": False, "chart_sweep": False},
     "robustness": {"setup": True, "chart_sweep": False},
     "feature-importance": {"setup": True},
+    "subset-influence": {"setup": True, "model_profile": False, "eval_report": False},
 }
 REAL_PRODUCES = {
     "data-setup": "setup",

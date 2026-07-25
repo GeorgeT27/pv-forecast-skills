@@ -5,6 +5,13 @@ goal: 找出联合训练的 N 个训练条目（数据子集）里哪些拖累�
 materials:
   required: [training_log, predict, truth]
   optional: [checkpoint, experiment_config, model_code]
+upstream:
+  - product: setup
+    required: true
+  - product: model_profile
+    required: false
+  - product: eval_report
+    required: false
 variants:
   - id: mode-b
     when: "material:checkpoint"
@@ -35,7 +42,7 @@ stages:
     prereqs:
       - desc: 回放已完成（Stage 0）
         check: "stage:0"
-      - desc: 留出单元逐 chunk RMSE 序列已就位（日志解析或 ckpt_eval 重算）
+      - desc: 留出单元逐 chunk RMSE 序列已就位（日志解析或 ckpt_eval 重算，setup 长表或日志解析）
         check: "material:predict"
   - id: 3
     name: 梯度佐证 TracIn（Mode B → tracin_scores.json）
@@ -61,14 +68,6 @@ stages:
       - desc: Stage 2/3 已给出 top 嫌疑（且最好两法一致）
         check: "stage:2"
     subagent_ok: false
-contexts:
-  - id: heldout-eval
-    name: 留出单元的 result-eval 产物
-    workdir_key: heldout_eval_dir
-    status_key: heldout_eval_status
-    marker_files: [CONCLUSION.md]
-    on_absent: ask
-    provider_playbook: result-eval
 ---
 
 # subset-influence：训练条目/数据子集影响力归因（负迁移诊断 + 训练动力学）
@@ -132,22 +131,19 @@ epoch、模型数）不再由本 playbook 硬编码或临场向用户逐项收�
    是原技能遗留命名，语义已泛化为"训练条目列表"/"留出单元 id"，脚本层不改字段名（避免
    连锁改动），正文一律用"训练条目/留出单元"表述。
 
-## 4. 留出单元预测侧上下文：与 result-eval 的接续
+## 4. 留出单元预测侧上游：eval_report 产物
 
-本 playbook 的归因要以留出单元的**预测侧分析**（指标基线、天气分型/分组条件、数据质量、
-现象清单）为上下文——这正是 frontmatter `contexts[].heldout-eval` 声明的外部上下文，由
-result-eval playbook 生产（`provider_playbook: result-eval`）。三分支：
+本 playbook 的归因要以留出单元的预测侧分析（指标基线、分组条件、数据质量、现象清单）
+为上游素材——即 frontmatter `upstream` 里的 `eval_report` 产物（可选），由
+result-eval 生产。orient 按产物状态给指令：
 
-- **linked**（`heldout_eval_status="linked"` 且目录含 `CONCLUSION.md`）→ 直接消费：指标
-  表 = 留出单元基线；分组条件（如天气分型）= 归因分组变量；`suspect_days.csv`
-  一类质检产物 = 反驳门"数据质量"证据；FINDINGS 现象 = 归因素材；`train-test-drift` 图/
-  漂移产物可直接复用于本 playbook Stage 4。
-- **absent（还没问过）→ 必须先问用户**：要不要先跑 result-eval 到 `CONCLUSION.md`？
-  同意 → 按引擎 `references/engine-core.md`「嵌入执行 provider skill」纪律，在独立目录
-  嵌入执行 result-eval，跑完写 `heldout_eval_dir`/`heldout_eval_status=linked` 回填本
-  playbook 的 `diagnose_config.json`。拒绝 → `heldout_eval_status=declined`，继续
-  influence-only 分析，FINDINGS/CONCLUSION 须注明"缺预测侧上下文"。
-- **declined**：继续 influence-only 分析。
+- **built/linked**：直接消费该工作目录——指标表 = 留出单元基线；分组条件（如天气分型）
+  = 归因分组变量；suspect_days.csv 一类质检产物 = 反驳门「数据质量」证据；FINDINGS
+  现象 = 归因素材；漂移类图产物可直接复用于本 playbook Stage 4。
+- **absent**：orient 打三分支问（现跑 / 链接已有 / 放弃）。现跑 = 在会话根目录
+  `<root>/eval_report/` 内联执行 result-eval 至 CONCLUSION.md，登记
+  `config.products.eval_report = {workdir, status: "built"}`。
+- **declined**：继续 influence-only 分析，FINDINGS/CONCLUSION 须注明「缺预测侧上游」。
 
 ## 5. 逐阶段菜谱
 
@@ -219,7 +215,7 @@ done：`tracin_scores.json` 落盘。**Mode A 下本阶段不激活（variant �
 ### Stage 4：漂移解释
 
 输入：Stage 2/3 给出的嫌疑条目列表；逐条目训练数据（供分布距离/天气型/kt 等计算）；
-`heldout-eval` 上下文 linked 时的漂移产物可直接复用。
+`eval_report` 产物 built/linked 时的漂移产物可直接复用。
 
 菜谱：复用 result-eval 的 `run_drift.py`（跨数据集 PSI/天气型/kt，逐条目对比），解释"为什么
 远/为什么有害"：气候或分布距离。产出现象/假设条目（`findings_marker: "现象"`）——只写"看到
@@ -291,9 +287,9 @@ Stage 5 因果确认与最终结论/反驳门综合，主 agent 亲自做。
   控制 `position` 后 θ_entry 还在吗。
 - **样本量**：该条目出现次数够吗（≈迭代数）？迭代 <10 一律降级。
 - **数据质量红旗**：该条目分布与留出单元**相似却有害** = 强烈提示数据质量问题（原始记录
-  异常/预报偏差/传感器故障），不是"分布冲突"——走 `heldout-eval` 上下文的质检产物
-  （linked 时 `suspect_days.csv` 现成）+ project-context event-log 查该条目原始数据，是
-  数据问题就修数据，别删条目。
+  异常/预报偏差/传感器故障），不是"分布冲突"——走 `eval_report` 产物的质检产物
+  （built/linked 时 `suspect_days.csv` 现成）+ project-context event-log 查该条目原始
+  数据，是数据问题就修数据，别删条目。
 - **回放错位**：assignments 过了指纹校验吗？没过 → θ_entry 归错条目，先修 Stage 0。
 - **单证据线**：只有回归、没有 TracIn 佐证（或 Mode A 结构性无 Stage 3）？→ 只能停在
   "现象"。
@@ -319,7 +315,7 @@ Stage 5 因果确认与最终结论/反驳门综合，主 agent 亲自做。
 
 本 playbook 不产出 chartbook 图（无阶段声明 `charts:`）：主线产物是 JSON/CSV 统计量
 （回归系数、TracIn 分数、动力学指标），不是标准可视化图集。留出单元的预测侧可视化（误差
-结构、时间稳定性等）由 `heldout-eval` 上下文（result-eval playbook）负责，Stage 4 的漂移
+结构、时间稳定性等）由 `eval_report` 产物（result-eval playbook）负责，Stage 4 的漂移
 可视化复用 result-eval 的 `train-test-drift` 一类图产物，不在本 playbook 内重复声明。
 
 ## 12. 运行后回顾
