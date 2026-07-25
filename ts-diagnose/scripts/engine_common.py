@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import fnmatch
 import glob
+import hashlib
 import json
 import os
 import re
@@ -283,6 +284,69 @@ def _upstream_cycle_check(fm, idx, seen):
             _upstream_cycle_check(pfm, idx, seen + [producer])
 
 
+FULL_HASH_MAX_BYTES = 64 << 20   # ≤64MB 全量哈希（权威）；更大走 头+尾 采样（imohash 模式）
+SAMPLE_BYTES = 1 << 20           # 采样块：头 1MB + 尾 1MB（尾部覆盖 parquet footer 的 EOF 元数据）
+FINGERPRINT_ALGO = "v1"          # 算法版本前缀——未来换算法不至于全体产物 stale
+
+
+def file_fingerprint(path):
+    """产物过期检测用指纹。≤FULL_HASH_MAX_BYTES 全量 sha256；更大取 头+尾 各 1MB
+    ——头部单独哈希对列式格式不安全（footer 在 EOF）。同尺寸只改中段的超大文件
+    检测不到：显式接受的残余风险（spec §2）。"""
+    size = os.path.getsize(path)
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        if size <= FULL_HASH_MAX_BYTES:
+            for chunk in iter(lambda: f.read(SAMPLE_BYTES), b""):
+                h.update(chunk)
+            mode = "full"
+        else:
+            h.update(f.read(SAMPLE_BYTES))
+            f.seek(max(size - SAMPLE_BYTES, 0))
+            h.update(f.read(SAMPLE_BYTES))
+            mode = "ht"
+    return f"{FINGERPRINT_ALGO}:{mode}:{size}:{h.hexdigest()}"
+
+
+def product_status(cfg, pid):
+    """产物状态（真相以产物为准）：config.products 登记 + marker 核验 + 指纹对账。
+    → {status: built|linked|declined|absent|invalid|stale, ...}"""
+    idx = products_index()
+    if pid not in idx:
+        raise ValueError(f"未知产物 id '{pid}'（已声明：{sorted(idx)}）")
+    rec = ((cfg or {}).get("products") or {}).get(pid) or {}
+    status, workdir = rec.get("status"), rec.get("workdir") or ""
+    if status == "declined":
+        return {"status": "declined"}
+    if status not in ("built", "linked") or not workdir:
+        return {"status": "absent"}
+    missing = [m for m in idx[pid]["marker_files"]
+               if not os.path.exists(os.path.join(workdir, m))]
+    manifest = read_json(os.path.join(workdir, idx[pid]["manifest"]))
+    if missing or manifest is None:
+        return {"status": "invalid", "workdir": workdir,
+                "missing_markers": missing + ([idx[pid]["manifest"]]
+                                              if manifest is None else [])}
+    stale = []
+    for mid, fp in (manifest.get("inputs") or {}).items():
+        path = (fp or {}).get("path")
+        if not path:
+            continue
+        if not os.path.exists(path):
+            stale.append(mid)      # 输入文件消失也算过期（redo/apenwarr 教训）
+        elif file_fingerprint(path) != fp.get("fingerprint"):
+            stale.append(mid)
+    if stale and not rec.get("accept_stale"):
+        return {"status": "stale", "workdir": workdir, "stale_inputs": sorted(stale)}
+    return {"status": status, "workdir": workdir, "missing_markers": [],
+            "stale_inputs": sorted(stale)}
+
+
+def upstream_report(fm, cfg):
+    """orient 打印素材：[(upstream 条目, product_status 结果)]。"""
+    return [(u, product_status(cfg, u["product"])) for u in fm.get("upstream") or []]
+
+
 # ---------------------------------------------------------------- check-DSL
 def _value_at(cfg, dotted):
     cur = cfg
@@ -329,6 +393,9 @@ def check(expr, ctx):
         if mid not in MATERIAL_IDS:
             raise ValueError(f"DSL 引用了未知材料 id '{mid}'（合法集见 MATERIAL_IDS）")
         return material_status(ctx["cfg"], mid) == "present"
+    if expr.startswith("product:"):
+        pid = expr[len("product:"):]
+        return product_status(ctx["cfg"], pid)["status"] in ("built", "linked")
     raise ValueError(f"未知 DSL 表达式：{expr}")
 
 
