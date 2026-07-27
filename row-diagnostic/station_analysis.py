@@ -2,16 +2,23 @@
 """PV multi-station forecast analysis -- one script, one run, produces two-layer views. Fully self-contained (pandas/numpy/matplotlib).
 
 [Per-station detail] For each station, several two-line comparison plots (predicted vs true), annotated with RMSE:
-  1) Power    -- predicted power (predict table dtime x station columns) vs true power (observe_power_future in input).
+  1) Power    -- predicted power (predict table: dtime x per-station columns named by --pred-col-template,
+     default predict_power_{station}, bare station name as fallback) vs true power (observe_power_future in input).
   2) Features -- predicted feature vs true feature, both in the input wide table (list columns). Default 1 plot:
      GHI = GHI_SOLARGIS_predict vs GHI_real_future (the latter is the common true label for these predicted quantities).
      --feature-pairs can add more, e.g. ssrd_pos_1_predict:GHI_real_future:ssrd1.
+  3) Scatter  -- station_*_scatter.png: true-vs-pred power scatter + OLS fit + decile-bin means, answering
+     "systematically high/low? high values compressed?" (slope<1 + negative top-20% bias = compression candidate);
+     textbox carries Theil u_bias/u_var/u_cov shares.
 
 [Fleet overview] A single fleet_overview.png (2x2 dashboard) + fleet_ranking.csv, to locate "who is most off":
   A1/A2 rankings -- stations sorted by nRMSE descending (worst on top), median line + outlier stations flagged red (power + GHI).
   B  scatter     -- GHI-nRMSE vs power-nRMSE, one point per station: is the power error due to GHI input error (top-right)
                     or model/other issues (top-left = GHI good but power still bad).
   C  heatmap     -- time-of-day x station power nRMSE, see who is bad at which hour.
+  Plus theil_decomposition.png -- per-station 100%-stacked Theil split of power MSE (u_bias level offset /
+  u_var amplitude mismatch / u_cov shape-timing mismatch; dominant >=50% points at the fix); shares, slope, r2,
+  high_bias_pct also land in fleet_ranking.csv.
 
 Why normalize (key): absolute RMSE is dominated by plant scale (big plants are naturally big, ranking is meaningless).
   nRMSE = RMSE / that station's peak power (self-contained proxy capacity; use --capacity if real installed capacity is available), unit %.
@@ -40,6 +47,14 @@ Time alignment: if input row timestamp_win=T, then for any list column (observe_
 Config: --drop-night removes each day's 00:00-night_end_hour (RMSE is also computed after removal); --tick-hours one x tick
   every few hours; plot width auto-adapts to point count, spreads out even 600+ points. Switches: --no-plots (no plots at all, still writes CSV),
   --no-station-plots (no per-station curves, still writes station-level CSV), --no-fleet (no overview and no fleet_ranking).
+  --worst-only N: draw images only for the worst N stations by power nRMSE -- ranking is computed on the FULL fleet first,
+  then per-station curves and all dashboard panels are restricted to those stations; CSVs still cover every station.
+
+Output layout (everything under one --out-dir, default station_analysis_out/):
+  <out-dir>/                     overview pngs (fleet_overview / theil_decomposition / counterfactual_overview) + all CSVs
+  <out-dir>/stations/            per-station pngs (Power / feature curves, scatter, counterfactual three-line)
+  All plots draw automatically on every run -- no extra flag for Theil or scatter; --no-plots / --no-station-plots /
+  --no-fleet turn layers off, --worst-only restricts which stations get images.
 
 Usage:
   python3 station_analysis.py --input input.parquet --predict predict.parquet [--out-dir OUT]
@@ -47,7 +62,7 @@ Usage:
     [--feature-pairs "GHI_SOLARGIS_predict:GHI_real_future:GHI,ssrd_pos_1_predict:GHI_real_future:ssrd1"]
     [--top-n 30] [--mad-k 3] [--capacity "st1:500,st2:5"] [--ghi-pred ... --ghi-true ...]
     [--station-col station --win-col timestamp_win --power-col observe_power_future --dtime-col dtime]
-    [--no-plots] [--no-station-plots] [--no-fleet]
+    [--no-plots] [--no-station-plots] [--no-fleet] [--worst-only 5]
     [--counterfactual --api-url URL [--cf-dry-run] [--cf-stations st1,st2] [--cf-force]
      [--cf-swap "GHI_SOLARGIS_predict:GHI_real_future"] [--cf-exclude-cols ...]
      [--cf-timeout 120] [--cf-retries 1] [--cf-check-tol 1.0] [--cf-curves]]
@@ -115,6 +130,47 @@ def rmse(a, b):
     return float(np.sqrt(np.mean((a - b) ** 2)))
 
 
+def resolve_pred_col(st, pred, template):
+    """Station -> predict-table column name: try the template (e.g. predict_power_{station}) first,
+    then the bare station name (old-style tables). None = this station has no column (caller warns + skips)."""
+    for cand in (template.format(station=st), st, str(st)):
+        if cand in pred.columns:
+            return cand
+    return None
+
+
+def theil_shares(t, p):
+    """Theil-U three-way split: MSE = (mean_p-mean_t)^2 + (sd_p-sd_t)^2 + 2(1-r)*sd_p*sd_t.
+    Returns (u_bias, u_var, u_cov) shares summing to 1 (level offset / amplitude mismatch / shape-timing mismatch),
+    or None when MSE~0 or too few points. Population std (ddof=0) keeps the identity exact."""
+    t, p = np.asarray(t, float), np.asarray(p, float)
+    if len(t) < 3:
+        return None
+    mse = float(np.mean((p - t) ** 2))
+    if mse <= 1e-12:
+        return None
+    sd_t, sd_p = float(np.std(t)), float(np.std(p))
+    u_bias = (float(np.mean(p)) - float(np.mean(t))) ** 2 / mse
+    u_var = (sd_p - sd_t) ** 2 / mse
+    r = float(np.corrcoef(p, t)[0, 1]) if sd_p > 0 and sd_t > 0 else 0.0
+    u_cov = 2.0 * (1.0 - r) * sd_p * sd_t / mse
+    return u_bias, u_var, u_cov
+
+
+def scatter_stats(t, p):
+    """pred = slope*true + intercept fit + R^2 + top-20%-truth mean residual (high-value compression signal).
+    Reading discipline (true-vs-pred-scatter recipe): R^2 = scatter, slope = systematic scaling -- decoupled.
+    Returns None when truth has no variance (recipe treats that as a data-plumbing symptom)."""
+    t, p = np.asarray(t, float), np.asarray(p, float)
+    if len(t) < 3 or np.std(t) == 0:
+        return None
+    slope, intercept = np.polyfit(t, p, 1)
+    hi = t >= np.quantile(t, 0.8)
+    return {"slope": float(slope), "intercept": float(intercept),
+            "r2": float(np.corrcoef(t, p)[0, 1] ** 2),
+            "high_bias": float(np.mean(p[hi] - t[hi]))}
+
+
 def parse_feature_pairs(spec):
     if not spec:
         return list(DEFAULT_FEATURE_PAIRS)
@@ -163,8 +219,94 @@ def plot_two_lines(st, name, times, true_v, pred_v, rmse_v, out_dir,
     plt.setp(ax.get_xticklabels(), rotation=90, fontsize=7)
     ax.set_xlabel("time"); ax.set_ylabel(name); ax.legend(loc="upper right"); ax.grid(alpha=0.25)
     fig.tight_layout()
-    path = os.path.join(out_dir, f"station_{sanitize(st)}_{sanitize(name)}.png")
+    path = os.path.join(_station_dir(out_dir), f"station_{sanitize(st)}_{sanitize(name)}.png")
     fig.savefig(path, dpi=110); plt.close(fig)
+    return path
+
+
+def _station_dir(out_dir):
+    """Per-station images live in <out_dir>/stations/ so the root stays browsable (overview pngs + CSVs only)."""
+    d = os.path.join(out_dir, "stations")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def plot_scatter(st, t, p, sc, th, cap, out_dir):
+    """True-vs-pred power scatter: y=x + OLS fit + decile-bin means; textbox carries bias / top-20% bias / Theil shares.
+    slope<1 with negative top-bin bias = high-value compression candidate (candidate only, per recipe discipline)."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    _cn_font()
+    t, p = np.asarray(t, float), np.asarray(p, float)
+    fig, ax = plt.subplots(figsize=(7.5, 7))
+    ax.scatter(t, p, s=9, alpha=0.35, color="#4c78a8", edgecolors="none", label="15-min points")
+    lo = min(0.0, float(np.min(t)), float(np.min(p)))
+    hi = max(float(np.max(t)), float(np.max(p))) * 1.05 or 1.0
+    ax.plot([lo, hi], [lo, hi], ls="--", lw=1.2, color="#333", label="y = x (perfect)")
+    xs = np.array([lo, hi])
+    ax.plot(xs, sc["slope"] * xs + sc["intercept"], color="#d62728", lw=1.5,
+            label=f"fit: pred = {sc['slope']:.2f} x true {sc['intercept']:+.1f}")
+    edges = np.quantile(t, np.linspace(0, 1, 11))            # decile-bin means: a bend = that power band is off
+    idx = np.clip(np.searchsorted(edges, t, side="right") - 1, 0, 9)
+    bt = [float(np.mean(t[idx == i])) for i in range(10) if (idx == i).any()]
+    bp = [float(np.mean(p[idx == i])) for i in range(10) if (idx == i).any()]
+    ax.plot(bt, bp, "o-", color="#f28e2b", lw=1.8, ms=5, label="decile-bin mean")
+    bias = float(np.mean(p - t)) / cap * 100.0
+    hb = sc["high_bias"] / cap * 100.0
+    txt = (f"slope = {sc['slope']:.3f}   R$^2$ = {sc['r2']:.3f}\n"
+           f"overall bias = {bias:+.2f}% of cap\n"
+           f"top-20% truth bias = {hb:+.2f}% of cap")
+    if th:
+        txt += f"\nTheil: u_bias {th[0]:.0%} / u_var {th[1]:.0%} / u_cov {th[2]:.0%}"
+    ax.text(0.02, 0.98, txt, transform=ax.transAxes, va="top", fontsize=9,
+            bbox=dict(boxstyle="round", fc="white", ec="#999", alpha=0.85))
+    flag = "\ncandidate: high-value compression (slope<0.9, top-bin bias<0)" if sc["slope"] < 0.9 and hb < 0 else ""
+    ax.set_title(f"Station {st} - true vs pred power{flag}", fontsize=12, fontweight="bold")
+    ax.set_xlabel("observed power (true)"); ax.set_ylabel("predicted power")
+    ax.set_xlim(lo, hi); ax.set_ylim(lo, hi)
+    ax.legend(loc="lower right", fontsize=8); ax.grid(alpha=0.25)
+    fig.tight_layout()
+    path = os.path.join(_station_dir(out_dir), f"station_{sanitize(st)}_scatter.png")
+    fig.savefig(path, dpi=110); plt.close(fig)
+    return path
+
+
+def plot_theil_overview(df, out_dir, focus_note=""):
+    """Per-station 100%-stacked Theil shares, sorted by power nRMSE desc; dominant component labeled at bar end."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    _cn_font()
+    d = df[np.isfinite(pd.to_numeric(df["theil_u_bias"], errors="coerce"))].copy()
+    if d.empty:
+        return None
+    if "power_nrmse" in d.columns:
+        d = d.sort_values("power_nrmse", ascending=False)
+    n = len(d)
+    fig, ax = plt.subplots(figsize=(12, max(4.0, 1.0 + n * 0.45)))
+    y = np.arange(n)[::-1]
+    left = np.zeros(n)
+    for col, color, lab in (("theil_u_bias", "#f28e2b", "u_bias: level offset (cheapest fix: output shift)"),
+                            ("theil_u_var", "#4c78a8", "u_var: amplitude mismatch (calibration / capacity assumption)"),
+                            ("theil_u_cov", "#9aa0a6", "u_cov: shape/timing mismatch (check time shift)")):
+        v = pd.to_numeric(d[col], errors="coerce").fillna(0.0).to_numpy(float)
+        ax.barh(y, v, left=left, color=color, label=lab)
+        left += v
+    for yi, (_, r) in zip(y, d.iterrows()):
+        dom = max((("u_bias", r["theil_u_bias"]), ("u_var", r["theil_u_var"]), ("u_cov", r["theil_u_cov"])),
+                  key=lambda x: x[1])
+        extra = f"   nRMSE {r['power_nrmse']:.1f}%" if np.isfinite(r.get("power_nrmse", np.nan)) else ""
+        ax.text(1.02, yi, f"{dom[0]} {dom[1]:.0%}{extra}", va="center", fontsize=7)
+    ax.set_yticks(y); ax.set_yticklabels(d["station"].astype(str), fontsize=8)
+    ax.set_xlim(0, 1.35)
+    ax.set_xlabel("share of power MSE (u_bias + u_var + u_cov = 1)")
+    ax.set_title("Theil decomposition of power MSE (dominant >= 50% -> that fix first)" + focus_note,
+                 fontsize=12, fontweight="bold")
+    ax.legend(loc="lower right", fontsize=8); ax.grid(axis="x", alpha=0.25)
+    fig.tight_layout()
+    path = os.path.join(out_dir, "theil_decomposition.png")
+    fig.savefig(path, dpi=120); plt.close(fig)
     return path
 
 
@@ -270,7 +412,7 @@ def _heatmap(fig, ax, df, hourly, drop_night, night_end_hour):
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
 
-def plot_dashboard(df, hourly, have_ghi, args, out_dir):
+def plot_dashboard(df, hourly, have_ghi, args, out_dir, focus_note=""):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -292,7 +434,7 @@ def plot_dashboard(df, hourly, have_ghi, args, out_dir):
     _heatmap(fig, axes[1, 1], df, hourly, args.drop_night, args.night_end_hour)
     fig.suptitle(f"Fleet overview -- {n_st} stations   "
                  f"(nRMSE = RMSE / peak power; red bar = outlier: above median + {args.mad_k}xMAD)"
-                 + ("   night removed" if args.drop_night else ""),
+                 + ("   night removed" if args.drop_night else "") + focus_note,
                  fontsize=14, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.98))
     path = os.path.join(out_dir, "fleet_overview.png")
@@ -469,7 +611,7 @@ def plot_cf_curves(st, times, t, b, c, out_dir, tick_hours):
     plt.setp(ax.get_xticklabels(), rotation=90, fontsize=7)
     ax.legend(loc="upper right"); ax.grid(alpha=0.25)
     fig.tight_layout()
-    path = os.path.join(out_dir, f"station_{sanitize(st)}_counterfactual.png")
+    path = os.path.join(_station_dir(out_dir), f"station_{sanitize(st)}_counterfactual.png")
     fig.savefig(path, dpi=110); plt.close(fig)
     return path
 
@@ -564,7 +706,7 @@ def run_counterfactual(inp, pred, args, cap_map, step):
     exclude |= set(swap.values())               # truth columns are labels, not sent as fields
 
     stations = [s for s in pd.unique(inp[args.station_col])
-                if s in pred.columns or str(s) in pred.columns]
+                if resolve_pred_col(s, pred, args.pred_col_template) is not None]
     if args.cf_stations:
         want = {s.strip() for s in args.cf_stations.split(",")}
         stations = [s for s in stations if str(s) in want]
@@ -599,7 +741,7 @@ def run_counterfactual(inp, pred, args, cap_map, step):
         raise SystemExit("--counterfactual real run requires --api-url (or --cf-dry-run first to check payload)")
 
     for st in todo:
-        col = st if st in pred.columns else str(st)
+        col = resolve_pred_col(st, pred, args.pred_col_template)   # non-None: the station list was filtered above
         sub = inp[inp[args.station_col] == st].sort_values(args.win_col)
         pq = pred[col].dropna()
         dtimes = pq.index.sort_values()
@@ -698,9 +840,15 @@ def main():
     ap.add_argument("--win-col", default="timestamp_win")
     ap.add_argument("--power-col", default="observe_power_future")
     ap.add_argument("--dtime-col", default="dtime")
+    ap.add_argument("--pred-col-template", default="predict_power_{station}",
+                    help='predict-table column name per station; "{station}" is replaced by the station name. '
+                         "Falls back to the bare station name when the templated column is absent")
     ap.add_argument("--no-plots", action="store_true", help="no plots at all, still writes CSV")
     ap.add_argument("--no-station-plots", action="store_true", help="no per-station curves, still writes station-level CSV")
     ap.add_argument("--no-fleet", action="store_true", help="no overview and no fleet_ranking.csv")
+    ap.add_argument("--worst-only", type=int, default=0,
+                    help="draw images only for the worst N stations by power nRMSE (0=all; ranking uses the full "
+                         "fleet, CSVs unchanged; counterfactual not affected -- use --cf-stations for that)")
     ap.add_argument("--counterfactual", action="store_true",
                     help="counterfactual: swap GHI prediction to truth and re-predict via API, decompose input's fault vs model's fault")
     ap.add_argument("--api-url", default=None, help="FastAPI prediction service URL (POST JSON)")
@@ -751,6 +899,8 @@ def main():
     stations = list(pd.unique(inp[args.station_col]))
     power_rows, feat_rows, imgs = [], [], []
     fleet_recs, hourly = [], {}
+    plot_jobs = []              # per-station plots deferred: --worst-only must rank the full fleet before drawing
+    scatter_jobs = []           # (st, t, p, sc, th, cap) -- true-vs-pred scatter, same deferred treatment
 
     for st in stations:
         sub = inp[inp[args.station_col] == st]
@@ -766,9 +916,10 @@ def main():
 
         # ---- Power (prediction from predict table) ----
         truth = ser(args.power_col)
-        col = st if st in pred.columns else (str(st) if str(st) in pred.columns else None)
+        col = resolve_pred_col(st, pred, args.pred_col_template)
         if col is None:
-            print(f"  [warn] station {st}: no such column in predict table, skip Power plot")
+            print(f"  [warn] station {st}: predict table has no column "
+                  f"'{args.pred_col_template.format(station=st)}' (nor the bare station name), skip Power plot")
         else:
             al = _aligned(truth, pred[col].dropna(), args.drop_night, args.night_end_hour)
             if al is None:
@@ -780,8 +931,8 @@ def main():
                                    "n_points": int(len(times)),
                                    "t_start": str(times.min()), "t_end": str(times.max())})
                 if plot_station:
-                    imgs.append(plot_two_lines(st, "Power", times, t, p, rv, args.out_dir,
-                                               args.tick_hours, "observed power", "predicted power"))
+                    plot_jobs.append((st, "Power", times, t, p, rv,
+                                      "observed power", "predicted power"))
                 # Overview: power nRMSE / bias / hourly
                 cap = cap_map.get(str(st)) or cap_map.get(st) or float(np.max(t))
                 cap = cap if cap and cap > 0 else 1.0
@@ -789,6 +940,17 @@ def main():
                            power_bias_pct=round(float(np.mean(p - t)) / cap * 100, 4),
                            capacity=round(cap, 4), n_points=int(len(times)))
                 hourly[st] = hourly_nrmse(times, p - t, cap)
+                # Theil three-way split + scatter calibration (systematic offset / high-value compression)
+                th = theil_shares(t, p)
+                sc = scatter_stats(t, p)
+                if th:
+                    rec.update(theil_u_bias=round(th[0], 3), theil_u_var=round(th[1], 3),
+                               theil_u_cov=round(th[2], 3))
+                if sc:
+                    rec.update(slope=round(sc["slope"], 3), r2=round(sc["r2"], 3),
+                               high_bias_pct=round(sc["high_bias"] / cap * 100, 4))
+                if plot_station and sc:
+                    scatter_jobs.append((st, t, p, sc, th, cap))
 
         # ---- Per-station feature plots (prediction and truth both in input) ----
         for pcol, tcol, label in active_pairs:
@@ -805,8 +967,8 @@ def main():
             feat_rows.append({"station": st, "feature": label, "rmse": round(rv, 6),
                               "n_points": int(len(times))})
             if plot_station:
-                imgs.append(plot_two_lines(st, label, times, tv, pv, rv, args.out_dir,
-                                           args.tick_hours, f"{tcol} (true)", f"{pcol} (pred)"))
+                plot_jobs.append((st, label, times, tv, pv, rv,
+                                  f"{tcol} (true)", f"{pcol} (pred)"))
 
         # ---- Overview: GHI nRMSE (scatter/GHI ranking; use specified columns, reuse cache to avoid re-flatten) ----
         if have_ghi and not args.no_fleet:
@@ -820,6 +982,27 @@ def main():
                     rec.update(ghi_rmse=round(gr, 4), ghi_nrmse=round(gr / gcap * 100, 4))
         fleet_recs.append(rec)
 
+    # ---------------- --worst-only: rank on the full fleet, then draw only the worst N ----------------
+    fdf = pd.DataFrame(fleet_recs)
+    sel = None                                        # None = draw every station
+    if args.worst_only > 0:
+        if "power_nrmse" in fdf.columns and np.isfinite(fdf["power_nrmse"]).any():
+            ranked = fdf[np.isfinite(fdf["power_nrmse"])].sort_values("power_nrmse", ascending=False)
+            sel = set(ranked.head(args.worst_only)["station"])
+            print(f"  [worst-only] images restricted to worst {len(sel)} stations by power nRMSE: "
+                  f"{[str(s) for s in ranked.head(args.worst_only)['station']]}  (CSVs still cover all)")
+        else:
+            print("  [warn] --worst-only: no station has power nRMSE (cannot rank) -> drawing all stations")
+    for st, name, times, tv, pv, rv, tlab, plab in plot_jobs:
+        if sel is not None and st not in sel:
+            continue
+        imgs.append(plot_two_lines(st, name, times, tv, pv, rv, args.out_dir,
+                                   args.tick_hours, tlab, plab))
+    for st, tv, pv, sc, th, cap in scatter_jobs:
+        if sel is not None and st not in sel:
+            continue
+        imgs.append(plot_scatter(st, tv, pv, sc, th, cap, args.out_dir))
+
     # ---------------- Station-level CSV ----------------
     if power_rows:
         pw = pd.DataFrame(power_rows).sort_values("power_rmse", ascending=False)
@@ -829,8 +1012,7 @@ def main():
             os.path.join(args.out_dir, "station_feature_rmse.csv"), index=False)
 
     # ---------------- Fleet overview ----------------
-    fleet_img = None
-    fdf = pd.DataFrame(fleet_recs)
+    fleet_img = theil_img = None
     if not args.no_fleet and ("power_nrmse" in fdf.columns or "ghi_nrmse" in fdf.columns):
         if "power_nrmse" in fdf.columns:
             fdf["power_outlier"] = flag_outliers(fdf["power_nrmse"].to_numpy(), args.mad_k)
@@ -839,10 +1021,16 @@ def main():
         fdf.sort_values(sort_col, ascending=(sort_col == "station")).to_csv(
             os.path.join(args.out_dir, "fleet_ranking.csv"), index=False)
         if not args.no_plots:
-            fleet_img = plot_dashboard(fdf, hourly, have_ghi, args, args.out_dir)
+            ddf = fdf if sel is None else fdf[fdf["station"].isin(sel)]
+            dh = hourly if sel is None else {s: h for s, h in hourly.items() if s in sel}
+            note = "" if sel is None else f"   [focused on worst {len(ddf)} of {len(fdf)} stations]"
+            fleet_img = plot_dashboard(ddf, dh, have_ghi, args, args.out_dir, note)
+            if "theil_u_bias" in ddf.columns:
+                theil_img = plot_theil_overview(ddf, args.out_dir, note)
 
     if not power_rows and not feat_rows and fleet_img is None:
-        raise SystemExit("nothing could be produced (check whether station equals predict-table column names, whether times align, whether columns exist).")
+        raise SystemExit("nothing could be produced (check --pred-col-template against the predict-table column names, "
+                         "whether times align, whether columns exist).")
 
     # ---------------- Terminal summary ----------------
     print(f"[station_analysis] stations x{len(stations)}   feature pairs {[p[2] for p in active_pairs] or 'none'}   "
@@ -860,9 +1048,30 @@ def main():
         outs = top[top.power_outlier == True]["station"].tolist() if "power_outlier" in top else []
         if outs:
             print(f"  [warn] outlier stations (clearly above the fleet): {outs}")
+    if "theil_u_bias" in fdf.columns:
+        show = fdf[np.isfinite(pd.to_numeric(fdf["theil_u_bias"], errors="coerce"))]
+        if sel is not None:
+            show = show[show["station"].isin(sel)]
+        if "power_nrmse" in show.columns:
+            show = show.sort_values("power_nrmse", ascending=False)
+        show = show.head(args.worst_only or 5)
+        if not show.empty:
+            print("  Theil / scatter reading (candidates only -- conclusions go through the playbook gates):")
+        for _, r in show.iterrows():
+            dom = max((("u_bias", r["theil_u_bias"]), ("u_var", r["theil_u_var"]), ("u_cov", r["theil_u_cov"])),
+                      key=lambda x: x[1])
+            hint = {"u_bias": "systematic level offset (cheapest fix: output shift)",
+                    "u_var": "amplitude mismatch (calibration/capacity assumption)",
+                    "u_cov": "shape/timing mismatch (check time shift / structure)"}[dom[0]]
+            sl, hb = r.get("slope", np.nan), r.get("high_bias_pct", np.nan)
+            comp = (f";  slope={sl:.2f} & top-20% truth bias {hb:+.1f}% -> high-value compression candidate"
+                    if np.isfinite(sl) and sl < 0.9 and np.isfinite(hb) and hb < 0 else "")
+            print(f"    {r['station']}: u_bias/u_var/u_cov = {r['theil_u_bias']:.0%}/{r['theil_u_var']:.0%}/"
+                  f"{r['theil_u_cov']:.0%} -> {hint}"
+                  f"  (bias {r.get('power_bias_pct', float('nan')):+.2f}%){comp}")
     prod = []
     if imgs:
-        prod.append(f"per-station plots x{len(imgs)}")
+        prod.append(f"stations/ per-station plots x{len(imgs)}")
     if power_rows:
         prod.append("station_power_rmse.csv")
     if feat_rows:
@@ -871,6 +1080,8 @@ def main():
         prod.append("fleet_ranking.csv")
     if fleet_img:
         prod.append("fleet_overview.png")
+    if theil_img:
+        prod.append("theil_decomposition.png")
     print("  Products: " + ("  + ".join(prod) if prod else "none"))
 
     # ---------------- Counterfactual (optional, gated) ----------------
