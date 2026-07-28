@@ -283,7 +283,7 @@ def test_cf_dry_run_zero_calls(cf_data, fake_api):
     r = _run(cf_data, ["--no-plots", "--counterfactual", "--api-url", _url(fake_api),
                        "--cf-dry-run"])
     assert fake_api.hits == 0 and r["cf"] is None
-    assert "payload 骨架" in r["out"] and "GHI_SOLARGIS_predict" in r["out"]
+    assert "payload skeleton" in r["out"] and "GHI_SOLARGIS_predict" in r["out"]
     assert "GHI_real_future:" not in r["out"] and "observe_power_future:" not in r["out"]
 
 
