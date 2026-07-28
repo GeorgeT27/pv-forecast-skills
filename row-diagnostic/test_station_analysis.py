@@ -382,6 +382,17 @@ def test_short_date_override(short_data):
     assert "using D" not in r.stdout                        # explicit date -> no fallback line
 
 
+def test_short_date_shifts_window(short_data):
+    """--date 给一个与自动推断不同的日期(2026-07-27 vs 自动的 2026-07-26)，应真正把切片挪到新日期上，
+    而不只是凑巧和自动推断值相同（test_short_date_override 覆盖的是后一种情况）。"""
+    r = _run_short(short_data, ["--no-plots", "--pred-col-template", "{station}",
+                                "--date", "2026-07-27"])
+    pw = pd.read_csv(short_data / "out" / "D+1" / "station_power_rmse.csv")
+    assert set(pw["n_points"]) == {96}
+    assert set(pw["t_start"]) == {"2026-07-28 00:00:00"}    # D+1 = --date + 1 day, moved off the auto-inferred D+1
+    assert "using D" not in r.stdout                        # explicit date -> no fallback line
+
+
 def test_default_no_short_folders(short_data):
     # 常规模式（无 --short）：直接写 out/，不建 D+1/D+4
     subprocess.run(
@@ -449,3 +460,37 @@ def test_short_counterfactual_per_window(short_cf_data, fake_api):
         assert d.loc["c1", "status"] == "ok"
         assert int(d.loc["c1", "n_points"]) == 96              # 每切片 96 点
     assert fake_api.hits == 4                                   # 1 站 × 2 次 × 2 切片
+
+
+@pytest.fixture
+def short_data_missing_d4(tmp_path):
+    """同 short_data，但 predict 表只覆盖到 2026-07-30 00:00 之前（D+1 窗口齐全，D+4 窗口无任何预测点）；
+    input 侧的 observe_power_future 仍完整覆盖到 D+4，用来验证 D+4 切片缺预测数据时的鲁棒退出（不崩、不产 D+4 power）。"""
+    D = pd.Timestamp("2026-07-26 10:00:00")
+    n = 480
+    times = [D + pd.Timedelta(minutes=15 * (k + 1)) for k in range(n)]
+    truth = {"s1": [float(10 + (k % 96)) for k in range(n)],
+             "s2": [float(5 + (k % 96)) for k in range(n)]}
+    off = {"s1": 2.0, "s2": 3.0}
+    rows = [{"station": st, "timestamp_win": D, "observe_power_future": truth[st]}
+            for st in ("s1", "s2")]
+    pd.DataFrame(rows).to_parquet(tmp_path / "input.parquet")
+    cutoff = pd.Timestamp("2026-07-30 00:00:00")
+    keep = [t < cutoff for t in times]                          # drop all D+4-window dtimes from predict
+    pred = pd.DataFrame({"dtime": [t for t, k in zip(times, keep) if k]})
+    for st in ("s1", "s2"):
+        pred[st] = [v + off[st] for v, k in zip(truth[st], keep) if k]
+    pred.to_parquet(tmp_path / "predict.parquet")
+    return tmp_path
+
+
+def test_short_missing_d4_slice_skips_gracefully(short_data_missing_d4):
+    """D+4 切片的 predict 表没有任何落点 -> power 对齐结果为空 -> 该切片走 warn+return 早退路径，
+    不应导致整个进程崩溃；D+1 切片不受影响，照常产出 96 点。"""
+    r = _run_short(short_data_missing_d4, ["--no-plots", "--pred-col-template", "{station}"])
+    assert r.returncode == 0, r.stdout + r.stderr
+    d1_pw = pd.read_csv(short_data_missing_d4 / "out" / "D+1" / "station_power_rmse.csv")
+    assert set(d1_pw["n_points"]) == {96}
+    d4_path = short_data_missing_d4 / "out" / "D+4" / "station_power_rmse.csv"
+    # "nothing produced -> warn+return" 路径下该文件根本不会被写出；即便某天该路径的行为改成写空文件，也应容忍
+    assert (not d4_path.exists()) or pd.read_csv(d4_path).empty

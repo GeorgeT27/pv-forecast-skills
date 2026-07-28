@@ -784,7 +784,7 @@ def run_counterfactual(inp, pred, args, cap_map, step, out_dir=None, win=None):
             _cf_append(csv_path, {"station": st, "status": "no_overlap"})
             continue
         m, (times, t, b, c) = got
-        al_pq = _aligned(p_base, pq, args.drop_night, args.night_end_hour)   # reproduction gate: compare on common time points
+        al_pq = _aligned(p_base, pq, args.drop_night, args.night_end_hour, win)   # reproduction gate: compare on common time points, windowed in --short
         bvp = rmse(al_pq[1], al_pq[2]) / m["capacity"] * 100.0 if al_pq else float("inf")
         m["base_vs_parquet_pct"] = round(bvp, 4) if np.isfinite(bvp) else ""
         m["status"] = "ok" if bvp <= args.cf_check_tol else "baseline_mismatch"
@@ -1034,9 +1034,14 @@ def compute_windows(args, inp):
     """[(label, start, end), ...]. 非 short：单趟全序列 (None,None,None)。
     short：D = --date 或最早 timestamp_win 的日期，切 [D+1 00:00, +24h) 与 [D+4 00:00, +24h)。"""
     if not args.short:
+        if args.date:
+            print("  [warn] --date is ignored without --short")
         return [(None, None, None)]
     if args.date:
-        D = pd.Timestamp(args.date).normalize()
+        try:
+            D = pd.Timestamp(args.date).normalize()
+        except (ValueError, TypeError):
+            raise SystemExit(f"--date must be a valid date (YYYY-MM-DD), got '{args.date}'")
     else:
         D = pd.Timestamp(inp[args.win_col].min()).normalize()
         print(f"  [short] --date not given; using D = {D:%Y-%m-%d} (from earliest {args.win_col})")
@@ -1133,6 +1138,7 @@ def main():
                      sub_out, (start, end) if label else None, label)
 
     if args.counterfactual:
+        # sub_out dirs already created by the run_analysis loop above (which always runs over the same windows)
         for label, start, end in windows:
             sub_out = args.out_dir if label is None else os.path.join(args.out_dir, label)
             run_counterfactual(inp, pred, args, cap_map, step,
