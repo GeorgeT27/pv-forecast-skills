@@ -401,3 +401,39 @@ def test_short_worst_only(short_data):
     pngs = os.listdir(short_data / "out" / "D+1" / "stations")
     powers = [f for f in pngs if f.endswith("_Power.png")]
     assert len(powers) == 1                                 # 仅最差 1 站出图
+
+
+@pytest.fixture
+def short_cf_data(tmp_path):
+    """短期反事实：D=2026-07-26 10:00、每站一窗 480 点。假模型 power=GHI/10。"""
+    D = pd.Timestamp("2026-07-26 10:00:00")
+    n = 480
+    times = [D + pd.Timedelta(minutes=15 * (k + 1)) for k in range(n)]
+    OFF = {"c1": 40.0}
+    gt = {"c1": [float(100 + k) for k in range(n)]}                 # GHI 真值
+    rows = [{"station": "c1", "timestamp_win": D,
+             "observe_power_future": [g / 10.0 for g in gt["c1"]],
+             "GHI_SOLARGIS_predict": [g + OFF["c1"] for g in gt["c1"]],
+             "GHI_real_future": gt["c1"]}]
+    pd.DataFrame(rows).to_parquet(tmp_path / "input.parquet")
+    pred = pd.DataFrame({"dtime": times})
+    pred["c1"] = [(g + OFF["c1"]) / 10.0 for g in gt["c1"]]         # 复现基线（=API baseline）
+    pred.to_parquet(tmp_path / "predict.parquet")
+    return tmp_path
+
+
+def test_short_counterfactual_per_window(short_cf_data, fake_api):
+    r = subprocess.run(
+        [sys.executable, SCRIPT, "--input", str(short_cf_data / "input.parquet"),
+         "--predict", str(short_cf_data / "predict.parquet"),
+         "--out-dir", str(short_cf_data / "out"), "--short", "--no-plots",
+         "--counterfactual", "--api-url", _url(fake_api)],
+        cwd=str(short_cf_data), capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    for sub in ("D+1", "D+4"):
+        p = short_cf_data / "out" / sub / "counterfactual_results.csv"
+        assert p.exists(), f"missing CF csv in {sub}"
+        d = pd.read_csv(p).set_index("station")
+        assert d.loc["c1", "status"] == "ok"
+        assert int(d.loc["c1", "n_points"]) == 96              # 每切片 96 点
+    assert fake_api.hits == 4                                   # 1 站 × 2 次 × 2 切片

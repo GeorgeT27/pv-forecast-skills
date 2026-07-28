@@ -703,8 +703,10 @@ def plot_cf_overview(df, out_dir, swap_label):
     return path
 
 
-def run_counterfactual(inp, pred, args, cap_map, step):
-    """Orchestration: 2 API calls per station (baseline reproduction + swap to truth), written to disk per station, resumable."""
+def run_counterfactual(inp, pred, args, cap_map, step, out_dir=None, win=None):
+    """Orchestration: 2 API calls per station (baseline reproduction + swap to truth), written to disk per station, resumable.
+    out_dir defaults to args.out_dir; win=(start,end) restricts cf_metrics to that window (None = whole series)."""
+    out_dir = out_dir if out_dir is not None else args.out_dir
     swap = parse_cf_swap(args.cf_swap)
     miss = sorted({c for pair in swap.items() for c in pair if c not in inp.columns})
     if miss:
@@ -723,7 +725,7 @@ def run_counterfactual(inp, pred, args, cap_map, step):
         print("  [warn] counterfactual: no runnable stations (station name must be in both input and predict tables)")
         return
 
-    csv_path = os.path.join(args.out_dir, "counterfactual_results.csv")
+    csv_path = os.path.join(out_dir, "counterfactual_results.csv")
     if args.cf_force and os.path.exists(csv_path):
         os.remove(csv_path)
     done = set()
@@ -776,7 +778,7 @@ def run_counterfactual(inp, pred, args, cap_map, step):
         truth = series_from_lists(sub[args.win_col].to_numpy(),
                                   sub[args.power_col].to_numpy(), step)
         cap = cap_map.get(str(st)) or cap_map.get(st)
-        got = cf_metrics(truth, p_base, p_cf, args.drop_night, args.night_end_hour, cap)
+        got = cf_metrics(truth, p_base, p_cf, args.drop_night, args.night_end_hour, cap, win)
         if got is None:
             print(f"  [warn] station {st}: no common time points between truth and API output, skipped")
             _cf_append(csv_path, {"station": st, "status": "no_overlap"})
@@ -792,7 +794,7 @@ def run_counterfactual(inp, pred, args, cap_map, step):
         m["station"] = st
         _cf_append(csv_path, m)
         if args.cf_curves and not args.no_plots:
-            plot_cf_curves(st, times, t, b, c, args.out_dir, args.tick_hours)
+            plot_cf_curves(st, times, t, b, c, out_dir, args.tick_hours)
         print(f"  station {st}: nRMSE baseline {m['nrmse_base']:.2f}% -> swap-to-truth {m['nrmse_cf']:.2f}%   "
               f"delta={m['delta_nrmse']:+.2f}%"
               + (f" ({m['frac_explained']:.0f}% explained by {swap_label})"
@@ -808,7 +810,7 @@ def run_counterfactual(inp, pred, args, cap_map, step):
             okd[c] = pd.to_numeric(okd[c], errors="coerce")
     img = None
     if not okd.empty and not args.no_plots:
-        img = plot_cf_overview(okd, args.out_dir, swap_label)
+        img = plot_cf_overview(okd, out_dir, swap_label)
     n_bad = len(res) - len(okd)
     print(f"[counterfactual] done: ok/reproduction-warning x{len(okd)}"
           + (f", failed/misaligned x{n_bad}" if n_bad else "")
@@ -1133,7 +1135,8 @@ def main():
     if args.counterfactual:
         for label, start, end in windows:
             sub_out = args.out_dir if label is None else os.path.join(args.out_dir, label)
-            run_counterfactual(inp, pred, args, cap_map, step)   # out_dir/win wired in Task 4
+            run_counterfactual(inp, pred, args, cap_map, step,
+                               out_dir=sub_out, win=(start, end) if label else None)
 
 
 if __name__ == "__main__":
