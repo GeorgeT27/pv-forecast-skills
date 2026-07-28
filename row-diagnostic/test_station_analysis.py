@@ -332,3 +332,72 @@ def test_aligned_applies_window():
                       (pd.Timestamp("2026-07-27 00:00"), pd.Timestamp("2026-07-27 00:30")))
     times, av, bv = out
     assert len(times) == 2 and list(av) == [1.0, 2.0]     # only 00:00, 00:15 kept
+
+
+# ---------------------------------------------------------------- --short 双切片
+@pytest.fixture
+def short_data(tmp_path):
+    """起报 D=2026-07-26 10:00, 每站一窗、480 点、15min。predict 覆盖全部 480 绝对时刻。"""
+    D = pd.Timestamp("2026-07-26 10:00:00")
+    n = 480
+    times = [D + pd.Timedelta(minutes=15 * (k + 1)) for k in range(n)]
+    truth = {"s1": [float(10 + (k % 96)) for k in range(n)],       # 日内 0..95 变化
+             "s2": [float(5 + (k % 96)) for k in range(n)]}
+    off = {"s1": 2.0, "s2": 3.0}
+    rows = [{"station": st, "timestamp_win": D, "observe_power_future": truth[st]}
+            for st in ("s1", "s2")]
+    pd.DataFrame(rows).to_parquet(tmp_path / "input.parquet")
+    pred = pd.DataFrame({"dtime": times})
+    for st in ("s1", "s2"):
+        pred[st] = [v + off[st] for v in truth[st]]
+    pred.to_parquet(tmp_path / "predict.parquet")
+    return tmp_path
+
+
+def _run_short(wd, extra=()):
+    r = subprocess.run(
+        [sys.executable, SCRIPT, "--input", str(wd / "input.parquet"),
+         "--predict", str(wd / "predict.parquet"), "--out-dir", str(wd / "out"),
+         "--short"] + list(extra),
+        cwd=str(wd), capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    return r
+
+
+def test_short_makes_two_folders_96pts(short_data):
+    r = _run_short(short_data, ["--no-plots", "--pred-col-template", "{station}"])
+    for sub in ("D+1", "D+4"):
+        d = short_data / "out" / sub
+        assert d.is_dir(), f"missing {sub}"
+        pw = pd.read_csv(d / "station_power_rmse.csv")
+        assert set(pw["n_points"]) == {96}, f"{sub}: {pw['n_points'].tolist()}"
+    assert "using D = 2026-07-26" in r.stdout               # auto-fallback announced
+
+
+def test_short_date_override(short_data):
+    r = _run_short(short_data, ["--no-plots", "--pred-col-template", "{station}",
+                                "--date", "2026-07-26"])
+    pw = pd.read_csv(short_data / "out" / "D+1" / "station_power_rmse.csv")
+    assert set(pw["n_points"]) == {96}
+    assert "using D" not in r.stdout                        # explicit date -> no fallback line
+
+
+def test_default_no_short_folders(short_data):
+    # 常规模式（无 --short）：直接写 out/，不建 D+1/D+4
+    subprocess.run(
+        [sys.executable, SCRIPT, "--input", str(short_data / "input.parquet"),
+         "--predict", str(short_data / "predict.parquet"), "--out-dir", str(short_data / "out"),
+         "--no-plots", "--pred-col-template", "{station}"],
+        cwd=str(short_data), capture_output=True, text=True, check=True)
+    assert not (short_data / "out" / "D+1").exists()
+    assert (short_data / "out" / "station_power_rmse.csv").exists()
+
+
+def test_short_worst_only(short_data):
+    # --worst-only 1：每个切片图只画最差 1 站，CSV 仍含全部站
+    r = _run_short(short_data, ["--pred-col-template", "{station}", "--worst-only", "1"])
+    pw = pd.read_csv(short_data / "out" / "D+1" / "station_power_rmse.csv")
+    assert len(pw) == 2                                     # CSV 全量
+    pngs = os.listdir(short_data / "out" / "D+1" / "stations")
+    powers = [f for f in pngs if f.endswith("_Power.png")]
+    assert len(powers) == 1                                 # 仅最差 1 站出图

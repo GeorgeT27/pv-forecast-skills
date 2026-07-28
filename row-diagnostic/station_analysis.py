@@ -66,6 +66,7 @@ Usage:
     [--counterfactual --api-url URL [--cf-dry-run] [--cf-stations st1,st2] [--cf-force]
      [--cf-swap "GHI_SOLARGIS_predict:GHI_real_future"] [--cf-exclude-cols ...]
      [--cf-timeout 120] [--cf-retries 1] [--cf-check-tol 1.0] [--cf-curves]]
+    [--short [--date 2026-07-26]]   # 短期：D+1/D+4 两个 24h 切片，各产一套到 out_dir/D+1、out_dir/D+4
 """
 from __future__ import annotations
 
@@ -1027,6 +1028,21 @@ def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, out_dir
     print(f"  {pfx}Products: " + ("  + ".join(prod) if prod else "none"))
 
 
+def compute_windows(args, inp):
+    """[(label, start, end), ...]. 非 short：单趟全序列 (None,None,None)。
+    short：D = --date 或最早 timestamp_win 的日期，切 [D+1 00:00, +24h) 与 [D+4 00:00, +24h)。"""
+    if not args.short:
+        return [(None, None, None)]
+    if args.date:
+        D = pd.Timestamp(args.date).normalize()
+    else:
+        D = pd.Timestamp(inp[args.win_col].min()).normalize()
+        print(f"  [short] --date not given; using D = {D:%Y-%m-%d} (from earliest {args.win_col})")
+    day = pd.Timedelta(days=1)
+    d1, d4 = D + day, D + 4 * day
+    return [("D+1", d1, d1 + day), ("D+4", d4, d4 + day)]
+
+
 # ================================================================ Main flow: compute both layers in one pass
 def main():
     ap = argparse.ArgumentParser()
@@ -1073,6 +1089,10 @@ def main():
     ap.add_argument("--cf-check-tol", type=float, default=1.0,
                     help="baseline reproduction gate: warn if API baseline vs predict table nRMSE%% exceeds this")
     ap.add_argument("--cf-curves", action="store_true", help="per-station three-line plot (truth/baseline/counterfactual)")
+    ap.add_argument("--short", action="store_true",
+                    help="短期模式：只看 D+1 与 D+4 两个 24h 切片，各产一份全套产物到 out_dir/D+1、out_dir/D+4")
+    ap.add_argument("--date", default=None,
+                    help="起报日 YYYY-MM-DD；D+1/D+4 从此日算。--short 专用，缺省则取最早 timestamp_win 的日期")
     args = ap.parse_args()
     step = pd.Timedelta(minutes=args.step_min)
     feature_pairs = parse_feature_pairs(args.feature_pairs)
@@ -1103,11 +1123,17 @@ def main():
         print(f"  [warn] overview GHI columns missing {miss} -> skip GHI ranking and scatter (power overview still output)")
 
     os.makedirs(args.out_dir, exist_ok=True)
-    run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map,
-                 args.out_dir, None, None)
+    windows = compute_windows(args, inp)
+    for label, start, end in windows:
+        sub_out = args.out_dir if label is None else os.path.join(args.out_dir, label)
+        os.makedirs(sub_out, exist_ok=True)
+        run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map,
+                     sub_out, (start, end) if label else None, label)
 
     if args.counterfactual:
-        run_counterfactual(inp, pred, args, cap_map, step)
+        for label, start, end in windows:
+            sub_out = args.out_dir if label is None else os.path.join(args.out_dir, label)
+            run_counterfactual(inp, pred, args, cap_map, step)   # out_dir/win wired in Task 4
 
 
 if __name__ == "__main__":

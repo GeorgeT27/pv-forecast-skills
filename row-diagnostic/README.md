@@ -97,6 +97,14 @@ API 契约：`POST {"data":[{行dict}]}`（字段 = parquet 列名、list 原样
 按 dtime 逐点对应）。两条诚实注意事项（已写进图注）：① Δ≈0 ≠ GHI 预报没问题——模型可能
 不敏感或已共适应；② 「模型底线」含其它无真值输入（温度等）的误差，是模型自身误差的上界。
 
+**④ 短期模式**（`--short`，可选）—— 只看上线最关心的两个 24h 切片：**D+1**（次日）与
+**D+4**（第 4 天），各出一整套产物（逐站图 + 总览 + CSV，`--worst-only` 等开关照常在每个
+切片内独立生效）到独立子目录 `out/D+1/`、`out/D+4/`，互不覆盖，不加 `--short` 时行为不变
+（直接写 `out/`）。起报日 `D` 用 `--date YYYY-MM-DD` 指定，缺省自动取 input 表最早
+`timestamp_win` 的日期（并在终端打印 `using D = ...` 告知用了哪天；显式给了 `--date` 则不
+打印）。切片按绝对时刻 `[D+1 00:00, D+2 00:00)` / `[D+4 00:00, D+5 00:00)` 各取 24h（15min
+步长即 96 点），逐站 RMSE 只在切片内计算。
+
 **时间对齐**：input 某行 `timestamp_win=T`，任意 list 列第 k 个元素时间 = `T+15min×(k+1)`
 （首元素=T+15min）。同站各窗摊平、按绝对时间 groupby 去重成连续序列；power 的预测再与
 predict 表 `dtime` 对齐。
@@ -117,12 +125,15 @@ python3 station_analysis.py --input input.parquet --predict predict.parquet --ou
   [--cf-swap "GHI_SOLARGIS_predict:GHI_real_future"]   # 可多对 = 联合替换
   [--cf-exclude-cols "observe_power_future,GHI_real_future"]  # 不发给 API 的 label 列
   [--cf-timeout 120] [--cf-retries 1] [--cf-check-tol 1.0] [--cf-curves]
+  [--short [--date 2026-07-26]]   # 短期：只出 D+1/D+4 两个 24h 切片，各一套产物
 ```
 产物：`out/` 下 —— 逐站 `station_<名>_Power.png` / `station_<名>_<特征>.png`（图宽随点数自适应、
 标题含站名+起始时间戳）+ `station_power_rmse.csv` + `station_feature_rmse.csv`；
 全场 `fleet_overview.png` + `fleet_ranking.csv`（每站 nRMSE / bias / 离群标记 / 排名）；
 反事实 `counterfactual_overview.png` + `counterfactual_results.csv`（每站 status /
 nrmse_base / nrmse_cf / delta / frac_explained / 复现闸偏差 / coadapt）+ 可选逐站三线图。
+加 `--short` 时，以上全部产物各出一份到 `out/D+1/`、`out/D+4/`（结构不变，只是每份只覆盖
+对应 24h 切片）。
 
 ## 组件
 
