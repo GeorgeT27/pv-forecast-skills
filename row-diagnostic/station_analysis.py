@@ -114,8 +114,9 @@ def night_mask(idx: pd.DatetimeIndex, drop_night: bool, night_end_hour: float) -
     return ~(hod < night_end_hour)
 
 
-def _aligned(a: pd.Series, b: pd.Series, drop_night, night_end_hour):
-    """Take common time points of two series + drop night. Returns (times, a_vals, b_vals) or None (no common points)."""
+def _aligned(a: pd.Series, b: pd.Series, drop_night, night_end_hour, win=None):
+    """Take common time points of two series + drop night. Returns (times, a_vals, b_vals) or None (no common points).
+    win reserved for a future window restriction (unused for now; --short groundwork)."""
     common = a.index.intersection(b.index).sort_values()
     if len(common) == 0:
         return None
@@ -819,6 +820,206 @@ def run_counterfactual(inp, pred, args, cap_map, step):
             print(f"  co-adaptation warning (swap-to-truth is worse): {co.station.tolist()}")
 
 
+# ================================================================ One window's full analysis (per-station + fleet)
+def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, out_dir, win, label):
+    """Run the full per-station + fleet analysis for ONE window into out_dir.
+    win=(start,end) restricts every aligned series to [start,end); win=None = whole series.
+    label prefixes log lines ('D+1'/'D+4'); None = default single pass."""
+    pfx = f"[{label}] " if label else ""
+    plot_station = not (args.no_plots or args.no_station_plots)
+    stations = list(pd.unique(inp[args.station_col]))
+    power_rows, feat_rows, imgs = [], [], []
+    fleet_recs, hourly = [], {}
+    plot_jobs = []              # per-station plots deferred: --worst-only must rank the full fleet before drawing
+    scatter_jobs = []           # (st, t, p, sc, th, cap) -- true-vs-pred scatter, same deferred treatment
+
+    for st in stations:
+        sub = inp[inp[args.station_col] == st]
+        wins = sub[args.win_col].to_numpy()
+        cache = {}
+
+        def ser(col):                                 # per-station column memoization: flatten each column only once
+            if col not in cache:
+                cache[col] = series_from_lists(wins, sub[col].to_numpy(), step)
+            return cache[col]
+
+        rec = {"station": st}
+
+        # ---- Power (prediction from predict table) ----
+        truth = ser(args.power_col)
+        col = resolve_pred_col(st, pred, args.pred_col_template)
+        if col is None:
+            print(f"  [warn] station {st}: predict table has no column "
+                  f"'{args.pred_col_template.format(station=st)}' (nor the bare station name), skip Power plot")
+        else:
+            al = _aligned(truth, pred[col].dropna(), args.drop_night, args.night_end_hour, win)
+            if al is None:
+                print(f"  [warn] station {st}: Power truth/pred have no common time points (or all removed as night), skipped")
+            else:
+                times, t, p = al
+                rv = rmse(p, t)
+                power_rows.append({"station": st, "power_rmse": round(rv, 6),
+                                   "n_points": int(len(times)),
+                                   "t_start": str(times.min()), "t_end": str(times.max())})
+                if plot_station:
+                    plot_jobs.append((st, "Power", times, t, p, rv,
+                                      "observed power", "predicted power"))
+                # Overview: power nRMSE / bias / hourly
+                cap = cap_map.get(str(st)) or cap_map.get(st) or float(np.max(t))
+                cap = cap if cap and cap > 0 else 1.0
+                rec.update(power_rmse=round(rv, 4), power_nrmse=round(rv / cap * 100, 4),
+                           power_bias_pct=round(float(np.mean(p - t)) / cap * 100, 4),
+                           capacity=round(cap, 4), n_points=int(len(times)))
+                hourly[st] = hourly_nrmse(times, p - t, cap)
+                # Theil three-way split + scatter calibration (systematic offset / high-value compression)
+                th = theil_shares(t, p)
+                sc = scatter_stats(t, p)
+                if th:
+                    rec.update(theil_u_bias=round(th[0], 3), theil_u_var=round(th[1], 3),
+                               theil_u_cov=round(th[2], 3))
+                if sc:
+                    rec.update(slope=round(sc["slope"], 3), r2=round(sc["r2"], 3),
+                               high_bias_pct=round(sc["high_bias"] / cap * 100, 4))
+                if plot_station and sc:
+                    scatter_jobs.append((st, t, p, sc, th, cap))
+
+        # ---- Per-station feature plots (prediction and truth both in input) ----
+        for pcol, tcol, label in active_pairs:
+            pser, tser = ser(pcol), ser(tcol)
+            if pser.empty or tser.empty:
+                print(f"  [warn] station {st}: feature '{label}' data missing/empty for this station, skipped (does not affect other plots)")
+                continue
+            al = _aligned(tser, pser, args.drop_night, args.night_end_hour, win)
+            if al is None:
+                print(f"  [warn] station {st}: feature '{label}' has no common time points, skipped")
+                continue
+            times, tv, pv = al
+            rv = rmse(pv, tv)
+            feat_rows.append({"station": st, "feature": label, "rmse": round(rv, 6),
+                              "n_points": int(len(times))})
+            if plot_station:
+                plot_jobs.append((st, label, times, tv, pv, rv,
+                                  f"{tcol} (true)", f"{pcol} (pred)"))
+
+        # ---- Overview: GHI nRMSE (scatter/GHI ranking; use specified columns, reuse cache to avoid re-flatten) ----
+        if have_ghi and not args.no_fleet:
+            gp, gt = ser(args.ghi_pred), ser(args.ghi_true)
+            if not gp.empty and not gt.empty:
+                al = _aligned(gt, gp, args.drop_night, args.night_end_hour, win)
+                if al is not None:
+                    _, tvg, pvg = al
+                    gcap = float(np.max(tvg)) or 1.0
+                    gr = rmse(pvg, tvg)
+                    rec.update(ghi_rmse=round(gr, 4), ghi_nrmse=round(gr / gcap * 100, 4))
+        fleet_recs.append(rec)
+
+    # ---------------- --worst-only: rank on the full fleet, then draw only the worst N ----------------
+    fdf = pd.DataFrame(fleet_recs)
+    sel = None                                        # None = draw every station
+    if args.worst_only > 0:
+        if "power_nrmse" in fdf.columns and np.isfinite(fdf["power_nrmse"]).any():
+            ranked = fdf[np.isfinite(fdf["power_nrmse"])].sort_values("power_nrmse", ascending=False)
+            sel = set(ranked.head(args.worst_only)["station"])
+            print(f"  [worst-only] images restricted to worst {len(sel)} stations by power nRMSE: "
+                  f"{[str(s) for s in ranked.head(args.worst_only)['station']]}  (CSVs still cover all)")
+        else:
+            print("  [warn] --worst-only: no station has power nRMSE (cannot rank) -> drawing all stations")
+    for st, name, times, tv, pv, rv, tlab, plab in plot_jobs:
+        if sel is not None and st not in sel:
+            continue
+        imgs.append(plot_two_lines(st, name, times, tv, pv, rv, out_dir,
+                                   args.tick_hours, tlab, plab))
+    for st, tv, pv, sc, th, cap in scatter_jobs:
+        if sel is not None and st not in sel:
+            continue
+        imgs.append(plot_scatter(st, tv, pv, sc, th, cap, out_dir))
+
+    # ---------------- Station-level CSV ----------------
+    if power_rows:
+        pw = pd.DataFrame(power_rows).sort_values("power_rmse", ascending=False)
+        pw.to_csv(os.path.join(out_dir, "station_power_rmse.csv"), index=False)
+    if feat_rows:
+        pd.DataFrame(feat_rows).sort_values(["feature", "rmse"], ascending=[True, False]).to_csv(
+            os.path.join(out_dir, "station_feature_rmse.csv"), index=False)
+
+    # ---------------- Fleet overview ----------------
+    fleet_img = theil_img = None
+    if not args.no_fleet and ("power_nrmse" in fdf.columns or "ghi_nrmse" in fdf.columns):
+        if "power_nrmse" in fdf.columns:
+            fdf["power_outlier"] = flag_outliers(fdf["power_nrmse"].to_numpy(), args.mad_k)
+            fdf["power_rank"] = fdf["power_nrmse"].rank(ascending=False, method="min").astype("Int64")
+        sort_col = "power_nrmse" if "power_nrmse" in fdf.columns else "station"
+        fdf.sort_values(sort_col, ascending=(sort_col == "station")).to_csv(
+            os.path.join(out_dir, "fleet_ranking.csv"), index=False)
+        if not args.no_plots:
+            ddf = fdf if sel is None else fdf[fdf["station"].isin(sel)]
+            dh = hourly if sel is None else {s: h for s, h in hourly.items() if s in sel}
+            note = "" if sel is None else f"   [focused on worst {len(ddf)} of {len(fdf)} stations]"
+            fleet_img = plot_dashboard(ddf, dh, have_ghi, args, out_dir, note)
+            if "theil_u_bias" in ddf.columns:
+                theil_img = plot_theil_overview(ddf, out_dir, note)
+
+    if not power_rows and not feat_rows and fleet_img is None:
+        msg = ("nothing could be produced (check --pred-col-template against the predict-table column names, "
+               "whether times align, whether columns exist).")
+        if win is None:
+            raise SystemExit(msg)
+        print(f"  {pfx}[warn] {msg}")
+        return
+
+    # ---------------- Terminal summary ----------------
+    print(f"{pfx}[station_analysis] stations x{len(stations)}   feature pairs {[p[2] for p in active_pairs] or 'none'}   "
+          f"drop_night={args.drop_night}   -> {out_dir}/")
+    if power_rows:
+        print("  Per-station Power RMSE (absolute, for detail):")
+        print(pw.to_string(index=False))
+    if not args.no_fleet and "power_nrmse" in fdf.columns:
+        top = fdf[np.isfinite(fdf.power_nrmse)].sort_values("power_nrmse", ascending=False)
+        print("  Fleet power nRMSE most-off Top (%, comparable only after normalization):")
+        for _, r in top.head(5).iterrows():
+            tag = "  [warn]outlier" if r.get("power_outlier") else ""
+            print(f"    {r.station}: {r.power_nrmse:.2f}%  (RMSE={r.power_rmse:.2f}, "
+                  f"bias={r.get('power_bias_pct', float('nan')):+.2f}%){tag}")
+        outs = top[top.power_outlier == True]["station"].tolist() if "power_outlier" in top else []
+        if outs:
+            print(f"  [warn] outlier stations (clearly above the fleet): {outs}")
+    if "theil_u_bias" in fdf.columns:
+        show = fdf[np.isfinite(pd.to_numeric(fdf["theil_u_bias"], errors="coerce"))]
+        if sel is not None:
+            show = show[show["station"].isin(sel)]
+        if "power_nrmse" in show.columns:
+            show = show.sort_values("power_nrmse", ascending=False)
+        show = show.head(args.worst_only or 5)
+        if not show.empty:
+            print("  Theil / scatter reading (candidates only -- conclusions go through the playbook gates):")
+        for _, r in show.iterrows():
+            dom = max((("u_bias", r["theil_u_bias"]), ("u_var", r["theil_u_var"]), ("u_cov", r["theil_u_cov"])),
+                      key=lambda x: x[1])
+            hint = {"u_bias": "systematic level offset (cheapest fix: output shift)",
+                    "u_var": "amplitude mismatch (calibration/capacity assumption)",
+                    "u_cov": "shape/timing mismatch (check time shift / structure)"}[dom[0]]
+            sl, hb = r.get("slope", np.nan), r.get("high_bias_pct", np.nan)
+            comp = (f";  slope={sl:.2f} & top-20% truth bias {hb:+.1f}% -> high-value compression candidate"
+                    if np.isfinite(sl) and sl < 0.9 and np.isfinite(hb) and hb < 0 else "")
+            print(f"    {r['station']}: u_bias/u_var/u_cov = {r['theil_u_bias']:.0%}/{r['theil_u_var']:.0%}/"
+                  f"{r['theil_u_cov']:.0%} -> {hint}"
+                  f"  (bias {r.get('power_bias_pct', float('nan')):+.2f}%){comp}")
+    prod = []
+    if imgs:
+        prod.append(f"stations/ per-station plots x{len(imgs)}")
+    if power_rows:
+        prod.append("station_power_rmse.csv")
+    if feat_rows:
+        prod.append("station_feature_rmse.csv")
+    if not args.no_fleet and ("power_nrmse" in fdf.columns or "ghi_nrmse" in fdf.columns):
+        prod.append("fleet_ranking.csv")
+    if fleet_img:
+        prod.append("fleet_overview.png")
+    if theil_img:
+        prod.append("theil_decomposition.png")
+    print(f"  {pfx}Products: " + ("  + ".join(prod) if prod else "none"))
+
+
 # ================================================================ Main flow: compute both layers in one pass
 def main():
     ap = argparse.ArgumentParser()
@@ -869,7 +1070,6 @@ def main():
     step = pd.Timedelta(minutes=args.step_min)
     feature_pairs = parse_feature_pairs(args.feature_pairs)
     cap_map = parse_capacity(args.capacity)
-    plot_station = not (args.no_plots or args.no_station_plots)
 
     inp = pd.read_parquet(args.input)
     pred = pd.read_parquet(args.predict)
@@ -896,195 +1096,9 @@ def main():
         print(f"  [warn] overview GHI columns missing {miss} -> skip GHI ranking and scatter (power overview still output)")
 
     os.makedirs(args.out_dir, exist_ok=True)
-    stations = list(pd.unique(inp[args.station_col]))
-    power_rows, feat_rows, imgs = [], [], []
-    fleet_recs, hourly = [], {}
-    plot_jobs = []              # per-station plots deferred: --worst-only must rank the full fleet before drawing
-    scatter_jobs = []           # (st, t, p, sc, th, cap) -- true-vs-pred scatter, same deferred treatment
+    run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map,
+                 args.out_dir, None, None)
 
-    for st in stations:
-        sub = inp[inp[args.station_col] == st]
-        wins = sub[args.win_col].to_numpy()
-        cache = {}
-
-        def ser(col):                                 # per-station column memoization: flatten each column only once
-            if col not in cache:
-                cache[col] = series_from_lists(wins, sub[col].to_numpy(), step)
-            return cache[col]
-
-        rec = {"station": st}
-
-        # ---- Power (prediction from predict table) ----
-        truth = ser(args.power_col)
-        col = resolve_pred_col(st, pred, args.pred_col_template)
-        if col is None:
-            print(f"  [warn] station {st}: predict table has no column "
-                  f"'{args.pred_col_template.format(station=st)}' (nor the bare station name), skip Power plot")
-        else:
-            al = _aligned(truth, pred[col].dropna(), args.drop_night, args.night_end_hour)
-            if al is None:
-                print(f"  [warn] station {st}: Power truth/pred have no common time points (or all removed as night), skipped")
-            else:
-                times, t, p = al
-                rv = rmse(p, t)
-                power_rows.append({"station": st, "power_rmse": round(rv, 6),
-                                   "n_points": int(len(times)),
-                                   "t_start": str(times.min()), "t_end": str(times.max())})
-                if plot_station:
-                    plot_jobs.append((st, "Power", times, t, p, rv,
-                                      "observed power", "predicted power"))
-                # Overview: power nRMSE / bias / hourly
-                cap = cap_map.get(str(st)) or cap_map.get(st) or float(np.max(t))
-                cap = cap if cap and cap > 0 else 1.0
-                rec.update(power_rmse=round(rv, 4), power_nrmse=round(rv / cap * 100, 4),
-                           power_bias_pct=round(float(np.mean(p - t)) / cap * 100, 4),
-                           capacity=round(cap, 4), n_points=int(len(times)))
-                hourly[st] = hourly_nrmse(times, p - t, cap)
-                # Theil three-way split + scatter calibration (systematic offset / high-value compression)
-                th = theil_shares(t, p)
-                sc = scatter_stats(t, p)
-                if th:
-                    rec.update(theil_u_bias=round(th[0], 3), theil_u_var=round(th[1], 3),
-                               theil_u_cov=round(th[2], 3))
-                if sc:
-                    rec.update(slope=round(sc["slope"], 3), r2=round(sc["r2"], 3),
-                               high_bias_pct=round(sc["high_bias"] / cap * 100, 4))
-                if plot_station and sc:
-                    scatter_jobs.append((st, t, p, sc, th, cap))
-
-        # ---- Per-station feature plots (prediction and truth both in input) ----
-        for pcol, tcol, label in active_pairs:
-            pser, tser = ser(pcol), ser(tcol)
-            if pser.empty or tser.empty:
-                print(f"  [warn] station {st}: feature '{label}' data missing/empty for this station, skipped (does not affect other plots)")
-                continue
-            al = _aligned(tser, pser, args.drop_night, args.night_end_hour)
-            if al is None:
-                print(f"  [warn] station {st}: feature '{label}' has no common time points, skipped")
-                continue
-            times, tv, pv = al
-            rv = rmse(pv, tv)
-            feat_rows.append({"station": st, "feature": label, "rmse": round(rv, 6),
-                              "n_points": int(len(times))})
-            if plot_station:
-                plot_jobs.append((st, label, times, tv, pv, rv,
-                                  f"{tcol} (true)", f"{pcol} (pred)"))
-
-        # ---- Overview: GHI nRMSE (scatter/GHI ranking; use specified columns, reuse cache to avoid re-flatten) ----
-        if have_ghi and not args.no_fleet:
-            gp, gt = ser(args.ghi_pred), ser(args.ghi_true)
-            if not gp.empty and not gt.empty:
-                al = _aligned(gt, gp, args.drop_night, args.night_end_hour)
-                if al is not None:
-                    _, tvg, pvg = al
-                    gcap = float(np.max(tvg)) or 1.0
-                    gr = rmse(pvg, tvg)
-                    rec.update(ghi_rmse=round(gr, 4), ghi_nrmse=round(gr / gcap * 100, 4))
-        fleet_recs.append(rec)
-
-    # ---------------- --worst-only: rank on the full fleet, then draw only the worst N ----------------
-    fdf = pd.DataFrame(fleet_recs)
-    sel = None                                        # None = draw every station
-    if args.worst_only > 0:
-        if "power_nrmse" in fdf.columns and np.isfinite(fdf["power_nrmse"]).any():
-            ranked = fdf[np.isfinite(fdf["power_nrmse"])].sort_values("power_nrmse", ascending=False)
-            sel = set(ranked.head(args.worst_only)["station"])
-            print(f"  [worst-only] images restricted to worst {len(sel)} stations by power nRMSE: "
-                  f"{[str(s) for s in ranked.head(args.worst_only)['station']]}  (CSVs still cover all)")
-        else:
-            print("  [warn] --worst-only: no station has power nRMSE (cannot rank) -> drawing all stations")
-    for st, name, times, tv, pv, rv, tlab, plab in plot_jobs:
-        if sel is not None and st not in sel:
-            continue
-        imgs.append(plot_two_lines(st, name, times, tv, pv, rv, args.out_dir,
-                                   args.tick_hours, tlab, plab))
-    for st, tv, pv, sc, th, cap in scatter_jobs:
-        if sel is not None and st not in sel:
-            continue
-        imgs.append(plot_scatter(st, tv, pv, sc, th, cap, args.out_dir))
-
-    # ---------------- Station-level CSV ----------------
-    if power_rows:
-        pw = pd.DataFrame(power_rows).sort_values("power_rmse", ascending=False)
-        pw.to_csv(os.path.join(args.out_dir, "station_power_rmse.csv"), index=False)
-    if feat_rows:
-        pd.DataFrame(feat_rows).sort_values(["feature", "rmse"], ascending=[True, False]).to_csv(
-            os.path.join(args.out_dir, "station_feature_rmse.csv"), index=False)
-
-    # ---------------- Fleet overview ----------------
-    fleet_img = theil_img = None
-    if not args.no_fleet and ("power_nrmse" in fdf.columns or "ghi_nrmse" in fdf.columns):
-        if "power_nrmse" in fdf.columns:
-            fdf["power_outlier"] = flag_outliers(fdf["power_nrmse"].to_numpy(), args.mad_k)
-            fdf["power_rank"] = fdf["power_nrmse"].rank(ascending=False, method="min").astype("Int64")
-        sort_col = "power_nrmse" if "power_nrmse" in fdf.columns else "station"
-        fdf.sort_values(sort_col, ascending=(sort_col == "station")).to_csv(
-            os.path.join(args.out_dir, "fleet_ranking.csv"), index=False)
-        if not args.no_plots:
-            ddf = fdf if sel is None else fdf[fdf["station"].isin(sel)]
-            dh = hourly if sel is None else {s: h for s, h in hourly.items() if s in sel}
-            note = "" if sel is None else f"   [focused on worst {len(ddf)} of {len(fdf)} stations]"
-            fleet_img = plot_dashboard(ddf, dh, have_ghi, args, args.out_dir, note)
-            if "theil_u_bias" in ddf.columns:
-                theil_img = plot_theil_overview(ddf, args.out_dir, note)
-
-    if not power_rows and not feat_rows and fleet_img is None:
-        raise SystemExit("nothing could be produced (check --pred-col-template against the predict-table column names, "
-                         "whether times align, whether columns exist).")
-
-    # ---------------- Terminal summary ----------------
-    print(f"[station_analysis] stations x{len(stations)}   feature pairs {[p[2] for p in active_pairs] or 'none'}   "
-          f"drop_night={args.drop_night}   -> {args.out_dir}/")
-    if power_rows:
-        print("  Per-station Power RMSE (absolute, for detail):")
-        print(pw.to_string(index=False))
-    if not args.no_fleet and "power_nrmse" in fdf.columns:
-        top = fdf[np.isfinite(fdf.power_nrmse)].sort_values("power_nrmse", ascending=False)
-        print("  Fleet power nRMSE most-off Top (%, comparable only after normalization):")
-        for _, r in top.head(5).iterrows():
-            tag = "  [warn]outlier" if r.get("power_outlier") else ""
-            print(f"    {r.station}: {r.power_nrmse:.2f}%  (RMSE={r.power_rmse:.2f}, "
-                  f"bias={r.get('power_bias_pct', float('nan')):+.2f}%){tag}")
-        outs = top[top.power_outlier == True]["station"].tolist() if "power_outlier" in top else []
-        if outs:
-            print(f"  [warn] outlier stations (clearly above the fleet): {outs}")
-    if "theil_u_bias" in fdf.columns:
-        show = fdf[np.isfinite(pd.to_numeric(fdf["theil_u_bias"], errors="coerce"))]
-        if sel is not None:
-            show = show[show["station"].isin(sel)]
-        if "power_nrmse" in show.columns:
-            show = show.sort_values("power_nrmse", ascending=False)
-        show = show.head(args.worst_only or 5)
-        if not show.empty:
-            print("  Theil / scatter reading (candidates only -- conclusions go through the playbook gates):")
-        for _, r in show.iterrows():
-            dom = max((("u_bias", r["theil_u_bias"]), ("u_var", r["theil_u_var"]), ("u_cov", r["theil_u_cov"])),
-                      key=lambda x: x[1])
-            hint = {"u_bias": "systematic level offset (cheapest fix: output shift)",
-                    "u_var": "amplitude mismatch (calibration/capacity assumption)",
-                    "u_cov": "shape/timing mismatch (check time shift / structure)"}[dom[0]]
-            sl, hb = r.get("slope", np.nan), r.get("high_bias_pct", np.nan)
-            comp = (f";  slope={sl:.2f} & top-20% truth bias {hb:+.1f}% -> high-value compression candidate"
-                    if np.isfinite(sl) and sl < 0.9 and np.isfinite(hb) and hb < 0 else "")
-            print(f"    {r['station']}: u_bias/u_var/u_cov = {r['theil_u_bias']:.0%}/{r['theil_u_var']:.0%}/"
-                  f"{r['theil_u_cov']:.0%} -> {hint}"
-                  f"  (bias {r.get('power_bias_pct', float('nan')):+.2f}%){comp}")
-    prod = []
-    if imgs:
-        prod.append(f"stations/ per-station plots x{len(imgs)}")
-    if power_rows:
-        prod.append("station_power_rmse.csv")
-    if feat_rows:
-        prod.append("station_feature_rmse.csv")
-    if not args.no_fleet and ("power_nrmse" in fdf.columns or "ghi_nrmse" in fdf.columns):
-        prod.append("fleet_ranking.csv")
-    if fleet_img:
-        prod.append("fleet_overview.png")
-    if theil_img:
-        prod.append("theil_decomposition.png")
-    print("  Products: " + ("  + ".join(prod) if prod else "none"))
-
-    # ---------------- Counterfactual (optional, gated) ----------------
     if args.counterfactual:
         run_counterfactual(inp, pred, args, cap_map, step)
 
