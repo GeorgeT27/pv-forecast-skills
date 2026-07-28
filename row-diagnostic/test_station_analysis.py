@@ -422,6 +422,18 @@ def short_cf_data(tmp_path):
     return tmp_path
 
 
+def test_short_end_to_end_with_plots(short_data):
+    r = _run_short(short_data, ["--pred-col-template", "{station}", "--worst-only", "2"])
+    for sub in ("D+1", "D+4"):
+        d = short_data / "out" / sub
+        assert (d / "fleet_overview.png").exists()
+        assert (d / "theil_decomposition.png").exists()
+        assert (d / "fleet_ranking.csv").exists()
+        stn = os.listdir(d / "stations")
+        assert any(f.endswith("_Power.png") for f in stn)
+        assert any(f.endswith("_scatter.png") for f in stn)
+
+
 def test_short_counterfactual_per_window(short_cf_data, fake_api):
     r = subprocess.run(
         [sys.executable, SCRIPT, "--input", str(short_cf_data / "input.parquet"),
