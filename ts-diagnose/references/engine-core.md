@@ -47,7 +47,7 @@ python3 "<ENGINE>/scripts/orient.py" --goto 3                        # 直达校
 
 ## 执行模型
 
-- **阶段由 playbook 定义**（frontmatter，规范见 `playbooks/_playbook-spec.md`）；orient 是通用求值器。推进 = 照 playbook 正文该阶段的菜谱做。
+- **阶段由 playbook 定义**（frontmatter，规范见 `playbooks/_playbook-spec.md`）；orient 是通用求值器。推进 = 照 playbook 正文该阶段的菜谱做。菜谱是编号步骤时，进入阶段先把各步逐条建 todo，做一步勾一步；标【硬规则】的步骤不得合并或跳过。
 - **分析代码运行时生成**：引擎不带分析脚本。按菜谱把脚本写进工作目录 `analysis_scripts/`，**每个脚本先过菜谱声明的验证步**（对账/合成小样/植入回收），验证结果记 PROGRESS.md——没验证记录的脚本产出不可引用，crystallize 也不快照它。
 
   **chartbook 豁免**：chartbook（`<ENGINE>/chartbook/`）已覆盖的图**必须**直接调用其
@@ -85,6 +85,11 @@ python3 "<ENGINE>/scripts/orient.py" --goto 3                        # 直达校
   （结论须声明）。产物内联生产即「upstream 产物内联生产」——不是外部技能接线，是引擎内
   playbook 间既定的生产者/消费者关系，见 `_playbook-spec.md` §`produces`/`upstream`。
 - **subagent 编排**：重活（大日志解析、批量计算、逐产物事实提取）外包，brief 模板见 `subagent-briefs.md`；分片各写各的 `--out`，主 agent 合并；`diagnose_config/diagnose_state/PROGRESS/FINDINGS` 只由主 agent 写。
+  **分层原则**：生产者 playbook（声明 `produces`、无结论阶段、执行段无用户裁决与
+  FINDINGS 写入——如 data-setup、metric-eval）由主 agent 收齐 questions 答案后按
+  `Brief-PRODUCER` **整体外包**，主 agent 只做提问-派发-收汇报-写 config.products 回填；
+  不满足条件的生产者（model-audit、fact-scan）按各自 §5 拆分。分析类 playbook 由
+  主 agent 亲自执行，只外包其 §5 列的机械子任务——**结论永远由主 agent 落笔**。
 - **上下文预算**：产物自足（json 带完整数字与形状描述），判读读 json 不读 PNG、不读原始大文件；每阶段落盘可断点续跑。
 
 ## 结论纪律（精简硬规则，细则见 mechanisms.md）
@@ -113,7 +118,8 @@ python3 "<ENGINE>/scripts/orient.py" --goto 3                        # 直达校
 - ❌ 忘了把运行中补齐的实验线【待补】路径写回 project-context（下次还得问）。
 - ❌ orient 报「必需材料未就绪」却跳过盘点直接开工，或材料 unknown 时按"大概有"处理
   （unknown ≠ absent-confirmed：前者必须问，后者才允许走确认过的降级）。
-- ❌ 内联生产 upstream 产物时丢给 subagent（其流程含必须用户裁决的问题），或跑完
+- ❌ 内联生产 upstream 产物时没收齐其 questions 答案就丢给 subagent（提问与用户裁决
+  只在主 agent；答案齐后纯机械生产者才可按 `Brief-PRODUCER` 整体外包执行段），或跑完
   不写 manifest/marker/config 回填就继续（下次 orient 仍报 absent，白跑）。
 
 ## 运行后回顾（每次实跑收尾必做）

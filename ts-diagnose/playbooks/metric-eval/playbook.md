@@ -53,18 +53,25 @@ questions:
 
 ## 2. 逐阶段菜谱
 
-### Stage 0 口径确认与计算
+### Stage 0 口径确认与计算（主 agent 只做步 1-2，步 3 起 subagent）
 
 输入：setup 产物的规范长表（`<setup>/predictions.csv`，orient 注入的 manifest 摘要给出
 位置与模型清单，不再自行摸文件）；`metric-spec` 问题的答案。
 
-菜谱：按答案选定口径，现场写生成脚本 `analysis_scripts/metrics.py`，CLI 契约固定：
-`--pred <setup>/predictions.csv --caliber <口径答案> --out metrics.csv --summary metrics_summary.json`。
-逐模型按口径计算（默认 rmse_192：每行全部 horizon 点的 RMSE，逐行值再按模型聚合）；若
-答案是用户外部脚本，先对账（见 §1 陷阱②）再复用其输出，不重复现写口径逻辑。
+菜谱（编号步骤，逐条建 todo）：
 
-**生成闸（硬规则）**：真实数据前先过
-`python3 <ENGINE>/scripts/gen_gate.py --script analysis_scripts/metrics.py --playbook metric-eval --stage 0`。
+1. （主 agent）确认 metric-spec 已答（orient 报 ✗ 先问）；
+2. 【硬规则】（主 agent）按 `references/subagent-briefs.md` 的 **Brief-PRODUCER** 派发
+   subagent 执行步 3 起的全部菜谱（含 Stage 1），实参：`<ENGINE>`、工作目录、setup 产物
+   workdir、metric-spec 答案（外部脚本时含其路径与调用方式）。主 agent 不得自己写
+   metrics.py——发现自己在写即本步被跳过，停下补派发；
+3. （subagent）按答案选定口径，现场写生成脚本 `analysis_scripts/metrics.py`，CLI 契约固定：
+   `--pred <setup>/predictions.csv --caliber <口径答案> --out metrics.csv --summary metrics_summary.json`。
+   逐模型按口径计算（默认 rmse_192：每行全部 horizon 点的 RMSE，逐行值再按模型聚合）；若
+   答案是用户外部脚本，先对账（见 §1 陷阱②，对账数字随回传交主 agent 记 PROGRESS.md）
+   再复用其输出，不重复现写口径逻辑；
+4. （subagent）**生成闸（硬规则）**：真实数据前先过
+   `python3 <ENGINE>/scripts/gen_gate.py --script analysis_scripts/metrics.py --playbook metric-eval --stage 0`。
 
 落两个产物：
 - `metrics.csv`——逐模型 × 逐单元长表，列：`model,unit_id,window_ts,metric,value`；
@@ -74,9 +81,9 @@ questions:
 
 done：`metrics.csv` + `metrics_summary.json` 落盘。
 
-### Stage 1 产物清单落盘
+### Stage 1 产物清单落盘（subagent 承接）
 
-菜谱：跑引擎机制脚本（预写，禁现场重写）：
+菜谱：（subagent）跑引擎机制脚本（预写，禁现场重写）：
 
 ```bash
 python3 <ENGINE>/scripts/product_manifest.py --product metric_table \
@@ -86,7 +93,7 @@ python3 <ENGINE>/scripts/product_manifest.py --product metric_table \
 ```
 
 done：`metric_table_manifest.json` 落盘。随后主 agent 回父工作目录写
-`config.products.metric_table = {workdir, status: "built"}`。
+`config.products.metric_table = {workdir, status: "built"}`（subagent 无权写 config）。
 
 ## 3. 证据升级规则
 
@@ -95,11 +102,16 @@ done：`metric_table_manifest.json` 落盘。随后主 agent 回父工作目录�
 ## 4. 停顿点与汇报
 
 无 pause_after 阶段。产物就绪后一句话汇报：口径原文/模型清单与各自汇总值/n_rows/窗口
-范围，然后把控制权还给发起的下游 playbook（或用户）。
+范围，然后把控制权还给发起的下游 playbook（或用户）。消费者是用户本人时，主 agent 可读
+`metrics_summary.json` 补充细节（读落盘产物，不让 subagent 多回话）。
 
 ## 5. subagent 拆分建议
 
-不拆。两个阶段都轻且串行（Stage 1 的 manifest 要读 Stage 0 的产物指纹）。
+**整体外包（硬规则）**：本 playbook 满足 Brief-PRODUCER 三条件（produces + 无结论
+阶段 + 执行段无用户裁决/FINDINGS 写入），Stage 0 步 3 起连同 Stage 1 整体交一个
+subagent 串行执行（两阶段轻且串行，不再细拆）；模板与派发纪律见
+`references/subagent-briefs.md` Brief-PRODUCER。提问（metric-spec）、PROGRESS 记录、
+config.products 回填只在主 agent。
 
 ## 6. 结论模板与反驳门
 

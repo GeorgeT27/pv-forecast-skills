@@ -44,6 +44,42 @@ playbook 菜谱：读 <ENGINE>/playbooks/<id>/playbook.md 的「Stage <N>」节�
 禁止：解释机制、下"某成员有害"类结论（升级判定是主 agent 的活）。
 ```
 
+## Brief-PRODUCER：生产者 playbook 整体外包（执行段全托）
+
+适用条件（三条全满足才可整体外包；不满足则按该 playbook §5 的细粒度拆分）：
+
+1. playbook 声明 `produces` 且无结论阶段；
+2. 其 questions 已由主 agent 全部收齐（subagent 无提问权）；
+3. 执行段无用户裁决、无 FINDINGS/CONCLUSION 写入——data-setup、metric-eval 满足；
+   model-audit（多候选裁决 + 自检 `subagent_ok: false`）与 fact-scan（图表选择门 +
+   现象清单归主 agent）不满足，走各自 §5。
+
+主 agent 派发前：收齐 questions 答案；内联生产时建好产物子目录并拷入父 config 的
+materials/questions 块。收到回传后：把验证步/闸数字记 PROGRESS.md，写
+`config.products.<id>` 回填（这两样 subagent 无权写）。
+
+```
+你是 ts-diagnose 生产者 playbook【<id>】的执行 subagent，只产产物，不画图不下结论。
+
+工作目录：<产物子目录绝对路径，含 diagnose_config.json>
+引擎目录 ENGINE：<绝对路径>
+先读 <ENGINE>/references/engine-core.md「执行模型」节 + <ENGINE>/playbooks/<id>/playbook.md，
+按其逐阶段菜谱把标（subagent）的步骤从头做到最后一个阶段（含 manifest 落盘）。
+
+已确认参数（不许改、不许再问）：<qid>=<答案>；<qid>=<答案>……
+输入材料：<路径清单>
+
+硬规则：
+1. 菜谱声明的生成闸（gen_gate）与验证步一步不许跳，FAIL → 改脚本不改期望；
+2. 不写 diagnose_config.json / diagnose_state.json / PROGRESS.md / FINDINGS.md
+  （config.products 回填与 PROGRESS 记录由主 agent 做）；
+3. 缺信息/报错原样回报，不自行假设、不带病继续；
+4. 原始数据流式处理不进上下文。
+
+只回传（≤10 行）：该 playbook §4 规定的一句话汇报字段 + 验证步/闸结果数字
+（主 agent 要记进 PROGRESS.md）+ 覆盖/缺口披露。
+```
+
 ## Brief-FACT：事实提取子 agent（现象清单，禁机制语言）
 
 ```

@@ -140,6 +140,11 @@ def main():
     print(f"目标: {fm['goal']}")
     for n in notes:
         print(f"  {n}")
+    if fm.get("produces"):
+        print("  🤝 生产者 playbook：提问/用户裁决只在主 agent；questions 收齐后的机械")
+        print("     执行段按本 playbook §5 派发 subagent（references/subagent-briefs.md，")
+        print("     纯机械生产者用 Brief-PRODUCER 整体外包），产物落盘后主 agent 写")
+        print("     config.products 回填——主 agent 不要自己埋头执行。")
     print("-" * 62)
     for st in fm["stages"]:
         pause = " ⏸" if st.get("pause_after") else ""

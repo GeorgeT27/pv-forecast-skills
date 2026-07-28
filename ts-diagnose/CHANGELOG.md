@@ -78,3 +78,23 @@
 - 全阶段零 golden stage 键平移（各 playbook 只挖改/收窄内容，未触发阶段重编号）。
 - 验证：`python3 -m pytest ts-diagnose/scripts/tests -q` 全绿；`grep -rn "contexts"
   ts-diagnose/playbooks/*/playbook.md` 零命中。
+
+## 2026-07-28 生产者外包机制（Brief-PRODUCER + 编号菜谱 todo 纪律）
+
+- 触发反馈：用户提议"能否预设 subagent 角色，每次 setup 都由 subagent 执行"；讨论收敛为
+  分层原则——生产者机械执行外包、结论永远主 agent 落笔，且模板内嵌 playbook（单一事实源、
+  零安装可移植），注册 agent（SDK `agents` 参数/`~/.claude/agents`）仅作可选增强。
+- subagent-briefs.md 新增 **Brief-PRODUCER**（生产者整体外包模板）：三条适用条件
+  （produces + 无结论阶段 + 执行段无用户裁决/FINDINGS 写入）；data-setup、metric-eval
+  满足→整体外包；model-audit（多候选裁决+自检 subagent_ok:false）与 fact-scan
+  （图表选择门+现象清单）不满足→维持各自 §5 细粒度拆分。
+- engine-core 三处：subagent 编排补分层原则；执行模型补"编号菜谱逐条建 todo、
+  【硬规则】步不得合并跳过"；常见错误"内联生产不得丢 subagent"修订为"没收齐 questions
+  答案不得丢"（提问在主 agent，答案齐后机械段可外包）。
+- data-setup / metric-eval：Stage 0 菜谱重排为编号步骤（步 1-2 主 agent 提问+硬规则派发，
+  含自查绊线"发现自己在写 adapter.py/metrics.py 即派发被跳过"；步 3 起 subagent，
+  Stage 1 subagent 承接）；§5 从"不拆"翻转为整体外包硬规则；§4 补"消费者为用户本人时
+  主 agent 读落盘产物补充细节"；对账/闸数字随回传由主 agent 记 PROGRESS（单写者不破）。
+- orient.py：playbook 声明 produces 时打印 🤝 生产者提醒（提问在主 agent、机械段按 §5
+  派发、回填 config.products）——机械输出钉在决策时刻，不指望模型记得 prose。
+- 验证：`python3 -m pytest ts-diagnose/scripts/tests -q` 164 全绿。
