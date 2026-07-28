@@ -310,3 +310,25 @@ def test_cf_off_unchanged(cf_data):
     """不加 --counterfactual：无任何反事实产物，常规产物照常。"""
     r = _run(cf_data, ["--no-plots"])
     assert r["cf"] is None and r["power"] is not None
+
+
+import importlib.util
+_spec = importlib.util.spec_from_file_location("sa", SCRIPT)
+sa = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(sa)
+
+
+def test_window_mask_half_open():
+    idx = pd.date_range("2026-07-27 00:00", periods=4, freq="15min")
+    m = sa.window_mask(idx, (pd.Timestamp("2026-07-27 00:00"), pd.Timestamp("2026-07-27 00:45")))
+    assert list(m) == [True, True, True, False]          # end is exclusive
+    assert list(sa.window_mask(idx, None)) == [True] * 4
+
+
+def test_aligned_applies_window():
+    idx = pd.date_range("2026-07-27 00:00", periods=4, freq="15min")
+    a = pd.Series([1., 2, 3, 4], index=idx)
+    b = pd.Series([1., 2, 3, 4], index=idx)
+    out = sa._aligned(a, b, False, 5.0,
+                      (pd.Timestamp("2026-07-27 00:00"), pd.Timestamp("2026-07-27 00:30")))
+    times, av, bv = out
+    assert len(times) == 2 and list(av) == [1.0, 2.0]     # only 00:00, 00:15 kept

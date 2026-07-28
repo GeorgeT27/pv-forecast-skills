@@ -114,13 +114,20 @@ def night_mask(idx: pd.DatetimeIndex, drop_night: bool, night_end_hour: float) -
     return ~(hod < night_end_hour)
 
 
+def window_mask(idx: pd.DatetimeIndex, win) -> np.ndarray:
+    """True = keep. win=(start,end) keeps [start, end) (end exclusive); win=None keeps all."""
+    if win is None:
+        return np.ones(len(idx), bool)
+    start, end = win
+    return (idx >= start) & (idx < end)
+
+
 def _aligned(a: pd.Series, b: pd.Series, drop_night, night_end_hour, win=None):
-    """Take common time points of two series + drop night. Returns (times, a_vals, b_vals) or None (no common points).
-    win reserved for a future window restriction (unused for now; --short groundwork)."""
+    """Take common time points of two series + drop night + restrict to win. Returns (times, a_vals, b_vals) or None."""
     common = a.index.intersection(b.index).sort_values()
     if len(common) == 0:
         return None
-    keep = night_mask(common, drop_night, night_end_hour)
+    keep = night_mask(common, drop_night, night_end_hour) & window_mask(common, win)
     common = common[keep]
     if len(common) == 0:
         return None
@@ -566,12 +573,12 @@ def cf_series(kind, data, dtimes, n_sent, step):
     return pd.Series([np.nan if v is None else float(v) for v in data], index=dtimes), ""
 
 
-def cf_metrics(p_true, p_base, p_cf, drop_night, night_end_hour, cap):
-    """Take common time points of three series (respecting drop-night) -> decomposition metrics. Returns (metrics dict, (times,t,b,c)) or None."""
+def cf_metrics(p_true, p_base, p_cf, drop_night, night_end_hour, cap, win=None):
+    """Take common time points of three series (respecting drop-night + win) -> decomposition metrics. Returns (metrics dict, (times,t,b,c)) or None."""
     common = p_true.index.intersection(p_base.index).intersection(p_cf.index).sort_values()
     if len(common) == 0:
         return None
-    common = common[night_mask(common, drop_night, night_end_hour)]
+    common = common[night_mask(common, drop_night, night_end_hour) & window_mask(common, win)]
     if len(common) == 0:
         return None
     t = p_true.loc[common].to_numpy()
