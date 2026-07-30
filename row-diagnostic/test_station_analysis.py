@@ -520,3 +520,47 @@ def test_short_missing_d4_slice_skips_gracefully(short_data_missing_d4):
     d4_path = _rep(short_data_missing_d4) / "D+4" / "station_power_rmse.csv"
     # "nothing produced -> warn+return" 路径下该文件根本不会被写出；即便某天该路径的行为改成写空文件，也应容忍
     assert (not d4_path.exists()) or pd.read_csv(d4_path).empty
+
+
+@pytest.fixture
+def hist_data(tmp_path):
+    """起报 T=2026-07-26 10:00. Historical list cols observe_power/GHI_SOLARGIS: 7-day (672-pt, 15min)
+    lists whose LAST element sits at T. Forward observe_power_future + predict cover D+1/D+4 so --short's
+    metric pass also runs without crashing."""
+    T = pd.Timestamp("2026-07-26 10:00:00")
+    n_hist, n_fut = 672, 480
+    hist_power = {"s1": [float(k) for k in range(n_hist)], "s2": [float(k + 1000) for k in range(n_hist)]}
+    hist_ghi = {"s1": [float(2 * k) for k in range(n_hist)], "s2": [float(2 * k + 1) for k in range(n_hist)]}
+    fut = {"s1": [float(10 + (k % 96)) for k in range(n_fut)], "s2": [float(5 + (k % 96)) for k in range(n_fut)]}
+    rows = [{"station": st, "timestamp_win": T, "observe_power_future": fut[st],
+             "observe_power": hist_power[st], "GHI_SOLARGIS": hist_ghi[st]} for st in ("s1", "s2")]
+    pd.DataFrame(rows).to_parquet(tmp_path / "input.parquet")
+    times = [T + pd.Timedelta(minutes=15 * (k + 1)) for k in range(n_fut)]
+    pred = pd.DataFrame({"dtime": times})
+    for st in ("s1", "s2"):
+        pred[st] = fut[st]
+    pred.to_parquet(tmp_path / "predict.parquet")
+    return tmp_path
+
+
+def test_history_plots_per_station(hist_data):
+    r = _run_short(hist_data, ["--pred-col-template", "{station}", "--no-fleet"])
+    hd = _rep(hist_data) / "history" / "stations"
+    assert (hd / "station_s1_observe_power.png").exists()
+    assert (hd / "station_s1_GHI_SOLARGIS.png").exists()
+    assert (hd / "station_s2_observe_power.png").exists()
+    assert (hd / "station_s2_GHI_SOLARGIS.png").exists()
+    assert "[history] observe_power: 2 plotted, 0 skipped" in r.stdout
+
+
+def test_history_no_plots_flag_skips(hist_data):
+    r = _run_short(hist_data, ["--no-plots", "--pred-col-template", "{station}"])
+    assert not (_rep(hist_data) / "history").exists()
+    assert "[history] skipped" in r.stdout
+
+
+def test_history_missing_column_warns(short_data):
+    # short_data has no observe_power / GHI_SOLARGIS columns -> history warns per missing col, no crash
+    r = _run_short(short_data, ["--no-fleet", "--pred-col-template", "{station}"])
+    assert "[history] column 'observe_power' missing" in r.stdout
+    assert "[history] column 'GHI_SOLARGIS' missing" in r.stdout

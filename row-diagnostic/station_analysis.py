@@ -40,6 +40,10 @@ Robust (key): each plot / each metric succeeds or fails independently. If a colu
   n_windows != n_sent_rows = alignment gate catches it. Backward-compatible fallback: response may also be a single flat power list (matched pointwise
   to that station's predict-table column by dtime sort order).
 
+[History] (--short only) Per-station single-line plots of the historical (past-observed) columns
+  observe_power and GHI_SOLARGIS, last 2 days ending at 起报时间 T (the list's last element sits at T,
+  stepping back 15min per element). Plots only -- no metrics/CSV. Written to <report>/history/stations/.
+
 Time alignment: if input row timestamp_win=T, then for any list column (observe_power_future / *_predict /
   GHI_real_future) the k-th element's time = T+15min x (k+1) (first element = T+15min). Flatten windows per station, groupby absolute
   time and dedup into a continuous series; the power prediction is further aligned to predict-table dtime.
@@ -68,7 +72,7 @@ Usage:
     [--counterfactual --api-url URL [--cf-dry-run] [--cf-stations st1,st2] [--cf-force]
      [--cf-swap "GHI_SOLARGIS_predict:GHI_real_future"] [--cf-exclude-cols ...]
      [--cf-timeout 120] [--cf-retries 1] [--cf-check-tol 1.0] [--cf-curves]]
-    [--short [--date 2026-07-26]]   # 短期：D+1/D+4 两个 24h 切片，各产一套到 out_dir/D+1、out_dir/D+4
+    [--short [--date 2026-07-26]]   # 短期：<out>/<起报日>/ 下 D+1、D+4 各一套产物 + history 两日历史曲线
 """
 from __future__ import annotations
 
@@ -81,6 +85,8 @@ import numpy as np
 import pandas as pd
 
 DEFAULT_FEATURE_PAIRS = [("GHI_SOLARGIS_predict", "GHI_real_future", "GHI")]
+HISTORY_DAYS = 2                                  # --short history plots: how many days back from 起报时间 T
+HISTORY_COLS = ["observe_power", "GHI_SOLARGIS"]  # historical (past-observed) list columns to plot
 
 
 # ================================================================ Common: flatten / night / align
@@ -262,6 +268,32 @@ def plot_two_lines(st, name, times, true_v, pred_v, rmse_v, out_dir,
     gap_note = f", {len(times) - n_scored} gaps filled 0" if n_scored < len(times) else ""
     ax.set_title(f"Station {st}  -  {name}   RMSE={rmse_v:.3f}   "
                  f"start {times[0]:%Y-%m-%d %H:%M}   (n={n_scored} scored{gap_note})",
+                 fontsize=13, fontweight="bold")
+    ax.xaxis.set_major_locator(mdates.HourLocator(interval=max(1, int(tick_hours))))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
+    plt.setp(ax.get_xticklabels(), rotation=90, fontsize=7)
+    ax.set_xlabel("time"); ax.set_ylabel(name); ax.legend(loc="upper right"); ax.grid(alpha=0.25)
+    fig.tight_layout()
+    path = os.path.join(_station_dir(out_dir), f"station_{sanitize(st)}_{sanitize(name)}.png")
+    fig.savefig(path, dpi=110); plt.close(fig)
+    return path
+
+
+def plot_history_line(st, name, times, vals, out_dir, tick_hours):
+    """Single-line history plot (no truth/pred pair, no RMSE). Saved to <out_dir>/stations/."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.dates as mdates
+    import matplotlib.pyplot as plt
+    _cn_font()
+
+    times = pd.DatetimeIndex(times)
+    n_hours = max(1.0, (times[-1] - times[0]).total_seconds() / 3600.0)
+    width = min(60.0, max(16.0, n_hours * 0.3))
+    fig, ax = plt.subplots(figsize=(width, 6))
+    ax.plot(times, vals, color="#1f77b4", lw=1.3, label=name)
+    ax.set_title(f"Station {st}  -  {name} (history)   "
+                 f"{times[0]:%Y-%m-%d %H:%M} -> {times[-1]:%Y-%m-%d %H:%M}   (n={len(times)})",
                  fontsize=13, fontweight="bold")
     ax.xaxis.set_major_locator(mdates.HourLocator(interval=max(1, int(tick_hours))))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
@@ -1074,6 +1106,44 @@ def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, out_dir
     print(f"  {pfx}Products: " + ("  + ".join(prod) if prod else "none"))
 
 
+def run_history(inp, args, step, out_dir):
+    """--short only: per-station single-line plots of HISTORY_COLS over the last HISTORY_DAYS days,
+    ending at 起报时间 T = max(timestamp_win). Plots only -- no metrics, no CSV. Each station x column
+    succeeds/fails independently (empty in window -> warn + skip that one PNG)."""
+    if args.no_plots or args.no_station_plots:
+        print("  [history] skipped (--no-plots/--no-station-plots)")
+        return
+    cols = []
+    for c in HISTORY_COLS:
+        if c in inp.columns:
+            cols.append(c)
+        else:
+            print(f"  [history] column '{c}' missing from input table -> skipped")
+    if not cols:
+        return
+    os.makedirs(out_dir, exist_ok=True)
+    T_end = pd.Timestamp(inp[args.win_col].max())
+    win = (T_end - pd.Timedelta(days=HISTORY_DAYS), T_end + step)   # end-exclusive -> keeps up to and incl. T_end
+    stations = sorted(inp[args.station_col].unique(), key=str)
+    if args.worst_only:
+        print(f"  [history] --worst-only ignored (history has no nRMSE ranking); drawing all {len(stations)} stations")
+    summary = {c: [0, 0] for c in cols}                            # col -> [plotted, skipped]
+    for st in stations:
+        sub = inp[inp[args.station_col] == st].sort_values(args.win_col)
+        for c in cols:
+            s = series_from_lists_history(sub[args.win_col].to_numpy(), sub[c].to_numpy(), step)
+            if not s.empty:
+                keep = window_mask(s.index, win) & night_mask(s.index, args.drop_night, args.night_end_hour)
+                s = s[keep]
+            if s.empty:
+                print(f"  [warn] station {st}: history '{c}' empty in window, skipped")
+                summary[c][1] += 1
+                continue
+            plot_history_line(st, c, s.index, s.to_numpy(), out_dir, args.tick_hours)
+            summary[c][0] += 1
+    print("  [history] " + "; ".join(f"{c}: {p} plotted, {k} skipped" for c, (p, k) in summary.items()))
+
+
 def compute_windows(args, inp):
     """(report_name, [(label, start, end), ...]). report_name = D.strftime('%Y%m%d') (起报日) in --short,
     else None. 非 short：单趟全序列 (None,None,None)。short：D = --date 或最早 timestamp_win 的日期，
@@ -1190,6 +1260,9 @@ def main():
             sub_out = report_root if label is None else os.path.join(report_root, label)
             run_counterfactual(inp, pred, args, cap_map, step,
                                out_dir=sub_out, win=(start, end) if label else None)
+
+    if args.short:
+        run_history(inp, args, step, os.path.join(report_root, "history"))
 
 
 if __name__ == "__main__":
