@@ -334,6 +334,27 @@ def test_aligned_applies_window():
     assert len(times) == 2 and list(av) == [1.0, 2.0]     # only 00:00, 00:15 kept
 
 
+def test_series_from_lists_history_endpoint():
+    t0 = pd.Timestamp("2026-07-26 10:00")
+    step = pd.Timedelta(minutes=15)
+    s = sa.series_from_lists_history([t0], [[1.0, 2.0, 3.0, 4.0]], step)
+    assert s.index[-1] == t0                       # last element sits at 起报时间
+    assert s.iloc[-1] == 4.0
+    assert s.index[-2] == t0 - step                # one 15-min step back
+    assert s.iloc[-2] == 3.0
+    assert s.index[0] == t0 - step * 3             # first element = t0 - step*(L-1)
+
+
+def test_series_from_lists_history_skips_nan_and_empty():
+    t0 = pd.Timestamp("2026-07-26 10:00")
+    step = pd.Timedelta(minutes=15)
+    s = sa.series_from_lists_history([t0], [[float("nan"), 2.0]], step)
+    assert list(s.to_numpy()) == [2.0]             # NaN dropped
+    assert s.index[0] == t0                        # the surviving value is the endpoint
+    assert sa.series_from_lists_history([t0], [None], step).empty
+    assert sa.series_from_lists_history([t0], [[]], step).empty
+
+
 # ---------------------------------------------------------------- --short 双切片
 @pytest.fixture
 def short_data(tmp_path):

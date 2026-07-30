@@ -107,6 +107,30 @@ def series_from_lists(wins, lists, step) -> pd.Series:
     return s.groupby(s.index).mean().sort_index()
 
 
+def series_from_lists_history(wins, lists, step) -> pd.Series:
+    """Like series_from_lists but the list runs BACKWARD from the window time (起报时间): for a cell
+    with timestamp_win=t0 and finite array of length L, element i -> t0 - step*(L-1-i), so the LAST
+    element lands at t0, the second-to-last at t0-step, etc. Non-list / None / NaN cells auto-skipped;
+    flatten all windows, groupby absolute time and dedup by mean."""
+    times, vals = [], []
+    for t0, fut in zip(wins, lists):
+        if fut is None or np.ndim(fut) == 0:
+            continue
+        arr = np.asarray(fut, dtype=float).ravel()
+        if arr.size == 0:
+            continue
+        t0 = pd.Timestamp(t0)
+        L = arr.size
+        for i, v in enumerate(arr):
+            if np.isfinite(v):
+                times.append(t0 - step * (L - 1 - i))
+                vals.append(float(v))
+    if not times:
+        return pd.Series(dtype=float)
+    s = pd.Series(vals, index=pd.DatetimeIndex(times))
+    return s.groupby(s.index).mean().sort_index()
+
+
 def night_mask(idx: pd.DatetimeIndex, drop_night: bool, night_end_hour: float) -> np.ndarray:
     """True = keep. When drop_night, remove points in [00:00, night_end_hour)."""
     if not drop_night:
@@ -133,6 +157,18 @@ def _aligned(a: pd.Series, b: pd.Series, drop_night, night_end_hour, win=None):
     if len(common) == 0:
         return None
     return common, a.loc[common].to_numpy(), b.loc[common].to_numpy()
+
+
+def _display(a: pd.Series, b: pd.Series, drop_night, night_end_hour, win=None, fill=0.0):
+    """PLOT-ONLY: union of both series' timestamps (within win, minus night), reindex both, fill gaps with `fill`.
+    Metrics keep using _aligned (intersection); this only makes the two lines span the full window so gaps are
+    visible instead of silently dropped. Reindex is by timestamp, so the two lines always share one x-axis."""
+    idx = a.index.union(b.index).sort_values()
+    keep = night_mask(idx, drop_night, night_end_hour) & window_mask(idx, win)
+    idx = idx[keep]
+    if len(idx) == 0:
+        return None
+    return idx, a.reindex(idx).fillna(fill).to_numpy(), b.reindex(idx).fillna(fill).to_numpy()
 
 
 def rmse(a, b):
@@ -206,7 +242,7 @@ def parse_capacity(spec):
 
 # ================================================================ Per-station two-line comparison plot
 def plot_two_lines(st, name, times, true_v, pred_v, rmse_v, out_dir,
-                   tick_hours, true_label, pred_label):
+                   tick_hours, true_label, pred_label, n_real=None):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.dates as mdates
@@ -220,8 +256,10 @@ def plot_two_lines(st, name, times, true_v, pred_v, rmse_v, out_dir,
     ax.plot(times, true_v, label=true_label, color="#1f77b4", lw=1.3)
     ax.plot(times, pred_v, label=pred_label, color="#d62728", lw=1.1, alpha=0.85)
     ax.fill_between(times, true_v, pred_v, color="#d62728", alpha=0.12)
+    n_scored = len(times) if n_real is None else n_real
+    gap_note = f", {len(times) - n_scored} gaps filled 0" if n_scored < len(times) else ""
     ax.set_title(f"Station {st}  -  {name}   RMSE={rmse_v:.3f}   "
-                 f"start {times[0]:%Y-%m-%d %H:%M}   (n={len(times)} pts)",
+                 f"start {times[0]:%Y-%m-%d %H:%M}   (n={n_scored} scored{gap_note})",
                  fontsize=13, fontweight="bold")
     ax.xaxis.set_major_locator(mdates.HourLocator(interval=max(1, int(tick_hours))))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
@@ -872,8 +910,10 @@ def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, out_dir
                                    "n_points": int(len(times)),
                                    "t_start": str(times.min()), "t_end": str(times.max())})
                 if plot_station:
-                    plot_jobs.append((st, "Power", times, t, p, rv,
-                                      "observed power", "predicted power"))
+                    disp = _display(truth, pred[col].dropna(), args.drop_night, args.night_end_hour, win) \
+                           or (times, t, p)
+                    plot_jobs.append((st, "Power", disp[0], disp[1], disp[2], rv,
+                                      "observed power", "predicted power", int(len(times))))
                 # Overview: power nRMSE / bias / hourly
                 cap = cap_map.get(str(st)) or cap_map.get(st) or float(np.max(t))
                 cap = cap if cap and cap > 0 else 1.0
@@ -908,8 +948,10 @@ def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, out_dir
             feat_rows.append({"station": st, "feature": label, "rmse": round(rv, 6),
                               "n_points": int(len(times))})
             if plot_station:
-                plot_jobs.append((st, label, times, tv, pv, rv,
-                                  f"{tcol} (true)", f"{pcol} (pred)"))
+                disp = _display(tser, pser, args.drop_night, args.night_end_hour, win) \
+                       or (times, tv, pv)
+                plot_jobs.append((st, label, disp[0], disp[1], disp[2], rv,
+                                  f"{tcol} (true)", f"{pcol} (pred)", int(len(times))))
 
         # ---- Overview: GHI nRMSE (scatter/GHI ranking; use specified columns, reuse cache to avoid re-flatten) ----
         if have_ghi and not args.no_fleet:
@@ -934,11 +976,11 @@ def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, out_dir
                   f"{[str(s) for s in ranked.head(args.worst_only)['station']]}  (CSVs still cover all)")
         else:
             print("  [warn] --worst-only: no station has power nRMSE (cannot rank) -> drawing all stations")
-    for st, name, times, tv, pv, rv, tlab, plab in plot_jobs:
+    for st, name, times, tv, pv, rv, tlab, plab, n_real in plot_jobs:
         if sel is not None and st not in sel:
             continue
         imgs.append(plot_two_lines(st, name, times, tv, pv, rv, out_dir,
-                                   args.tick_hours, tlab, plab))
+                                   args.tick_hours, tlab, plab, n_real))
     for st, tv, pv, sc, th, cap in scatter_jobs:
         if sel is not None and st not in sel:
             continue
