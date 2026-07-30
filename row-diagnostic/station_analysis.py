@@ -53,6 +53,8 @@ Config: --drop-night removes each day's 00:00-night_end_hour (RMSE is also compu
 Output layout (everything under one --out-dir, default station_analysis_out/):
   <out-dir>/                     overview pngs (fleet_overview / theil_decomposition / counterfactual_overview) + all CSVs
   <out-dir>/stations/            per-station pngs (Power / feature curves, scatter, counterfactual three-line)
+  --short mode nests one level deeper under the 起报日: <out-dir>/<YYYYMMDD>/{D+1,D+4,history}/, each D+1/D+4
+  carrying the same overview+stations layout above; history/ holds plots only (see below).
   All plots draw automatically on every run -- no extra flag for Theil or scatter; --no-plots / --no-station-plots /
   --no-fleet turn layers off, --worst-only restricts which stations get images.
 
@@ -1073,12 +1075,13 @@ def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, out_dir
 
 
 def compute_windows(args, inp):
-    """[(label, start, end), ...]. 非 short：单趟全序列 (None,None,None)。
-    short：D = --date 或最早 timestamp_win 的日期，切 [D+1 00:00, +24h) 与 [D+4 00:00, +24h)。"""
+    """(report_name, [(label, start, end), ...]). report_name = D.strftime('%Y%m%d') (起报日) in --short,
+    else None. 非 short：单趟全序列 (None,None,None)。short：D = --date 或最早 timestamp_win 的日期，
+    切 [D+1 00:00, +24h) 与 [D+4 00:00, +24h)。"""
     if not args.short:
         if args.date:
             print("  [warn] --date is ignored without --short")
-        return [(None, None, None)]
+        return None, [(None, None, None)]
     if args.date:
         try:
             D = pd.Timestamp(args.date).normalize()
@@ -1089,7 +1092,7 @@ def compute_windows(args, inp):
         print(f"  [short] --date not given; using D = {D:%Y-%m-%d} (from earliest {args.win_col})")
     day = pd.Timedelta(days=1)
     d1, d4 = D + day, D + 4 * day
-    return [("D+1", d1, d1 + day), ("D+4", d4, d4 + day)]
+    return D.strftime("%Y%m%d"), [("D+1", d1, d1 + day), ("D+4", d4, d4 + day)]
 
 
 # ================================================================ Main flow: compute both layers in one pass
@@ -1172,17 +1175,19 @@ def main():
         print(f"  [warn] overview GHI columns missing {miss} -> skip GHI ranking and scatter (power overview still output)")
 
     os.makedirs(args.out_dir, exist_ok=True)
-    windows = compute_windows(args, inp)
+    report_name, windows = compute_windows(args, inp)
+    report_root = args.out_dir if report_name is None else os.path.join(args.out_dir, report_name)
+    os.makedirs(report_root, exist_ok=True)
     for label, start, end in windows:
-        sub_out = args.out_dir if label is None else os.path.join(args.out_dir, label)
+        sub_out = report_root if label is None else os.path.join(report_root, label)
         os.makedirs(sub_out, exist_ok=True)
         run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map,
                      sub_out, (start, end) if label else None, label)
 
     if args.counterfactual:
-        # sub_out dirs already created by the run_analysis loop above (which always runs over the same windows)
+        # sub_out dirs already created by the run_analysis loop above (same windows)
         for label, start, end in windows:
-            sub_out = args.out_dir if label is None else os.path.join(args.out_dir, label)
+            sub_out = report_root if label is None else os.path.join(report_root, label)
             run_counterfactual(inp, pred, args, cap_map, step,
                                out_dir=sub_out, win=(start, end) if label else None)
 

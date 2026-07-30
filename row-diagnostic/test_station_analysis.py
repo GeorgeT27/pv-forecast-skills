@@ -385,10 +385,15 @@ def _run_short(wd, extra=()):
     return r
 
 
+def _rep(wd, name="20260726"):
+    """Report root for --short runs: <out>/<起报日 YYYYMMDD>/."""
+    return wd / "out" / name
+
+
 def test_short_makes_two_folders_96pts(short_data):
     r = _run_short(short_data, ["--no-plots", "--pred-col-template", "{station}"])
     for sub in ("D+1", "D+4"):
-        d = short_data / "out" / sub
+        d = _rep(short_data) / sub
         assert d.is_dir(), f"missing {sub}"
         pw = pd.read_csv(d / "station_power_rmse.csv")
         assert set(pw["n_points"]) == {96}, f"{sub}: {pw['n_points'].tolist()}"
@@ -398,7 +403,7 @@ def test_short_makes_two_folders_96pts(short_data):
 def test_short_date_override(short_data):
     r = _run_short(short_data, ["--no-plots", "--pred-col-template", "{station}",
                                 "--date", "2026-07-26"])
-    pw = pd.read_csv(short_data / "out" / "D+1" / "station_power_rmse.csv")
+    pw = pd.read_csv(_rep(short_data) / "D+1" / "station_power_rmse.csv")
     assert set(pw["n_points"]) == {96}
     assert "using D" not in r.stdout                        # explicit date -> no fallback line
 
@@ -408,7 +413,7 @@ def test_short_date_shifts_window(short_data):
     而不只是凑巧和自动推断值相同（test_short_date_override 覆盖的是后一种情况）。"""
     r = _run_short(short_data, ["--no-plots", "--pred-col-template", "{station}",
                                 "--date", "2026-07-27"])
-    pw = pd.read_csv(short_data / "out" / "D+1" / "station_power_rmse.csv")
+    pw = pd.read_csv(_rep(short_data, "20260727") / "D+1" / "station_power_rmse.csv")
     assert set(pw["n_points"]) == {96}
     assert set(pw["t_start"]) == {"2026-07-28 00:00:00"}    # D+1 = --date + 1 day, moved off the auto-inferred D+1
     assert "using D" not in r.stdout                        # explicit date -> no fallback line
@@ -428,9 +433,9 @@ def test_default_no_short_folders(short_data):
 def test_short_worst_only(short_data):
     # --worst-only 1：每个切片图只画最差 1 站，CSV 仍含全部站
     r = _run_short(short_data, ["--pred-col-template", "{station}", "--worst-only", "1"])
-    pw = pd.read_csv(short_data / "out" / "D+1" / "station_power_rmse.csv")
+    pw = pd.read_csv(_rep(short_data) / "D+1" / "station_power_rmse.csv")
     assert len(pw) == 2                                     # CSV 全量
-    pngs = os.listdir(short_data / "out" / "D+1" / "stations")
+    pngs = os.listdir(_rep(short_data) / "D+1" / "stations")
     powers = [f for f in pngs if f.endswith("_Power.png")]
     assert len(powers) == 1                                 # 仅最差 1 站出图
 
@@ -457,7 +462,7 @@ def short_cf_data(tmp_path):
 def test_short_end_to_end_with_plots(short_data):
     r = _run_short(short_data, ["--pred-col-template", "{station}", "--worst-only", "2"])
     for sub in ("D+1", "D+4"):
-        d = short_data / "out" / sub
+        d = _rep(short_data) / sub
         assert (d / "fleet_overview.png").exists()
         assert (d / "theil_decomposition.png").exists()
         assert (d / "fleet_ranking.csv").exists()
@@ -475,7 +480,7 @@ def test_short_counterfactual_per_window(short_cf_data, fake_api):
         cwd=str(short_cf_data), capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
     for sub in ("D+1", "D+4"):
-        p = short_cf_data / "out" / sub / "counterfactual_results.csv"
+        p = _rep(short_cf_data) / sub / "counterfactual_results.csv"
         assert p.exists(), f"missing CF csv in {sub}"
         d = pd.read_csv(p).set_index("station")
         assert d.loc["c1", "status"] == "ok"
@@ -510,8 +515,8 @@ def test_short_missing_d4_slice_skips_gracefully(short_data_missing_d4):
     不应导致整个进程崩溃；D+1 切片不受影响，照常产出 96 点。"""
     r = _run_short(short_data_missing_d4, ["--no-plots", "--pred-col-template", "{station}"])
     assert r.returncode == 0, r.stdout + r.stderr
-    d1_pw = pd.read_csv(short_data_missing_d4 / "out" / "D+1" / "station_power_rmse.csv")
+    d1_pw = pd.read_csv(_rep(short_data_missing_d4) / "D+1" / "station_power_rmse.csv")
     assert set(d1_pw["n_points"]) == {96}
-    d4_path = short_data_missing_d4 / "out" / "D+4" / "station_power_rmse.csv"
+    d4_path = _rep(short_data_missing_d4) / "D+4" / "station_power_rmse.csv"
     # "nothing produced -> warn+return" 路径下该文件根本不会被写出；即便某天该路径的行为改成写空文件，也应容忍
     assert (not d4_path.exists()) or pd.read_csv(d4_path).empty
