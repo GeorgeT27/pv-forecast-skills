@@ -91,16 +91,20 @@ FINDINGS/CONCLUSION；`batch_plan.json` 只由 batch.py 重扫渲染。
 
 ## 6. 五阶段协议（主 agent 驱动，batch.py 强制）
 
-- **A — 生产者只跑一次**：`batch.py` 从选中 playbook 的 `upstream` 算出生产者并集
-  （单数据集场景即 `setup`），只跑一次进 `_shared/setup/`，把它登记进每条 playbook 的
-  `config.products`——**同时**登记进 batch 级 `batch_config.json` 的 `products`（供
-  `derive_phase` 判 phase A）**和**每条 playbook 子目录 `<pb>/diagnose_config.json` 的
-  `products`（供该 playbook 的 compute subagent 跑 orient 时读到——`orient` 只读本地
-  `diagnose_config.json`，不读 `batch_config.json`；机制同 `_playbook-spec.md` 内联生产
-  的"拷进子 config"规矩）。多个生产者时按 engine-core 分层原则外包：满足三条件的
-  （data-setup / metric-eval）按 `Brief-PRODUCER` 整体外包；model-audit / fact-scan 保留
-  主 agent 裁决，按各自 §5 拆分外包，**不整体外包**。前置：批量开工先跑
-  `batch.py --select <id1,id2,...> --workdir <批量工作目录>` 初始化 `batch_config.json`。
+- **A — 生产者只跑一次**：`batch.py` 的 `producer_union` **只并 `required: true` 的
+  upstream 产物**（单数据集场景即 `setup`）——phase A 只以这些**必需**产物是否就绪为闸
+  （`derive_phase` 只检查 required 产物）。可选（`required: false`）upstream（如
+  `model_profile` / `chart_sweep`）**不进 phase A 闸**：它们是各 playbook 自己的三分支
+  （现在内联生产 / 链接已有 / 放弃），且 orient 的三分支要 AskUserQuestion——subagent 无
+  提问权，所以由**主 agent 在 Phase A 逐条替每个选中 playbook 决断**（build / link /
+  decline），把结果写进该 playbook 子 `diagnose_config.json` 的 `products`，compute
+  subagent 才不会在 Phase C 被 orient 拦下提问。必需产物只跑一次进 `_shared/<产物id>/`，
+  **两处登记**：batch 级 `batch_config.json` 的 `products`（供 `derive_phase`）**和**每条
+  消费它的 playbook 子 `diagnose_config.json` 的 `products`（`orient` 只读本地 config，不读
+  `batch_config.json`；机制同 `_playbook-spec.md` 内联生产的"拷进子 config"）。生产者按
+  engine-core 分层原则外包：data-setup / metric-eval 按 `Brief-PRODUCER` 整体外包；
+  model-audit / fact-scan 保留主 agent 裁决按各自 §5 拆分外包，**不整体外包**。前置：批量
+  开工先跑 `batch.py --select <id1,id2,...> --workdir <批量工作目录>` 初始化。
 - **B — 一次合并提问**：`batch.py` 生成问题并集——`setup` 本就"拥有" schema/freq/对齐键
   （随生产者问一次）；恒问五类（口径/成功判据）去重成一问；再加每条 playbook 自己
   frontmatter 里声明的问题。`batch.py` 标出两条 playbook 想要同一 qid 但语义分歧的冲突。
@@ -111,11 +115,17 @@ FINDINGS/CONCLUSION；`batch_plan.json` 只由 batch.py 重扫渲染。
   扁平 Phase-C 兄弟 subagent**派发（主 agent 是唯一派发者，树保持扁平），不让 compute
   subagent 自己再派。失败隔离天然成立：某 subagent 挂掉只在 `batch_plan.json` 把该
   playbook 标 `failed`，其余继续。
-- **D — 一次合并停顿**：主 agent 收齐所有 `phenomena_<pb>.json`，一并呈现，用户点名
-  要深挖哪些（可跨 playbook 选）。这是 N 个分散 `pause_after` 停顿的唯一替代。
+- **D — 一次合并停顿**：`derive_phase` 报 D 的判据 = 所有 dispatch ≥ `compute-done`
+  （现象清单都齐了）**且 `BATCH_REPORT.md` 尚未写**。主 agent 收齐所有
+  `phenomena_<pb>.json`，一并呈现，用户点名要深挖哪些（可跨 playbook 选）。这是 N 个分散
+  `pause_after` 停顿的唯一替代。**注意**：phase 完成不以"每条 playbook 都 `done`"为准——
+  用户可能只深挖子集，没被选中的 playbook（及无结论阶段的 fact-scan）会一直停在
+  `compute-done`，那是正常终态，不阻塞进 E。
 - **E — 结论**：对每个选中的深挖目标，主 agent 照今天的流程跑该 playbook 的结论
   stage——三道门 + `conclusion_gate.json` 收据，`结论永远由主 agent 落笔`。串行即可；
-  结论是高裁决、低并行的部分。
+  结论是高裁决、低并行的部分。**phase E 的判据 = `BATCH_REPORT.md` 已写**（主 agent 跑完
+  选中的结论后写它，合并各 CONCLUSION.md 要点 + 覆盖缺口声明）——这是批量完成的唯一信号，
+  避免 phase 卡在 D 反复重呈现。
 
 ## 7. Brief-BATCH-COMPUTE 完整字段（补充项 a）
 
@@ -199,8 +209,10 @@ batch.py 依据 §6 各阶段的完成产物推断当前应处的阶段。
   失败/续跑、合并停顿的汇报格式、`Brief-BATCH-COMPUTE` 模板、上下文预算说明）。
 - **改动** `SKILL.md`——2–3 行路由："同时/批量跑多个 playbook（一份数据、多角度）" →
   batch 模式。**必须保持 ≤60 行 / ~6K token**（`test_layering.py` 守卫）。
-- **审计** `result-eval` / `deployment-drift` / `model-comparison` 的早期 stage 未声明
-  `subagent_ok`——确认默认为 `true`（或显式设 `true`），使其计算可外包。
+- **审计** `result-eval` / `deployment-drift` / `model-comparison` / `fact-scan`（后者
+  也声明 `upstream: setup`，故按守卫定义也是 level-2）的事实提取及其之前 stage 未显式声明
+  `subagent_ok`——显式设 `true`，使其计算可外包。守卫 `test_batch.py` 断言每条声明
+  `upstream` 且有 `pause_after` 的 playbook 该 stage `subagent_ok` 为真。
 - **新增测试** `scripts/tests/test_batch.py`——golden：给定一组 playbook id，断言
   生产者并集、问题并集（含去重）、派发清单三者正确。
 
