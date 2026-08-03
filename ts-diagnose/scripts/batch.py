@@ -18,12 +18,17 @@ def phenomena_name(pid):
 
 
 def producer_union(playbook_ids):
-    """选中 playbook 的 upstream 产物 id 并集（sorted unique）。"""
+    """选中 playbook 的 upstream 产物 id 并集（sorted unique）——只算 required:true 的。
+    required:false 的可选产物（model_profile、chart_sweep……）常被用户放弃/链接，
+    若也并进这里，derive_phase 的 Phase A 就会永久等一个用户压根不打算建的产物；
+    可选产物改由主 agent 在 Phase A 逐 playbook 三分支裁决（build/link/decline），
+    见 references/batch-orchestration.md Phase A。"""
     prods = set()
     for pid in playbook_ids:
         fm = ec.load_frontmatter(ec.find_playbook(pid))
         for u in fm.get("upstream") or []:
-            prods.add(u["product"])
+            if u.get("required"):
+                prods.add(u["product"])
     return sorted(prods)
 
 
@@ -77,7 +82,9 @@ def dispatch_list(workdir, playbook_ids):
 
 
 def derive_phase(workdir, playbook_ids, producers):
-    """五阶段推断（全部从磁盘 + batch_config 派生）。"""
+    """五阶段推断（全部从磁盘 + batch_config 派生）。Phase E 只认 BATCH_REPORT.md
+    是否已写——不是 all-playbooks-done：用户常只深挖选中的子集，或选中的 playbook
+    根本没有结论阶段（如 fact-scan），这两种情况都不该让批量永久卡在 D。"""
     cfg = ec.read_json(os.path.join(workdir, BATCH_CONFIG)) or {}
     for p in producers:
         if ec.product_status(cfg, p).get("status") not in ("built", "linked"):
@@ -85,10 +92,10 @@ def derive_phase(workdir, playbook_ids, producers):
     if not cfg.get("answers"):
         return "B"
     statuses = [d["status"] for d in dispatch_list(workdir, playbook_ids)]
-    if all(s == "done" for s in statuses):
-        return "E"
     if any(s in ("pending", "running", "failed") for s in statuses):
         return "C"
+    if os.path.exists(os.path.join(workdir, "BATCH_REPORT.md")):
+        return "E"
     return "D"
 
 
@@ -126,8 +133,9 @@ def _print_plan(plan):
     nxt = {"A": "内联跑生产者进 _shared/，回填 batch_config.products",
            "B": "一次性合并提问，答案写 batch_config.answers",
            "C": "为每条 pending 派发 Brief-BATCH-COMPUTE 子代理（见 references/batch-orchestration.md）",
-           "D": "合并呈现各 phenomena，请用户点名深挖，逐条跑结论",
-           "E": "全部结论完成——写 BATCH_REPORT.md"}
+           "D": "合并呈现各 phenomena，请用户点名深挖，逐条跑结论；"
+                "跑完选中结论后写 BATCH_REPORT.md 进入 E",
+           "E": "批量完成（BATCH_REPORT.md 已写）"}
     print(f"下一步: {nxt.get(plan['phase'], '')}")
 
 

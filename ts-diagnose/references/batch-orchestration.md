@@ -6,14 +6,24 @@
 --select 刷新），照它报的 phase 与下一步办。状态以落盘产物为准，随时断点续跑。
 
 ## Phase A — 生产者只跑一次
-batch.py 报 phase=A 时：按 `producer_union` 逐个在 `<批量工作目录>/_shared/<产物id>/`
-内联跑生产方 playbook。收齐其问题答案后按 engine-core 分层原则外包：满足三条件的
-（data-setup / metric-eval）按 `Brief-PRODUCER` 整体外包；model-audit / fact-scan 保留主
-agent 裁决，按各自 §5 拆分外包，不整体外包。产物就绪后**两处登记**：写 `batch_config.json`
-的 `products.<id> = {workdir, status: built}`（供 batch.py 判 phase），**并**把该 products
-条目拷进每条消费它的 playbook 子目录 `<pb>/diagnose_config.json` 的 `products`（compute
-subagent 跑 orient 时只读本地 diagnose_config.json，不读 batch_config.json——不拷则它看不到
-上游）。重跑 batch.py。
+`producer_union` 只并入选中 playbook 里 **required: true** 的 upstream 产物——只有这些
+才门 Phase A，只跑一次进 `<批量工作目录>/_shared/<产物id>/`。batch.py 报 phase=A 时：
+按 `producer_union` 逐个内联跑生产方 playbook。收齐其问题答案后按 engine-core 分层原则
+外包：满足三条件的（data-setup / metric-eval）按 `Brief-PRODUCER` 整体外包；model-audit /
+fact-scan 保留主 agent 裁决，按各自 §5 拆分外包，不整体外包。产物就绪后**两处登记**：写
+`batch_config.json` 的 `products.<id> = {workdir, status: built}`（供 batch.py 判 phase），
+**并**把该 products 条目拷进每条消费它的 playbook 子目录 `<pb>/diagnose_config.json` 的
+`products`（compute subagent 跑 orient 时只读本地 diagnose_config.json，不读
+batch_config.json——不拷则它看不到上游）。重跑 batch.py。
+
+**required: false 的可选上游**（model_profile、chart_sweep……）不进 `producer_union`，
+不门 Phase A——不然一个用户压根不打算建的可选产物会永久卡住整批。可选上游改由**主
+agent**在 Phase A 期间逐 playbook 走 engine-core 的「上游产物三分支」裁决（现在内联生产 /
+链接已有目录 / 放弃且结论须声明缺此产物）：三分支要 AskUserQuestion 问用户，Phase C 派
+的 compute 子代理不能自己问用户，所以这活留在主 agent 手上，且必须在该 playbook 进
+Phase C 派发之前做完。裁决结果写进该 playbook 子目录 `<pb>/diagnose_config.json` 的
+`products`（build/link 时登记 workdir+status；decline 时登记 status: declined），不登记进
+`batch_config.json`（那是 required 产物专用的批量级登记）。
 
 ## Phase B — 一次合并提问
 phase=B 时：把 `question_union` 一次性问用户（同一阶段多题合并成一次 AskUserQuestion，
@@ -30,13 +40,18 @@ Brief-BATCH-COMPUTE。派发前 `batch.py --mark <pb>:running`；子代理返回
 自己再派）。收齐后重跑 batch.py。
 
 ## Phase D — 一次合并停顿
-phase=D 时：读齐所有 `<pb>/phenomena_<pb>.json`（自足 json，不读大文件），一并呈现现象
-清单，请用户点名要深挖哪些（可跨 playbook）。选了哪些、按什么判据，记 BATCH_PROGRESS.md。
+phase=D ⟺ 全部派发 status 都已到 compute-done 或更后（没有 pending/running/failed）**且**
+`BATCH_REPORT.md` 尚未写。phase=D 时：读齐所有 `<pb>/phenomena_<pb>.json`（自足 json，不读
+大文件），一并呈现现象清单，请用户点名要深挖哪些（可跨 playbook）。选了哪些、按什么判据，
+记 BATCH_PROGRESS.md。**没被点名深挖的、或本来就没有结论阶段的 playbook（如
+fact-scan）停在 compute-done 是正常状态，不是阻塞**——不必等它们变成 done 才能往下走。
 
 ## Phase E — 结论
 对每个选中的深挖目标，在其 `<pb>/` 子目录跑 orient 进结论阶段：三道门 +
-`conclusion_gate.json` receipt，结论永远由主 agent 落笔。全部完成后写 BATCH_REPORT.md
-（合并各 CONCLUSION.md 要点 + 覆盖缺口声明）直接呈现用户。
+`conclusion_gate.json` receipt，结论永远由主 agent 落笔。选中的深挖目标全部出结论后写
+BATCH_REPORT.md（合并各 CONCLUSION.md 要点 + 覆盖缺口声明，含未深挖 playbook 的说明）
+直接呈现用户。**phase=E ⟺ `BATCH_REPORT.md` 已存在**——写这份报告是唯一让批量进入 E 的
+动作；写之前哪怕所有选中目标都已 done，phase 仍报 D，提醒主 agent 该收尾了。
 
 ## Brief-BATCH-COMPUTE
 > 工作目录：`<批量工作目录>/<playbook>/`（已含预填的 diagnose_config.json，products 已登记）。

@@ -63,6 +63,56 @@ questions:
 正文
 """
 
+PRODUCER_OPT = """\
+---
+id: opt-prod
+name: 可选生产者
+goal: 产 opt
+produces:
+  id: opt
+  manifest: opt_manifest.json
+  marker_files: [opt.csv]
+stages:
+  - id: 0
+    name: 做事
+    done_when: {artifacts: ["opt.csv"]}
+---
+正文
+"""
+
+def _consumer_with_optional(pid, qid):
+    """既有 required:true 的 setup 上游，又有 required:false 的 opt 上游——
+    验证 producer_union 只并入 required 的那个。"""
+    return f"""\
+---
+id: {pid}
+name: 消费者{pid}
+goal: 消费 setup + 可选 opt
+upstream:
+  - product: setup
+    required: true
+  - product: opt
+    required: false
+stages:
+  - id: 0
+    name: 计算
+    done_when: {{artifacts: ["m.json"]}}
+    subagent_ok: true
+  - id: 1
+    name: 事实提取
+    done_when: {{artifacts: ["{batch.phenomena_name(pid)}"]}}
+    pause_after: true
+    subagent_ok: true
+questions:
+  - id: {qid}
+    stage: 0
+    ask: 问 {qid}?
+    why: w
+    default: null
+---
+正文
+"""
+
 def _write_pb(root, pid, text):
     d = root / pid
     d.mkdir(parents=True, exist_ok=True)
@@ -81,6 +131,17 @@ def pbdir(tmp_path, monkeypatch):
 
 def test_producer_union_dedups_upstream(pbdir):
     assert batch.producer_union(["pb-x", "pb-y"]) == ["setup"]
+
+def test_producer_union_excludes_optional_upstream(pbdir):
+    # pb-opt 声明了 required:true 的 setup 与 required:false 的 opt——
+    # producer_union 只应并入 setup；opt 是可选产物，由主 agent 在 Phase A
+    # 逐 playbook 三分支裁决（build/link/decline），不进产物并集，否则 Phase A
+    # 会永久卡在等一个用户可能压根不打算建的可选产物上。
+    _write_pb(pbdir, "opt-prod", PRODUCER_OPT)
+    _write_pb(pbdir, "pb-opt", _consumer_with_optional("pb-opt", "阈值2"))
+    prods = batch.producer_union(["pb-opt"])
+    assert "setup" in prods
+    assert "opt" not in prods
 
 def test_phenomena_name(pbdir):
     assert batch.phenomena_name("pb-x") == "phenomena_pb-x.json"
@@ -234,6 +295,8 @@ def test_phase_D_when_all_compute_done(pbdir, tmp_path):
     assert batch.derive_phase(wd, ["pb-x"], ["setup"]) == "D"
 
 def test_phase_E_when_all_done(pbdir, tmp_path):
+    # Phase E 只认 BATCH_REPORT.md 存在——不是 all-playbooks-done（用户可能只深挖
+    # 子集，或选中的 playbook 根本没有结论阶段，两种情况都不该卡在 D）。
     wd = str(tmp_path)
     setup_wd = os.path.join(wd, "_shared", "setup")
     _touch(os.path.join(setup_wd, "predictions.csv"))
@@ -241,9 +304,24 @@ def test_phase_E_when_all_done(pbdir, tmp_path):
     _cfg(wd, playbooks=["pb-x"], answers={"口径": {"answer": "r"}},
          products={"setup": {"workdir": setup_wd, "status": "built"}})
     _touch(os.path.join(wd, "pb-x", "phenomena_pb-x.json"))
+    _touch(os.path.join(wd, "BATCH_REPORT.md"))
+    assert batch.derive_phase(wd, ["pb-x"], ["setup"]) == "E"
+
+def test_phase_D_when_some_done_but_no_batch_report(pbdir, tmp_path):
+    # pb-x 深挖完（有 CONCLUSION+gate），pb-y 停在 compute-done（用户没点名深挖它）
+    # ——只要 BATCH_REPORT.md 还没写，仍是 D，不能提前跳成 E。
+    wd = str(tmp_path)
+    setup_wd = os.path.join(wd, "_shared", "setup")
+    _touch(os.path.join(setup_wd, "predictions.csv"))
+    ec.dump_json({}, os.path.join(setup_wd, "setup_manifest.json"))
+    _cfg(wd, playbooks=["pb-x", "pb-y"],
+         answers={"口径": {"answer": "r"}, "阈值": {"answer": "t"}},
+         products={"setup": {"workdir": setup_wd, "status": "built"}})
+    _touch(os.path.join(wd, "pb-x", "phenomena_pb-x.json"))
     _touch(os.path.join(wd, "pb-x", "CONCLUSION.md"))
     _touch(os.path.join(wd, "pb-x", "gate_reports", "conclusion_gate.json"))
-    assert batch.derive_phase(wd, ["pb-x"], ["setup"]) == "E"
+    _touch(os.path.join(wd, "pb-y", "phenomena_pb-y.json"))
+    assert batch.derive_phase(wd, ["pb-x", "pb-y"], ["setup"]) == "D"
 
 def test_build_plan_assembles_and_writes(pbdir, tmp_path):
     wd = str(tmp_path)
@@ -321,6 +399,9 @@ def test_cli_build_plan_without_select_exits_error(tmp_path):
 
 
 def test_every_level2_pause_stage_is_subagent_ok():
+    # compute 子代理从 stage 0 一路跑到（含）第一个 pause_after 停顿阶段——沿途
+    # 任何一个阶段不是 subagent_ok，子代理半路就撞死，到不了停顿点。只查
+    # pause_after 那一个阶段不够，必须查从头到它的整段路径。
     root = os.path.dirname(SCRIPTS_DIR)
     pbdir_real = os.path.join(root, "playbooks")
     import glob
@@ -330,10 +411,16 @@ def test_every_level2_pause_stage_is_subagent_ok():
         # level-2 = 声明了 upstream（消费产物）
         if not fm.get("upstream"):
             continue
-        for st in fm["stages"]:
-            if st.get("pause_after") and not st.get("subagent_ok", False):
+        stages = fm["stages"]
+        pause_idx = next((i for i, st in enumerate(stages) if st.get("pause_after")), None)
+        if pause_idx is None:
+            continue
+        for st in stages[:pause_idx + 1]:
+            if not st.get("subagent_ok", False):
                 fails.append(f"{fm['id']} stage {st['id']}")
-    assert not fails, f"这些事实提取阶段未标 subagent_ok=true，batch 无法派发到该阶段：{fails}"
+    assert not fails, (
+        "这些阶段（首个 pause_after 停顿阶段之前，含该阶段本身）未标 "
+        f"subagent_ok=true，compute 子代理无法从 stage 0 连续跑到停顿点：{fails}")
 
 
 def test_skill_routes_batch_via_engine_core_not_ref():
