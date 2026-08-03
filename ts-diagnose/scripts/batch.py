@@ -110,3 +110,54 @@ def build_plan(workdir):
     }
     ec.dump_json(plan, os.path.join(workdir, BATCH_PLAN))
     return plan
+
+
+def _print_plan(plan):
+    print(f"阶段 phase: {plan['phase']}")
+    print(f"生产者并集 producer_union: {plan['producer_union'] or '（无）'}")
+    print("派发 dispatch:")
+    for d in plan["dispatch"]:
+        print(f"  - {d['playbook']:24} status={d['status']:12} → {d['out']}")
+    print(f"问题并集 {len(plan['question_union'])} 条"
+          f"（qid: {[q['id'] for q in plan['question_union']]}）")
+    if plan["question_conflicts"]:
+        print(f"⚠ 问题冲突（同 qid 语义分歧，主 agent 须让用户裁决）: "
+              f"{[c['qid'] for c in plan['question_conflicts']]}")
+    nxt = {"A": "内联跑生产者进 _shared/，回填 batch_config.products",
+           "B": "一次性合并提问，答案写 batch_config.answers",
+           "C": "为每条 pending 派发 Brief-BATCH-COMPUTE 子代理（见 references/batch-orchestration.md）",
+           "D": "合并呈现各 phenomena，请用户点名深挖，逐条跑结论",
+           "E": "全部结论完成——写 BATCH_REPORT.md"}
+    print(f"下一步: {nxt.get(plan['phase'], '')}")
+
+
+def main():
+    ap = argparse.ArgumentParser(description="ts-diagnose Layer -1 批量编排计划器")
+    ap.add_argument("--select", default=None, help="逗号分隔的 playbook id，初始化批量")
+    ap.add_argument("--mark", default=None, help="pb:running|failed 标注派发瞬态")
+    ap.add_argument("--workdir", default=".", help="批量工作目录")
+    args = ap.parse_args()
+    wd = args.workdir
+    os.makedirs(wd, exist_ok=True)
+    if args.select:
+        ids = [s.strip() for s in args.select.split(",") if s.strip()]
+        for pid in ids:
+            try:
+                ec.find_playbook(pid)
+            except FileNotFoundError as e:
+                ap.error(str(e))
+        cfg = ec.read_json(os.path.join(wd, BATCH_CONFIG)) or {}
+        cfg["playbooks"] = ids
+        ec.dump_json(cfg, os.path.join(wd, BATCH_CONFIG))
+    if args.mark:
+        pid, _, mark = args.mark.partition(":")
+        if mark not in ("running", "failed"):
+            ap.error("--mark 只接受 <pb>:running 或 <pb>:failed")
+        state = ec.read_json(os.path.join(wd, BATCH_STATE)) or {}
+        state[pid] = mark
+        ec.dump_json(state, os.path.join(wd, BATCH_STATE))
+    _print_plan(build_plan(wd))
+
+
+if __name__ == "__main__":
+    main()

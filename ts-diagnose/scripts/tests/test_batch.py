@@ -1,6 +1,7 @@
 """batch.py：Layer -1 批量计划器测试。全部在 tmp 沙箱 playbooks 目录里跑
 （monkeypatch ec.PLAYBOOKS_DIR），不依赖真实 playbook 内容。"""
 import os
+import subprocess
 import sys
 
 import pytest
@@ -263,3 +264,34 @@ def test_build_plan_requires_playbooks(pbdir, tmp_path):
     ec.dump_json({}, os.path.join(wd, batch.BATCH_CONFIG))
     with pytest.raises(ValueError, match="playbooks"):
         batch.build_plan(wd)
+
+
+def _run(args, cwd, pbroot):
+    env = dict(os.environ, TSD_PLAYBOOKS_DIR=str(pbroot))
+    return subprocess.run([sys.executable, os.path.join(SCRIPTS_DIR, "batch.py"), *args],
+                          cwd=cwd, env=env, capture_output=True, text=True)
+
+
+def test_cli_select_writes_config_and_prints_plan(pbdir, tmp_path):
+    wd = str(tmp_path)
+    r = _run(["--select", "pb-x,pb-y", "--workdir", wd], wd, pbdir)
+    assert r.returncode == 0, r.stderr
+    cfg = ec.read_json(os.path.join(wd, batch.BATCH_CONFIG))
+    assert cfg["playbooks"] == ["pb-x", "pb-y"]
+    assert "phase" in r.stdout.lower() or "阶段" in r.stdout
+    assert os.path.exists(os.path.join(wd, batch.BATCH_PLAN))
+
+
+def test_cli_select_rejects_unknown_playbook(pbdir, tmp_path):
+    wd = str(tmp_path)
+    r = _run(["--select", "pb-x,nope", "--workdir", wd], wd, pbdir)
+    assert r.returncode != 0
+    assert "nope" in (r.stderr + r.stdout)
+
+
+def test_cli_mark_writes_state(pbdir, tmp_path):
+    wd = str(tmp_path)
+    _run(["--select", "pb-x", "--workdir", wd], wd, pbdir)
+    r = _run(["--mark", "pb-x:failed", "--workdir", wd], wd, pbdir)
+    assert r.returncode == 0, r.stderr
+    assert ec.read_json(os.path.join(wd, batch.BATCH_STATE))["pb-x"] == "failed"
