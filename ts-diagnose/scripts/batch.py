@@ -25,3 +25,30 @@ def producer_union(playbook_ids):
         for u in fm.get("upstream") or []:
             prods.add(u["product"])
     return sorted(prods)
+
+
+def producer_playbooks(product_ids):
+    """产物 id → 生产者 playbook id（sorted unique）。"""
+    idx = ec.products_index()
+    return sorted({idx[p]["playbook"] for p in product_ids if p in idx})
+
+
+def question_union(playbook_ids):
+    """按 qid 去重的问题并集 + 冲突表。union 每项含 owners；conflicts 记同 qid 但
+    ask/options 分歧者（按 qid 去重）。"""
+    seen = {}
+    conflict_qids = {}
+    for pid in playbook_ids:
+        fm = ec.load_frontmatter(ec.find_playbook(pid))
+        for q in fm.get("questions") or []:
+            qid = q["id"]
+            if qid not in seen:
+                seen[qid] = {**q, "owners": [pid]}
+            else:
+                prev = seen[qid]
+                prev["owners"].append(pid)
+                if q.get("ask") != prev.get("ask") or q.get("options") != prev.get("options"):
+                    conflict_qids[qid] = {"qid": qid, "owners": list(prev["owners"])}
+    union = [seen[k] for k in sorted(seen)]
+    conflicts = [conflict_qids[k] for k in sorted(conflict_qids)]
+    return union, conflicts
