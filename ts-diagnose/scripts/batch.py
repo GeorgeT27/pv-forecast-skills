@@ -156,7 +156,10 @@ def main():
         state = ec.read_json(os.path.join(wd, BATCH_STATE)) or {}
         state[pid] = mark
         ec.dump_json(state, os.path.join(wd, BATCH_STATE))
-    _print_plan(build_plan(wd))
+    try:
+        _print_plan(build_plan(wd))
+    except ValueError as e:
+        ap.error(str(e))
 
 
 if __name__ == "__main__":

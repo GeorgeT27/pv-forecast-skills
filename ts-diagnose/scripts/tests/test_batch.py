@@ -296,6 +296,7 @@ def test_cli_mark_writes_state(pbdir, tmp_path):
     assert r.returncode == 0, r.stderr
     assert ec.read_json(os.path.join(wd, batch.BATCH_STATE))["pb-x"] == "failed"
 
+
 def test_batch_orchestration_doc_has_required_sections():
     doc = os.path.join(os.path.dirname(SCRIPTS_DIR), "references", "batch-orchestration.md")
     assert os.path.exists(doc), "references/batch-orchestration.md 缺失"
@@ -306,3 +307,14 @@ def test_batch_orchestration_doc_has_required_sections():
     # 禁止项与停止点必须写明（钉死 subagent 边界）
     assert "phenomena_" in text
     assert "结论永远由主 agent" in text
+
+
+def test_cli_build_plan_without_select_exits_error(tmp_path):
+    wd = str(tmp_path)
+    # 跑 batch.py without --select 应该失败（没有 playbooks config）
+    r = subprocess.run([sys.executable, os.path.join(SCRIPTS_DIR, "batch.py"),
+                       "--workdir", wd], capture_output=True, text=True)
+    assert r.returncode != 0, "Expected non-zero exit code"
+    output = r.stderr + r.stdout
+    assert "playbooks" in output or "--select" in output, \
+        f"Error message should mention playbooks or --select: {output}"
