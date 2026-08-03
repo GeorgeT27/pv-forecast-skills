@@ -74,3 +74,19 @@ def dispatch_list(workdir, playbook_ids):
         out.append({"playbook": pid, "workdir": f"./{pid}",
                     "out": phenomena_name(pid), "status": status})
     return out
+
+
+def derive_phase(workdir, playbook_ids, producers):
+    """五阶段推断（全部从磁盘 + batch_config 派生）。"""
+    cfg = ec.read_json(os.path.join(workdir, BATCH_CONFIG)) or {}
+    for p in producers:
+        if ec.product_status(cfg, p).get("status") not in ("built", "linked"):
+            return "A"
+    if not cfg.get("answers"):
+        return "B"
+    statuses = [d["status"] for d in dispatch_list(workdir, playbook_ids)]
+    if all(s == "done" for s in statuses):
+        return "E"
+    if any(s in ("pending", "running", "failed") for s in statuses):
+        return "C"
+    return "D"

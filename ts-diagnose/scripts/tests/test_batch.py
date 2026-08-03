@@ -163,6 +163,9 @@ def _touch(path):
     with open(path, "w", encoding="utf-8") as f:
         f.write("x")
 
+def _cfg(wd, **kw):
+    ec.dump_json(kw, os.path.join(wd, batch.BATCH_CONFIG))
+
 def test_dispatch_status_pending_by_default(pbdir, tmp_path):
     wd = str(tmp_path)
     disp = {d["playbook"]: d for d in batch.dispatch_list(wd, ["pb-x", "pb-y"])}
@@ -195,3 +198,48 @@ def test_dispatch_state_annotation_overridden_by_disk(pbdir, tmp_path):
     _touch(os.path.join(wd, "pb-x", "phenomena_pb-x.json"))
     d2 = {d["playbook"]: d for d in batch.dispatch_list(wd, ["pb-x"])}
     assert d2["pb-x"]["status"] == "compute-done"
+
+def test_phase_A_when_producer_absent(pbdir, tmp_path):
+    wd = str(tmp_path)
+    _cfg(wd, playbooks=["pb-x"])  # 无 products 登记 → setup absent
+    assert batch.derive_phase(wd, ["pb-x"], ["setup"]) == "A"
+
+def test_phase_B_when_producer_ready_no_answers(pbdir, tmp_path):
+    wd = str(tmp_path)
+    setup_wd = os.path.join(wd, "_shared", "setup")
+    _touch(os.path.join(setup_wd, "predictions.csv"))
+    ec.dump_json({}, os.path.join(setup_wd, "setup_manifest.json"))
+    _cfg(wd, playbooks=["pb-x"],
+         products={"setup": {"workdir": setup_wd, "status": "built"}})
+    assert batch.derive_phase(wd, ["pb-x"], ["setup"]) == "B"
+
+def test_phase_C_when_answers_present_compute_pending(pbdir, tmp_path):
+    wd = str(tmp_path)
+    setup_wd = os.path.join(wd, "_shared", "setup")
+    _touch(os.path.join(setup_wd, "predictions.csv"))
+    ec.dump_json({}, os.path.join(setup_wd, "setup_manifest.json"))
+    _cfg(wd, playbooks=["pb-x"], answers={"口径": {"answer": "rmse_192"}},
+         products={"setup": {"workdir": setup_wd, "status": "built"}})
+    assert batch.derive_phase(wd, ["pb-x"], ["setup"]) == "C"
+
+def test_phase_D_when_all_compute_done(pbdir, tmp_path):
+    wd = str(tmp_path)
+    setup_wd = os.path.join(wd, "_shared", "setup")
+    _touch(os.path.join(setup_wd, "predictions.csv"))
+    ec.dump_json({}, os.path.join(setup_wd, "setup_manifest.json"))
+    _cfg(wd, playbooks=["pb-x"], answers={"口径": {"answer": "r"}},
+         products={"setup": {"workdir": setup_wd, "status": "built"}})
+    _touch(os.path.join(wd, "pb-x", "phenomena_pb-x.json"))
+    assert batch.derive_phase(wd, ["pb-x"], ["setup"]) == "D"
+
+def test_phase_E_when_all_done(pbdir, tmp_path):
+    wd = str(tmp_path)
+    setup_wd = os.path.join(wd, "_shared", "setup")
+    _touch(os.path.join(setup_wd, "predictions.csv"))
+    ec.dump_json({}, os.path.join(setup_wd, "setup_manifest.json"))
+    _cfg(wd, playbooks=["pb-x"], answers={"口径": {"answer": "r"}},
+         products={"setup": {"workdir": setup_wd, "status": "built"}})
+    _touch(os.path.join(wd, "pb-x", "phenomena_pb-x.json"))
+    _touch(os.path.join(wd, "pb-x", "CONCLUSION.md"))
+    _touch(os.path.join(wd, "pb-x", "gate_reports", "conclusion_gate.json"))
+    assert batch.derive_phase(wd, ["pb-x"], ["setup"]) == "E"
