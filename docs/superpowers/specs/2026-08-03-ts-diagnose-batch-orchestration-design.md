@@ -62,17 +62,32 @@ Layer 1   playbooks/<id>/     ← 近乎不变：方法
 
 ```
 <batch_workdir>/
-  batch_config.json      # 选中的 playbook + 共享答案 + 产物登记        （主 agent 写）
-  batch_plan.json        # 生产者并集 / 问题并集 / 派发清单 / 各 pb 状态 （batch.py 写）
-  BATCH_PROGRESS.md      # 批量级日志                                    （主 agent 写）
+  batch_config.json      # 意图与答案：选中的 playbook + 合并提问答案 + products 登记指针  （主 agent 写）
+  batch_plan.json        # 派生渲染：并集 + 派发清单 + 从磁盘重扫算出的 status/phase       （batch.py 写，不可手改）
+  BATCH_PROGRESS.md      # 批量级日志                                                       （主 agent 写）
   _shared/setup/         # 共享 data-setup 产物——只生产一次
   <playbook>/            # 每条 playbook 自己的工作目录 + 自己的 diagnose_config.json
     phenomena_<pb>.json  # subagent 的 --out：现象清单（观察+数字+来源，禁机制语言）
-  BATCH_REPORT.md        # 最终合并报告                                  （主 agent 写）
+  BATCH_REPORT.md        # 最终合并报告                                                     （主 agent 写）
 ```
 
+**config / plan 分工与 orient 对称**（引擎第一纪律：真相以落盘产物为准，状态存在文件里）：
+
+| 文件 | 谁写 | 装什么 | orient 里的对应物 |
+|---|---|---|---|
+| `batch_config.json` | **主 agent 写** | 意图与答案：选了哪些 playbook、合并提问的答案、products 登记指针 | `diagnose_config.json` |
+| `batch_plan.json` | **batch.py 写（每次重扫渲染，不可手改）** | 计划（并集 / 派发）+ 从磁盘算出的 status / phase | orient 输出 + `diagnose_state` |
+
+**status 是派生的，不是手写账本**：每次跑 `batch.py` 就重扫工作目录算 status——
+`_shared/setup/` 在不在（生产者 done）、各 `phenomena_<pb>.json` 在不在（计算 done）、
+各 `CONCLUSION.md` + `conclusion_gate.json` 在不在（结论 done）。主 agent 绝不凭记忆
+改 status（即引擎禁止的 `❌ agent 写 state`）。因此 batch.py 是 orient 在 Layer -1 的
+对应物：每回合先跑它，它报"要跑哪些 + 现在状态 + 下一步"，主 agent 不靠记忆、上下文被
+压缩也能从磁盘重建。
+
 **单写者纪律保持不变**：subagent 只写自己的 `phenomena_<pb>.json` 与自身工作目录产物；
-主 agent 独占所有批量级文件与全部 FINDINGS/CONCLUSION。
+主 agent 独占 `batch_config.json` / `BATCH_PROGRESS.md` / `BATCH_REPORT.md` 与全部
+FINDINGS/CONCLUSION；`batch_plan.json` 只由 batch.py 重扫渲染。
 
 ## 6. 五阶段协议（主 agent 驱动，batch.py 强制）
 
@@ -138,11 +153,21 @@ Layer 1   playbooks/<id>/     ← 近乎不变：方法
 
 ## 10. 机器契约 schema（草案）
 
-`batch_plan.json`（batch.py 写，主 agent 只读）：
+`batch_config.json`（**主 agent 写**——意图与答案，对应 `diagnose_config.json`）：
 
 ```json
 {
   "playbooks": ["robustness", "feature-importance", "deployment-drift"],
+  "answers": {"口径": {"answer": "rmse_192", "source": "user", "date": "2026-08-03"}},
+  "products": {"setup": {"workdir": "./_shared/setup", "status": "built"}}
+}
+```
+
+`batch_plan.json`（**batch.py 每次重扫渲染，不可手改**——计划 + 派生状态，对应 orient
+输出 + `diagnose_state`）：
+
+```json
+{
   "producer_union": ["setup"],
   "question_union": [{"qid": "口径", "ask": "...", "options": ["..."], "owners": ["robustness", "..."]}],
   "question_conflicts": [],
@@ -151,9 +176,10 @@ Layer 1   playbooks/<id>/     ← 近乎不变：方法
 }
 ```
 
-`batch_config.json`（主 agent 写）：选中的 playbook 列表、合并提问的答案、
-`products` 登记（指向 `_shared/setup`）。`status` 取值：`pending / running / done /
-failed`。
+`dispatch[].status` ∈ `pending / running / done / failed`，由 batch.py 重扫工作目录
+**算出**（产物在不在），非主 agent 手写；`running` 是主 agent 派发时经 batch.py 标注的
+瞬态，`failed` 由主 agent 收到 subagent 错误摘要后经 batch.py 落盘。`phase` 同样由
+batch.py 依据 §6 各阶段的完成产物推断当前应处的阶段。
 
 ## 11. 新增 / 改动 / 审计 清单
 
