@@ -19,6 +19,7 @@ stages:
       - desc: setup 产物就绪
         check: "product:setup"
     pause_after: true
+    subagent_ok: true
     charts: [error-breakdown, intraday-profile, worst-points,
              horizon-degradation, rolling-stability, true-vs-pred-scatter,
              model-error-correlation, worst-slice-compare, oracle-gap,

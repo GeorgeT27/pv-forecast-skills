@@ -320,6 +320,22 @@ def test_cli_build_plan_without_select_exits_error(tmp_path):
         f"Error message should mention playbooks or --select: {output}"
 
 
+def test_every_level2_pause_stage_is_subagent_ok():
+    root = os.path.dirname(SCRIPTS_DIR)
+    pbdir_real = os.path.join(root, "playbooks")
+    import glob
+    fails = []
+    for p in glob.glob(os.path.join(pbdir_real, "*", "playbook.md")):
+        fm = ec.load_frontmatter(p)
+        # level-2 = 声明了 upstream（消费产物）
+        if not fm.get("upstream"):
+            continue
+        for st in fm["stages"]:
+            if st.get("pause_after") and not st.get("subagent_ok", False):
+                fails.append(f"{fm['id']} stage {st['id']}")
+    assert not fails, f"这些事实提取阶段未标 subagent_ok=true，batch 无法派发到该阶段：{fails}"
+
+
 def test_skill_routes_batch_via_engine_core_not_ref():
     root = os.path.dirname(SCRIPTS_DIR)
     skill = open(os.path.join(root, "SKILL.md"), encoding="utf-8").read()

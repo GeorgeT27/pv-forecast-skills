@@ -23,6 +23,7 @@ stages:
         check: "question:metric-caliber"
       - desc: 对比模型集已定
         check: "question:model-set"
+    subagent_ok: true
   - id: 1
     name: 差距分解（事实）
     done_when:
@@ -32,6 +33,7 @@ stages:
       - desc: 总差距已知
         check: "stage:0"
     pause_after: true
+    subagent_ok: true
     charts: [worst-slice-compare, model-error-correlation, oracle-gap,
              horizon-degradation, cross-dim-stability]
   - id: 2

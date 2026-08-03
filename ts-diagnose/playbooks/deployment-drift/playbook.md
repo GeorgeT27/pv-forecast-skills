@@ -21,6 +21,7 @@ stages:
         check: "question:metric-caliber"
       - desc: 上线/训练截止时间已知
         check: "question:deploy-timeline"
+    subagent_ok: true
   - id: 1
     name: 退化判定与时点（事实）
     done_when:
@@ -28,6 +29,7 @@ stages:
     prereqs:
       - desc: 误差序列已建
         check: "stage:0"
+    subagent_ok: true
   - id: 2
     name: 结构分解（事实）
     done_when:
@@ -37,6 +39,7 @@ stages:
       - desc: 变点事实已知
         check: "stage:1"
     pause_after: true
+    subagent_ok: true
     charts: [rolling-stability, intraday-profile, error-breakdown, train-test-drift]
   - id: 3
     name: 诱因筛查（变体）

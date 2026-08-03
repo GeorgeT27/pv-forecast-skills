@@ -28,6 +28,7 @@ stages:
         check: "product:setup"
       - desc: 口径问题已答
         check: "question:metric-caliber"
+    subagent_ok: true
   - id: 1
     name: 指标计算（口径 × 模型集 → Excel）
     done_when:
@@ -35,6 +36,7 @@ stages:
     prereqs:
       - desc: 质检已过
         check: "stage:0"
+    subagent_ok: true
   - id: 2
     name: 相关性与画图（误差矩阵 + 标准图集）
     done_when:
@@ -44,6 +46,7 @@ stages:
         check: "stage:1"
     charts: [error-breakdown, intraday-profile, worst-points,
              rolling-stability, cross-dim-stability]
+    subagent_ok: true
   - id: 3
     name: 事实提取（现象清单，停顿点）
     done_when:
@@ -52,6 +55,7 @@ stages:
       - desc: 图已画
         check: "stage:2"
     pause_after: true
+    subagent_ok: true
   - id: 4
     name: 深归因与结论
     done_when:
