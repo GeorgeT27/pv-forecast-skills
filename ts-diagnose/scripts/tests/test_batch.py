@@ -295,3 +295,14 @@ def test_cli_mark_writes_state(pbdir, tmp_path):
     r = _run(["--mark", "pb-x:failed", "--workdir", wd], wd, pbdir)
     assert r.returncode == 0, r.stderr
     assert ec.read_json(os.path.join(wd, batch.BATCH_STATE))["pb-x"] == "failed"
+
+def test_batch_orchestration_doc_has_required_sections():
+    doc = os.path.join(os.path.dirname(SCRIPTS_DIR), "references", "batch-orchestration.md")
+    assert os.path.exists(doc), "references/batch-orchestration.md 缺失"
+    text = open(doc, encoding="utf-8").read()
+    for anchor in ("## Phase A", "## Phase B", "## Phase C", "## Phase D",
+                   "## Phase E", "## Brief-BATCH-COMPUTE", "## 上下文预算"):
+        assert anchor in text, f"batch-orchestration.md 缺 {anchor} 节"
+    # 禁止项与停止点必须写明（钉死 subagent 边界）
+    assert "phenomena_" in text
+    assert "结论永远由主 agent" in text
