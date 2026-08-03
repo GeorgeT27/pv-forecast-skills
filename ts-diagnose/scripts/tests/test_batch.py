@@ -101,5 +101,59 @@ def test_question_union_flags_conflict(pbdir):
     assert [c["qid"] for c in conflicts] == ["口径"]
     assert sorted(conflicts[0]["owners"]) == ["pb-x", "pb-z"]
 
+def test_question_union_flags_options_conflict(pbdir):
+    # 两个 playbook 用同一 qid 和 ask 但 options 不同 → 冲突
+    pb_with_opts1 = """\
+---
+id: pb-a
+name: 消费者pb-a
+goal: 消费 setup
+upstream:
+  - product: setup
+    required: true
+stages:
+  - id: 0
+    name: 计算
+    done_when: {artifacts: ["m.json"]}
+    subagent_ok: true
+questions:
+  - id: 选项
+    stage: 0
+    ask: 选择?
+    why: w
+    default: null
+    options: [A, B]
+---
+正文
+"""
+    pb_with_opts2 = """\
+---
+id: pb-b
+name: 消费者pb-b
+goal: 消费 setup
+upstream:
+  - product: setup
+    required: true
+stages:
+  - id: 0
+    name: 计算
+    done_when: {artifacts: ["m.json"]}
+    subagent_ok: true
+questions:
+  - id: 选项
+    stage: 0
+    ask: 选择?
+    why: w
+    default: null
+    options: [A, B, C]
+---
+正文
+"""
+    _write_pb(pbdir, "pb-a", pb_with_opts1)
+    _write_pb(pbdir, "pb-b", pb_with_opts2)
+    union, conflicts = batch.question_union(["pb-a", "pb-b"])
+    assert [c["qid"] for c in conflicts] == ["选项"]
+    assert sorted(conflicts[0]["owners"]) == ["pb-a", "pb-b"]
+
 def test_producer_playbooks_maps_id_to_producer(pbdir):
     assert batch.producer_playbooks(["setup"]) == ["setup-prod"]
