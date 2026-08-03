@@ -243,3 +243,23 @@ def test_phase_E_when_all_done(pbdir, tmp_path):
     _touch(os.path.join(wd, "pb-x", "CONCLUSION.md"))
     _touch(os.path.join(wd, "pb-x", "gate_reports", "conclusion_gate.json"))
     assert batch.derive_phase(wd, ["pb-x"], ["setup"]) == "E"
+
+def test_build_plan_assembles_and_writes(pbdir, tmp_path):
+    wd = str(tmp_path)
+    _cfg(wd, playbooks=["pb-x", "pb-y"])
+    plan = batch.build_plan(wd)
+    assert plan["producer_union"] == ["setup"]
+    assert plan["phase"] == "A"  # 无 products 登记
+    assert {d["playbook"] for d in plan["dispatch"]} == {"pb-x", "pb-y"}
+    # 问题并集含生产者的 freq + 两个消费者的问题
+    qids = {q["id"] for q in plan["question_union"]}
+    assert qids == {"freq", "口径", "阈值"}
+    # 落盘且可复读
+    on_disk = ec.read_json(os.path.join(wd, batch.BATCH_PLAN))
+    assert on_disk["phase"] == "A"
+
+def test_build_plan_requires_playbooks(pbdir, tmp_path):
+    wd = str(tmp_path)
+    ec.dump_json({}, os.path.join(wd, batch.BATCH_CONFIG))
+    with pytest.raises(ValueError, match="playbooks"):
+        batch.build_plan(wd)

@@ -90,3 +90,23 @@ def derive_phase(workdir, playbook_ids, producers):
     if any(s in ("pending", "running", "failed") for s in statuses):
         return "C"
     return "D"
+
+
+def build_plan(workdir):
+    """读 batch_config.json → 组装 batch_plan.json（重扫渲染，不可手改）。"""
+    cfg = ec.read_json(os.path.join(workdir, BATCH_CONFIG)) or {}
+    ids = cfg.get("playbooks")
+    if not ids:
+        raise ValueError("batch_config.json 缺 playbooks——先跑 batch.py --select 初始化")
+    producers = producer_union(ids)
+    all_pbs = sorted(set(ids) | set(producer_playbooks(producers)))
+    union, conflicts = question_union(all_pbs)
+    plan = {
+        "producer_union": producers,
+        "question_union": union,
+        "question_conflicts": conflicts,
+        "dispatch": dispatch_list(workdir, ids),
+        "phase": derive_phase(workdir, ids, producers),
+    }
+    ec.dump_json(plan, os.path.join(workdir, BATCH_PLAN))
+    return plan
