@@ -186,6 +186,14 @@ AskUserQuestion 问用户要不要拿某条实验线预填；同意就把实验�
   执行段）；或者跑完不写 manifest/marker/config 回填就继续（下次 orient 仍报
   absent，等于白跑）。
 
+## 批量编排（多 playbook 同跑）
+
+同一份数据要一次诊断多条 playbook 时，走 Layer -1 批量层，不逐条串跑。每回合先跑
+`python3 "<ENGINE>/scripts/batch.py" --select <id1,id2,...> --workdir <批量工作目录>`
+（后续回合去掉 --select 刷新），照它报的 phase 与下一步办；完整协议、Brief-BATCH-COMPUTE
+模板、上下文预算见 `references/batch-orchestration.md`。生产者只跑一次入 `_shared/`、
+提问一次合并、计算 fan-out 到事实提取、合并停顿、结论仍由主 agent 落笔。
+
 ## 运行后回顾（每次实跑收尾必做）
 
 1. 回顾本次执行轨迹：哪条指令/菜谱缺失或有歧义、哪个生成脚本被迫返工、哪个问题

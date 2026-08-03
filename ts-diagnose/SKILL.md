@@ -32,6 +32,9 @@ description: 泛化的时序模型诊断引擎：单入口 + 11 个可插拔 pla
 都不像 → 先跑下方 orient 看菜单再与用户确认；菜单里也没有 → 按 `playbooks/_playbook-spec.md`
 写新 playbook（先征得用户同意）。
 
+用户想在**同一份数据上一次跑多条 playbook**（多角度诊断）→ 批量模式：读
+`references/engine-core.md` 的「批量编排」节。
+
 ## 转发（命中 playbook 后，按顺序）
 
 1. 读 `references/engine-core.md`（执行纪律：提问/推进/结论/常见错误）＋

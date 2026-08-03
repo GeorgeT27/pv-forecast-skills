@@ -318,3 +318,14 @@ def test_cli_build_plan_without_select_exits_error(tmp_path):
     output = r.stderr + r.stdout
     assert "playbooks" in output or "--select" in output, \
         f"Error message should mention playbooks or --select: {output}"
+
+
+def test_skill_routes_batch_via_engine_core_not_ref():
+    root = os.path.dirname(SCRIPTS_DIR)
+    skill = open(os.path.join(root, "SKILL.md"), encoding="utf-8").read()
+    # SKILL.md 提到批量、并指向 engine-core；但不得直接引用 batch-orchestration.md（越界守卫）
+    assert "批量" in skill or "batch" in skill
+    assert "batch-orchestration.md" not in skill
+    core = open(os.path.join(root, "references", "engine-core.md"), encoding="utf-8").read()
+    assert "batch-orchestration.md" in core
+    assert "scripts/batch.py" in core or "batch.py" in core
