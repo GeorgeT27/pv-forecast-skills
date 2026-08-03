@@ -1,8 +1,6 @@
 # subagent 派发模板（重活外包；主 agent 保留问用户/综合/反驳门/状态文件）
 
-**单写者纪律**：`blame_state.json` / `PROGRESS.md` / `FINDINGS.md` / `blame_config.json` /
-`feature_pairs.json` 只由主 agent 写。subagent 只读 JSON/CSV、只写自己 brief 指定的产物；
-parquet 内容与 API payload 明细不进对话，只回 ≤30 行数字摘要。
+**单写者纪律**：`blame_state.json` / `PROGRESS.md` / `FINDINGS.md` / `blame_config.json` / `feature_pairs.json` 这五个共享文件只由主 agent 写。subagent 只读 JSON/CSV、只写自己 brief 指定的产物。parquet 内容与 API payload 明细不进对话，只回 ≤30 行数字摘要。
 
 ## Brief G —— Stage 1+2 按模型分片（模型多或行多时）
 
@@ -40,6 +38,4 @@ parquet 内容与 API payload 明细不进对话，只回 ≤30 行数字摘要�
 
 ## 嵌入式 result-eval playbook 运行（需要预测侧上下文时）
 
-坏行的天气分型 / suspect_days 数据质量证据来自留出站线的 result-eval playbook 产物；
-没跑过且用户同意时，参照 `ts-diagnose/playbooks/subset-influence/references/subagent-briefs.md`
-「嵌入式 result-eval playbook 运行」节（Brief B→A 跑到现象清单为止），产物目录回填进 FINDINGS 引用。
+坏行的天气分型、suspect_days 数据质量证据，来自预测侧（留出目标）实验线的 result-eval playbook 产物。没跑过且用户同意补跑时：参照 `ts-diagnose/playbooks/subset-influence/references/subagent-briefs.md` 的「嵌入式 result-eval playbook 运行」节（按 Brief B→A 跑到现象清单为止），产物目录回填进 FINDINGS 引用。

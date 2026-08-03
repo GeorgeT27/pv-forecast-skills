@@ -1,3 +1,11 @@
 .DS_Store
 __pycache__/
 *.pyc
+
+# ts-diagnose 运行时产物：引擎实跑/测试时生成，只服务当次分析，不属于技能本体
+gate_reports/
+.pytest_cache/
+diagnose_state.json
+diagnose_config.json
+provenance.json
+crystallize_record.json

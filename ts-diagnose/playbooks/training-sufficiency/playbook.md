@@ -128,99 +128,103 @@ evidence_lines:
     stage: 4
     output: external_link.json
 upgrade_rule: "『某单元成员拖累/拉高 loss』要升「假设」：成分回归（loss 侧）与外部指标关联（目标侧）两线 Spearman 排名一致；只有一线（无外部指标）时结论上限是「现象」+『loss 侧』限定语"
-crystallize_min_cases: 5   # 最深 playbook：固化三关之关1（多样性）要求 5 个互异 case（默认 3）
+crystallize_min_cases: 5   # 固化为代理技能前的多样性门槛：需要 5 个互不相同的成功案例（一般 playbook 默认 3 个；本 playbook 流程最深，所以门槛更高）
 ---
 
 # Playbook：训练充分性 / 训练动力学
 
-> 泛化自 pv-station-influence 的 Stage 0–2（probe_logs / loss_dynamics / influence_regression 的方法内核），
-> 去掉站点/光伏语义：分析对象是**任何**"分段训练产生的 loss 曲线族 +（可选）分组成员构成 +（可选）外部指标序列"。
+> 本 playbook 分析的对象是**任何**"分段训练产生的 loss 曲线族"，外加两样可选材料：分组成员构成表、外部指标序列。
 
 ## 1. 问题框定与首要陷阱
 
-要回答的三个子问题：**训练充分吗**（每条曲线到平台了吗、边际增益还剩多少）；**为什么不同单元的 loss 不同**（组成成分/顺序/规模效应）；**训练分配有问题吗**（某些成员/某种排法系统性地推高 loss 或拖慢收敛）。
+本 playbook 回答三个子问题：**训练充分吗**——每条 loss 曲线是否已进入平台期、剩余的边际增益还有多少；**为什么不同单元的 loss 不同**——"单元"指训练被切分出的段（一个 chunk、一个交叉验证 fold、或一次独立 run），差异可能来自成员构成、训练顺序或规模；**训练分配有问题吗**——是否有某些成员或某种排列方式在系统性地推高 loss 或拖慢收敛。
 
-先立三条纪律（违反任何一条，结论直接不可信）：
+动手前先立三条纪律。违反任何一条，结论直接不可信：
 
-1. **震荡 ≠ 异常**：分段/分块训练下 loss 与外部指标随段震荡是预期动力学（后段把参数拉向本段分布），不是病。别把单个段的跳变归咎于当时的成员。
-2. **loss 高 ≠ 有害**："含成员 s 的单元 loss 高"只说明 s **自己难学**；"s 拖累目标指标"是另一回事。两者构成四象限（§4），其中"loss 低但目标侧有害"才是分布冲突的典型指纹。
-3. **跨系列不 pool 数值**：不同模型/配置（series）的损失函数与量纲可能不同，绝不把 loss 数值跨 series 平均或合并回归；跨 series 只比 Spearman 排名。
+1. **震荡不等于异常**。分段/分块训练时，loss 和外部指标随段起伏是预期动力学（每个新段把参数拉向本段分布），不是病。不许把某个段上的一次跳变直接归咎于该段的成员。
+2. **loss 高不等于有害**。"含成员 s 的单元 loss 高"只说明 s **自己难学**；"s 拖累目标指标"是另一回事。两者组合出四个象限（见 §4），其中"loss 低但目标侧有害"才是分布冲突的典型指纹。
+3. **跨系列不 pool 数值**。不同 series（模型/配置）的损失函数与量纲可能不同，绝不把 loss 数值跨 series 平均、也不把它们合进同一个回归。跨 series 只比 Spearman 排名。
 
 ## 2. 逐阶段菜谱
 
-分析脚本由 agent 按下列菜谱**运行时生成**进工作目录 `analysis_scripts/`，每个脚本先过声明的验证步、结果记 PROGRESS.md，才可信其产出（crystallize 只快照有验证记录的脚本）。产物全部自足（json 带完整数字与形状描述），判读不读原始日志、不读 PNG。
+分析脚本不是预置的。agent 按下面各阶段的"菜谱"在运行时现写脚本，放进工作目录 `analysis_scripts/`。每个脚本必须先通过该阶段声明的验证步，并把验证结果记进 PROGRESS.md，它的产出才算可信。crystallize 只快照有验证记录的脚本。
 
-**生成闸（硬规则）**：Stage 2/3/4 的脚本生成后、碰真实数据前，必须先过金标准闸——
+所有产物必须自足：json 里带完整数字与形状描述。后续判读只读这些 json，不回头读原始日志，也不读 PNG 图片。
+
+**生成闸（硬规则）**：Stage 2/3/4 的脚本写好之后、接触真实数据之前，必须先过金标准闸：
 `python3 <ENGINE>/scripts/gen_gate.py --script analysis_scripts/<name>.py --playbook training-sufficiency --stage <N>`。
-CLI 与产物最小 schema 以 `golden/manifest.json` 为准（可执行示例见 `golden/reference/`）。金标准算错 → 改脚本，**不改期望**；闸报告落 `gate_reports/`（provenance 汇总用）。Stage 0/1 依赖真实记录源格式无法预置金标准，用下述对账验证步。
+CLI 参数与产物的最小 schema 以 `golden/manifest.json` 为准，可执行示例见 `golden/reference/`。脚本在金标准数据上算错 → 改脚本，**不改期望**。闸报告落在 `gate_reports/`，供 provenance 汇总用。Stage 0/1 的解析逻辑取决于真实记录源的格式，没法预置金标准，改用各自的对账验证步。
 
 ### Stage 0：探测记录源与结构确认 → `probe_summary.json`
 
-- **输入**：question `loss-source` / `unit-structure` 的答案；config 里的日志/记录路径。**setup 产物 built/linked 时**：先读其 setup_manifest.json 的 materials 清单——training_log / experiment_config 的位置与格式已在 setup 盘点时记录，『在哪』免问直接用，`loss-source` 只补格式细节与样例行。
-- **菜谱**：生成 `analysis_scripts/probe.py`——按记录源类型扫描：能否找到 loss 记录、覆盖哪些 series/iteration/unit/epoch 范围、抽 3-5 条样例行原文；落 `probe_summary.json`：`{loss_found, sample_lines, coverage: {series: [...], n_iterations, n_units, epochs_per_unit}, gaps: [...]}`。
-- **验证步**：样例行人工比对用户描述的格式；coverage 与用户宣称的训练规模一致（不一致 → 问用户，不猜）。
-- **无记录分支**：`loss_found=false` 且拿不到 checkpoint 内 loss → 本 playbook 只剩外部指标线可做（Stage 4 独立于 loss 也可跑外部指标自身的充分性形态），FINDINGS 注明"loss 侧无料"。
+- **输入**：两个提问的答案——question `loss-source`（loss 记录在哪、什么格式）与 `unit-structure`（训练怎么组织）；再加 config 里的日志/记录路径。
+- **可以少问的情况**：**setup 产物 built/linked 时**，先读它的 setup_manifest.json 里的 materials 清单。training_log / experiment_config 的位置与格式在 setup 盘点时已经记录，『在哪』这个问题免问直接用，`loss-source` 只需要补格式细节与样例行。
+- **菜谱**：生成 `analysis_scripts/probe.py`，按记录源类型扫描三件事：能否找到 loss 记录；覆盖了哪些 series/iteration/unit/epoch 范围；抽 3-5 条样例行原文。结果落 `probe_summary.json`，结构为 `{loss_found, sample_lines, coverage: {series: [...], n_iterations, n_units, epochs_per_unit}, gaps: [...]}`。
+- **验证步**：样例行与用户描述的格式人工比对；coverage 要与用户宣称的训练规模一致。不一致 → 问用户，不许猜。
+- **无记录分支**：`loss_found=false`、且 checkpoint 里也拿不到 loss 时，本 playbook 只剩外部指标这一条线可做——Stage 4 不依赖 loss，可以单独分析外部指标自身的充分性形态。此时在 FINDINGS 里注明"loss 侧无料"。
 
 ### Stage 1：曲线提取 → `loss_records.csv`
 
-- **长表列固定**：`series,iteration,unit,position,epoch,loss`。语义：series=模型/配置；iteration=重复轮（无则 0）；unit=段（chunk/fold/run；单曲线退化为 `all`）；position=段在轮内顺序（无则 0）。step 级记录先按 epoch 聚合均值。
-- **菜谱**：生成 `analysis_scripts/extract_loss.py`，按 probe 的样例行写解析器；只读必要列，逐行流式处理，绝不把原始日志整体读进上下文。
-- **验证步（对账）**：随机抽 3 个 (series,iteration,unit)，解析值与原始记录逐条核对；行数 = coverage 推算的期望行数（差异要能解释，如缺失段）。
+- **长表列固定**：`series,iteration,unit,position,epoch,loss`。各列语义：series=模型/配置；iteration=重复轮次（没有就填 0）；unit=训练段（chunk/fold/run；单一连续训练退化为 `all`）；position=该段在本轮里的先后顺序（没有就填 0）。原始记录是 step 级的，先按 epoch 聚合取均值。
+- **菜谱**：生成 `analysis_scripts/extract_loss.py`，按 Stage 0 抽出的样例行写解析器。只读必要的列，逐行流式处理，绝不把原始日志整体读进上下文。
+- **验证步（对账）**：随机抽 3 个 (series,iteration,unit) 组合，把解析出的值与原始记录逐条核对；总行数要等于 coverage 推算出的期望行数，有差异必须能解释（比如确实缺失了某些段）。
 
 ### Stage 2：动力学指标 → `dynamics_metrics.json`
 
-逐 `(series, iteration, unit)` 计算（公式与理由承自 influence-methods 的 Stage 1，已验证过）：
+逐 `(series, iteration, unit)` 计算下列指标：
 
-- **final_loss**：尾 `tail_k=3` 个 epoch 的均值（去尾部抖动，比单末 epoch 稳）。
-- **conv_slope**：`log(loss) ~ epoch` 的 OLS 斜率（log 使不同量级曲线尺度稳健；越负 = 收敛越快，≈0 = 平台/停滞）。
-- **plateau_epoch**：首个进入 `final_loss × 1.05` 的 epoch（多快到平台）。
-- **marginal_gain**：最后 `tail_k` 个 epoch 的相对改善 `(loss[-k]-loss[-1])/loss[-k]`——充分性判据"边际增益阈值"直接用它。
+- **final_loss**：最后 `tail_k=3` 个 epoch 的 loss 均值。
+- **conv_slope**：对 `log(loss) ~ epoch` 做 OLS 回归得到的斜率。斜率越负 = 收敛越快；≈0 = 已平台或停滞。
+- **plateau_epoch**：loss 首次降进 `final_loss × 1.05` 范围的 epoch。
+- **marginal_gain**：最后 `tail_k` 个 epoch 的相对改善，公式 `(loss[-k]-loss[-1])/loss[-k]`。充分性判据里的"边际增益阈值"直接用这个数。
 - **充分性形态汇总**（逐 series）：`{n_units_plateaued, n_units_still_falling, worst_marginal_gain, tail_slope_distribution}`。
-- **菜谱**：生成 `analysis_scripts/dynamics.py`；json 里带每条曲线的完整指标 + 每 series 的排名（`highest_final_loss / slowest_converging` top-k）+ `cross_series_spearman`（各 series 的 unit 排名两两相关）。
-- **验证步（合成小样自检）**：造一条已知形态的合成曲线（如 `loss=2·exp(-0.3·epoch)+1`），断言 conv_slope<0、plateau_epoch 落在解析解 ±1 内——过了才跑真数据。
+- **菜谱**：生成 `analysis_scripts/dynamics.py`。输出 json 里要带三部分：每条曲线的完整指标；每个 series 内的排名（`highest_final_loss / slowest_converging` 的 top-k）；`cross_series_spearman`（各 series 之间 unit 排名的两两 Spearman 相关）。
+- **验证步（合成小样自检）**：先造一条形态已知的合成曲线（如 `loss=2·exp(-0.3·epoch)+1`），断言算出的 conv_slope<0、plateau_epoch 落在解析解 ±1 之内——自检过了才允许跑真实数据。
 
 ### Stage 3：成分回归 → `composition_effects.json`（变体 grouped）
 
-只在有分组结构（chunk/fold 有成员构成）时激活。回答"哪个成员让单元难学/收敛慢"。
+只在训练有分组结构（chunk/fold 有成员构成）时激活。回答"哪个成员让所在单元难学、或收敛慢"。
 
-- **输入**：`assignments.csv`（列 `iteration,unit,position,member`；从用户提供的分组记录或回放脚本生成——分组记录缺失且不可复现 → 本阶段做不了，如实降级，**不要**用"看起来像"的分组猜）。
-- **设计（关键坑，承自 influence_regression）**：因变量 = final_loss 或 conv_slope；自变量 = 成员指示。若每轮每成员恰进一个单元，指示和与截距共线（虚拟变量陷阱变体）→ ① **中心化成员指示**（减该单元平均占用）；② **岭回归**（截距不罚）稳共线方向；③ 系数 θ_m 读作**相对平均成员的相对效应**（sum-to-zero 语义），只比排名不过度解读绝对值。控制变量：`iteration`（训练成熟度）、`position`（新近效应）、`size`（单元大小）——不控则成员效应被训练阶段效应污染。
-- **不确定性**：bootstrap over 观测行给 θ_m 95% CI，CI 排除 0 才算方向可信。**功效诚实**：观测数 ≈ 轮数×单元数，参数 ≈ 成员数+4；轮数 <10 时只报排名不报显著性（json 里写 `power_note`）。
-- **逐 series 独立回归**，跨 series 只报 Spearman。
-- **验证步（植入回收）**：合成一组已知 θ 的假数据（如成员 A 的单元 final_loss 恒 +0.5σ），断言回归能把 A 排进 top-1——过了才跑真数据。
+- **输入**：`assignments.csv`，列为 `iteration,unit,position,member`。这张表必须来自用户提供的分组记录，或由回放脚本重新生成。分组记录缺失且无法复现 → 本阶段做不了，如实降级说明；**不要**凭"看起来像"去猜分组。
+- **设计**：因变量取 final_loss 或 conv_slope；自变量是成员指示变量（某成员在不在这个单元里，0/1）。若每轮每个成员恰好进一个单元，指示变量与回归截距完全共线，因此分三步处理：① **中心化成员指示**——每个指示变量减去该单元的平均占用；② 用**岭回归**稳住共线方向（截距不罚）；③ 系数 θ_m 要读作**该成员相对于平均成员的相对效应**（sum-to-zero 语义），只比较排名，不过度解读绝对值。回归还必须加控制变量：`iteration`（训练成熟度）、`position`（新近效应）、`size`（单元大小），否则成员效应会被训练阶段效应污染。
+- **不确定性**：对观测行做 bootstrap 重采样，给每个 θ_m 一个 95% CI；CI 排除 0，效应方向才算可信。**功效诚实**：这套回归的观测数 ≈ 轮数×单元数，参数个数 ≈ 成员数+4。轮数 <10 时样本太少，只报排名、不报显著性，并在 json 里写明 `power_note`。
+- **逐 series 独立回归**；跨 series 只报 Spearman 排名相关。
+- **验证步（植入回收）**：合成一组 θ 已知的假数据（如让成员 A 所在单元的 final_loss 恒 +0.5σ），断言回归能把 A 排进 top-1——自检过了才跑真实数据。
 
 ### Stage 4：外部指标关联 → `external_link.json`（变体 external）
 
-- **输入**：`config.external_metric_path`（逐段外部指标序列，如留出集每单元训后 RMSE）。
-- **菜谱**：生成 `analysis_scripts/external_link.py`：① 外部指标自身充分性形态（随训练推进的趋势、末端是否仍在改善）；② loss 侧 unit 排名 × 外部指标侧 unit 排名的 Spearman（同现证据）；③ 有成分回归时，θ_loss 与 θ_target 的四象限归类（§4）。
-- **纪律**：本线是**佐证**，Spearman 同现不给任何成员单独定罪；它的价值是与 Stage 3 构成两条独立证据线（升级规则见 frontmatter `upgrade_rule`）。
-- **验证步**：对齐检查——外部指标的 (iteration,unit) 键集合与 loss 侧一致（缺口列出来，不静默丢行）。
+- **输入**：`config.external_metric_path`，指向一条逐段的外部指标序列，比如每个单元训完后在留出集上的 RMSE。
+- **菜谱**：生成 `analysis_scripts/external_link.py`，做三件事：① 外部指标自身的充分性形态——随训练推进的趋势、末端是否仍在改善；② loss 侧 unit 排名 × 外部指标侧 unit 排名的 Spearman 相关；③ 若 Stage 3 的成分回归已做，把 θ_loss 与 θ_target 按 §4 的四象限归类。
+- **纪律**：这条线只是**佐证**。Spearman 排名同现不足以给任何成员单独定罪；它与 Stage 3 构成两条相互独立的证据线（升级规则见 frontmatter `upgrade_rule`）。
+- **验证步**：对齐检查——外部指标的 (iteration,unit) 键集合必须与 loss 侧一致；有缺口要列出来，不许静默丢行。
 
 ### Stage 5：事实提取 ⏸（现象清单，禁机制语言）
 
-- 只读 Stage 2–4 的 json summary，产出 FINDINGS.md「现象」条目：每条 = 观察 + 数字 + 来源产物。句式如"series M2 的 32/32 条曲线 marginal_gain < 1%（dynamics_metrics.json）"；**禁止**"因为 batch 不足/因为遗忘"等机制语言。
-- 需要图就按 `fig-style` 答案画进 `figures/`，每图配自足 stats.json；判读读 json 不读 PNG。
-- **停顿**：完成后向用户汇报现象清单（≤15 条），请用户点名要深挖的项，才进 Stage 6。
+- 只读 Stage 2–4 的 json summary，产出 FINDINGS.md 的「现象」条目。每条 = 观察 + 数字 + 来源产物，句式如"series M2 的 32/32 条曲线 marginal_gain < 1%（dynamics_metrics.json）"。**禁止**写机制解释（如"因为 batch 不足""因为遗忘"），只陈述看到了什么。
+- 需要画图时，按 `fig-style` 问题的答案画进 `figures/`，每张图配一份自足的 stats.json；判读只读 json，不读 PNG。
+- **停顿**：本阶段完成后暂停，向用户汇报现象清单（≤15 条），请用户点名要深挖的条目，得到答复后才进 Stage 6。
 
 ### Stage 6：结论（主 agent 亲自做，subagent_ok: false）
 
-- 按 `sufficiency-criterion` 的答案逐 series 下"充分/不充分/证据不足"判定，每判定引用具体数字。
-- "训练分配问题"结论走升级规则 + 三道门（引擎 references/mechanisms.md）+ 本 playbook 反驳门（§6）。
-- `training-config` 若按默认（未提供），batch/数据量归因一律写"待补配置后确认"，不得从曲线形态硬推 batch 结论。
-- 写 CONCLUSION.md（面向主管，写法见引擎 references/conclusion-reporting.md），并直接呈现给用户。
+- 按 `sufficiency-criterion` 问题确定的判定口径，逐 series 给出"充分/不充分/证据不足"三者之一，每个判定都要引用具体数字。
+- "训练分配有问题"这类结论要走完整升级流程：满足 frontmatter 的升级规则，过引擎的三道门（见引擎 references/mechanisms.md），再过本 playbook 自己的反驳门（§6）。
+- `training-config` 问题若按默认处理（用户未提供配置），batch/数据量归因一律写"待补配置后确认"，不许只凭曲线形态硬推 batch 结论。
+- 写 CONCLUSION.md（面向主管的写法见引擎 references/conclusion-reporting.md），并直接呈现给用户。
 
 ## 3. 证据升级规则（映射三道门）
 
+每类结论有一个证据上限；想升级必须满足升级条件，并通过对应的门：
+
 | 结论类型 | 上限 | 升级条件 | 对应门 |
 |---|---|---|---|
-| 某 series 已到平台/仍在下降 | 已证实 | 判据口径明确 + 尾部形态跨 iteration 稳定（剔除最差 10% 单元方向不变） | 稳健性门 |
-| 某成员拉高 loss/拖慢收敛 | 现象→假设 | Stage 3 CI 排除 0 **且** 与 Stage 4 目标侧排名 Spearman 一致；先在 HYPOTHESES.md 登记 | 假设登记 + 多证据线 |
+| 某 series 已到平台/仍在下降 | 已证实 | 判据口径明确 + 尾部形态跨 iteration 稳定（剔除最差 10% 单元后方向不变） | 稳健性门 |
+| 某成员拉高 loss/拖慢收敛 | 现象→假设 | Stage 3 的 CI 排除 0 **且** 与 Stage 4 目标侧排名的 Spearman 一致；升级前先在 HYPOTHESES.md 登记 | 假设登记 + 多证据线 |
 | 训练分配（顺序/规模）有问题 | 假设 | position/size 控制变量效应显著 + 反驳门过 | 反驳门 |
-| batch/数据量不足 | 假设 | 需要 training-config 事实 +（最好）不同 batch 的对照曲线；单靠形态最多"现象" | 反驳门 |
+| batch/数据量不足 | 假设 | 需要 training-config 的配置事实 +（最好）不同 batch 的对照曲线；单靠曲线形态最多标"现象" | 反驳门 |
 
 ## 4. 四象限（loss 效应 × 目标效应）
 
-θ_loss（Stage 3，难学度）× θ_target（Stage 4 或外部归因，目标侧危害度）：
+两个坐标轴：θ_loss 来自 Stage 3，衡量某成员让单元变得多难学；θ_target 来自 Stage 4 或外部归因，衡量该成员对目标指标的危害度。两轴交叉出四种情况：
 
 | | θ_target 高（拖累目标） | θ_target 低 |
 |---|---|---|
@@ -229,18 +233,25 @@ CLI 与产物最小 schema 以 `golden/manifest.json` 为准（可执行示例�
 
 ## 5. Subagent 拆分建议
 
-- Stage 0/1/2 可打包给一个数据 subagent（Brief-COMPUTE，见引擎 references/subagent-briefs.md）；多 series 大日志时按 series 分片，`--out loss_records.<series>.csv` 各写各的，主 agent 合并。
-- Stage 3/4 计算轻，主 agent 或单 subagent 即可；Stage 5 现象提取可给 Brief-FACT。
-- 单写者纪律：state/PROGRESS/FINDINGS/config 只有主 agent 写。
+- Stage 0/1/2 可以打包交给一个数据 subagent，用 Brief-COMPUTE 模板下任务（见引擎 references/subagent-briefs.md）。多 series、大日志时按 series 分片并行：各自输出 `--out loss_records.<series>.csv`，最后由主 agent 合并。
+- Stage 3/4 计算量轻，主 agent 自己做或交给单个 subagent 都行。Stage 5 的现象提取可交给 Brief-FACT。
+- **单写者纪律**：state/PROGRESS/FINDINGS/config 这几个全局文件只有主 agent 能写，subagent 一律不碰，避免并发写坏状态。
 
 ## 6. 本 playbook 特有反驳门条目（结论标"已证实/假设"前逐条过）
 
-1. **记录截断/解析错位**：coverage 缺口或对账差异未解释 → 一切下游结论不可信，先回 Stage 1。
-2. **学习率调度混淆**：loss 平台可能是 lr 衰减到 0，不是"学完了"——training-config 有调度信息才可排除；没有 → 充分性结论降一级并注明。
-3. **新近效应冒充成员效应**：position 控制变量显著时，先怀疑训练顺序而非成员本身（处理建议不同：混洗/回放 vs 剔除）。
-4. **单元规模混淆**：size 未控制或与成员强相关 → θ_m 可能只是"大单元 loss 低"的伪影。
-5. **量纲穿帮**：任何跨 series pool 过数值的中间结果 → 作废重算。
+给结论标级前逐条过；任何一条命中且没解决，结论降级或作废：
+
+1. **记录截断/解析错位**：Stage 0 的 coverage 有缺口、或 Stage 1 对账差异没解释清 → 一切下游结论不可信，先回 Stage 1 修数据。
+2. **学习率调度混淆**：loss 进入平台可能只是学习率已衰减到接近 0，不是"学完了"。只有 training-config 里有调度信息才可能排除这种解释；没有 → 充分性结论降一级并注明。
+3. **新近效应冒充成员效应**：position 控制变量显著时，先怀疑是训练顺序在起作用，而不是成员本身有问题。顺序问题用混洗/回放验证，成员问题才考虑剔除。
+4. **单元规模混淆**：size 没控制、或与成员构成强相关 → θ_m 可能只是"大单元 loss 低"造成的伪影。
+5. **量纲穿帮**：任何跨 series 合并（pool）过 loss 数值的中间结果 → 作废重算。
 
 ## 7. 结论模板（CONCLUSION.md 骨架）
 
-一句话结论（充分/不充分 + 最关键数字）→ 关键发现 3–5 条（每条：结论 + 一个数字 + 大白话原因）→ 对训练的建议（如：延长 epoch / 调 batch / 改分配顺序 / 查某成员数据质量 / 补结构化 loss 日志）→ 可信度说明（哪些站得住、哪些是初步、缺什么料）。
+按下面顺序写：
+
+1. 一句话结论：充分/不充分 + 最关键的一个数字。
+2. 关键发现 3–5 条。每条 = 结论 + 一个数字 + 大白话原因。
+3. 对训练的建议。例如延长 epoch、调 batch、改分配顺序、查某成员数据质量、补结构化 loss 日志。
+4. 可信度说明：哪些结论站得住、哪些只是初步、还缺什么材料。

@@ -1,4 +1,4 @@
-"""station_analysis.py 单测（合并脚本，一趟同产逐站图 + 全场总览）。
+"""station_analysis_short.py 单测（合并脚本，一趟同产逐站图 + 全场总览）。
 
 逐站层（power/特征/鲁棒/夜间）：
   data  —— station1 两重叠窗→5唯一点 RMSE=2；station2 RMSE=3；station3 无预测列→跳过 Power。
@@ -22,7 +22,7 @@ import pandas as pd
 import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SCRIPT = os.path.join(HERE, "station_analysis.py")
+SCRIPT = os.path.join(HERE, "station_analysis_short.py")
 
 
 def _run(wd, extra=()):
@@ -310,6 +310,81 @@ def test_cf_off_unchanged(cf_data):
     """不加 --counterfactual：无任何反事实产物，常规产物照常。"""
     r = _run(cf_data, ["--no-plots"])
     assert r["cf"] is None and r["power"] is not None
+
+
+def test_cf_worst_selects_worst(cf_data, fake_api):
+    """--cf-worst 1：复用 fleet_ranking，只跑功率 nRMSE 最差站 c1（8%>c2 3.33%）→ 仅 2 次 API。"""
+    r = _run(cf_data, ["--no-plots", "--counterfactual", "--api-url", _url(fake_api),
+                       "--cf-worst", "1"])
+    assert set(r["cf"]["station"]) == {"c1"}                  # c2 未跑
+    assert fake_api.hits == 2                                 # 1 站 × 2 次
+    assert "worst 1 of 2" in r["out"]
+
+
+def test_cf_worst_ignored_when_stations_given(cf_data, fake_api):
+    """--cf-stations 显式列表优先，--cf-worst 被忽略并告警。"""
+    r = _run(cf_data, ["--no-plots", "--counterfactual", "--api-url", _url(fake_api),
+                       "--cf-stations", "c2", "--cf-worst", "1"])
+    assert set(r["cf"]["station"]) == {"c2"}                  # 显式列表胜出，而非最差的 c1
+    assert "ignored because --cf-stations" in r["out"]
+    assert fake_api.hits == 2
+
+
+def test_cf_worst_no_fleet_falls_back(cf_data, fake_api):
+    """--no-fleet 无 ranking 文件：告警回退跑全部站。"""
+    r = _run(cf_data, ["--no-plots", "--no-fleet", "--counterfactual", "--api-url", _url(fake_api),
+                       "--cf-worst", "1"])
+    assert set(r["cf"]["station"]) == {"c1", "c2"}            # 回退：两站都跑
+    assert "not found" in r["out"] and fake_api.hits == 4
+
+
+# ---------------------------------------------------------------- 南网 nanwang_official 指标测试
+def _write_info(wd, mapping):
+    pd.DataFrame([{"station": s, "GCCAPCITY": g} for s, g in mapping.items()]).to_csv(wd / "info.csv", index=False)
+    return str(wd / "info.csv")
+
+
+def _nanwang(p_real, p_pred, gc):
+    a, p = np.asarray(p_real, float), np.asarray(p_pred, float)
+    return (1.0 - np.sqrt(np.mean(((a - p) / np.maximum(a, 0.2 * gc)) ** 2))) * 100.0
+
+
+def test_nanwang_fleet_ranking(cf_data):
+    """--info-csv：fleet_ranking 增列 GCCAPCITY + nanwang_official_power，值与公式一致，join 用各站自己的 GCCAPCITY。"""
+    info = _write_info(cf_data, {"c1": 100.0, "c2": 200.0})
+    fr = _run(cf_data, ["--no-plots", "--info-csv", info])["fleet"].set_index("station")
+    assert fr.loc["c1", "GCCAPCITY"] == 100.0 and fr.loc["c2", "GCCAPCITY"] == 200.0
+    assert fr.loc["c1", "nanwang_official_power"] == pytest.approx(
+        _nanwang([10, 20, 30, 40, 50], [14, 24, 34, 44, 54], 100.0), abs=1e-2)   # predict = 真值+4
+    assert fr.loc["c2", "nanwang_official_power"] == pytest.approx(
+        _nanwang([10, 20, 30, 40, 50, 60], [12, 22, 32, 42, 52, 62], 200.0), abs=1e-2)  # predict = 真值+2
+
+
+def test_nanwang_counterfactual(cf_data, fake_api):
+    """反事实：GCCAPCITY + nanwang_official_base/cf，换真值 GHI 后功率完美 → cf=100%。"""
+    info = _write_info(cf_data, {"c1": 100.0, "c2": 200.0})
+    d = _run(cf_data, ["--no-plots", "--info-csv", info,
+                       "--counterfactual", "--api-url", _url(fake_api)])["cf"].set_index("station")
+    assert d.loc["c1", "GCCAPCITY"] == 100.0
+    assert d.loc["c1", "nanwang_official_base"] == pytest.approx(
+        _nanwang([10, 20, 30, 40, 50], [14, 24, 34, 44, 54], 100.0), abs=1e-2)
+    assert d.loc["c1", "nanwang_official_cf"] == pytest.approx(100.0, abs=1e-6)
+
+
+def test_nanwang_missing_station_blank(cf_data):
+    """info-csv 缺某站：该站 GCCAPCITY/nanwang 留空 + 告警，其余站照常。"""
+    info = _write_info(cf_data, {"c1": 100.0})               # c2 缺
+    r = _run(cf_data, ["--no-plots", "--info-csv", info])
+    fr = r["fleet"].set_index("station")
+    assert fr.loc["c1", "GCCAPCITY"] == 100.0
+    assert pd.isna(fr.loc["c2", "GCCAPCITY"])
+    assert "no GCCAPCITY" in r["out"]
+
+
+def test_nanwang_off_when_no_info(cf_data):
+    """不给 --info-csv：无 GCCAPCITY / nanwang 列，向后兼容。"""
+    fr = _run(cf_data, ["--no-plots"])["fleet"]
+    assert "GCCAPCITY" not in fr.columns and "nanwang_official_power" not in fr.columns
 
 
 import importlib.util

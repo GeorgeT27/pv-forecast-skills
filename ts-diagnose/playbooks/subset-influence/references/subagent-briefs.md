@@ -1,19 +1,22 @@
-# 子 agent 派发模板（固化 brief）+ 嵌入式主技能运行
+# 子 agent 派发模板（固化 brief）+ 嵌入式上游运行
 
-主 agent 只做编排：跑脚本 + 读产物摘要外包给 subagent，**checkpoint/parquet 原始内容、
-逐行日志、PNG 都不进主上下文**；跨证据线的综合（Stage 2 vs 3 排名一致性）、反驳门、
-FINDINGS/CONCLUSION 撰写留主 agent 最后做。派发时把对应 brief **照抄进 Agent 调用的
-prompt**（`<...>` 占位换实参）。用通用 subagent（general-purpose）即可。
+分工原则：主 agent 只做编排。跑脚本、读产物摘要这类活外包给 subagent；
+**checkpoint/parquet 的原始内容、逐行日志、PNG 都不进主 agent 的上下文**。以下工作
+必须留给主 agent 最后亲自做：跨证据线的综合（Stage 2 vs 3 排名一致性）、反驳门、
+FINDINGS/CONCLUSION 撰写。派发时把对应 brief **照抄进 Agent 调用的 prompt**（`<...>`
+占位换成实参）。用通用 subagent（general-purpose）即可。
 
-派发纪律（沿用主技能 subagent-briefs.md + 本技能特有）：
+派发纪律：
 
-- **并行**：一条消息里发多个 Agent 调用（无共享状态才并行；GPU 任务单卡时不要分片）。
-- **subagent 只读结构化产物**：JSON/CSV/probe 样例行；绝不 load checkpoint 权重、
-  不逐行读原始日志入上下文、不 Read PNG（解析/计算全在脚本里）。
-- **回传要瘦**：只回传固定格式清单（各 brief 末尾规定），不回大段正文。
+- **并行**：一条消息里发多个 Agent 调用。前提是任务之间无共享状态；GPU 任务在单卡上
+  不要分片。
+- **subagent 只读结构化产物**：JSON/CSV/probe 给出的样例行。绝不 load checkpoint
+  权重、不逐行读原始日志入上下文、不 Read PNG——解析和计算全部放在脚本里做。
+- **回传要瘦**：只回传固定格式的清单（各 brief 末尾规定了格式），不回大段正文。
 - **单写者**：`influence_state.json` / `PROGRESS.md` / `FINDINGS.md` /
   `influence_config.json` **只由主 agent 写**。subagent 只写脚本产物与自己的分片文件。
-- **分片防竞态**：多 subagent 并发时各写各的 `--out`/`--raw` 分片文件，主 agent 收齐后合并
+- **分片防竞态**：多个 subagent 并发时，各写各的 `--out`/`--raw` 分片文件，主 agent
+  收齐后合并
   （`python3 -c "import pandas as pd,glob; pd.concat(map(pd.read_csv, glob.glob('rmse_series.M*.csv'))).to_csv('rmse_series.csv', index=False)"`），
   绝不让两个 subagent 追加同一个 CSV。
 
@@ -21,13 +24,14 @@ prompt**（`<...>` 占位换实参）。用通用 subagent（general-purpose）�
 
 ## 嵌入式 result-eval playbook 运行（主 agent 的编排程序，非 brief）
 
-**何时**：orient 报上游产物「eval_report」[absent]（可选）且用户在三分支里选了「现在内联生产」
-——先跑留出站的 result-eval playbook（见 playbook.md §4 与引擎 `references/engine-core.md`
-「上游产物三分支」纪律）。
-**为什么由主 agent 亲自编排**：subagent 不能再派 subagent，且 result-eval 自身 Stage 3→4
-的停顿点（是否深挖）由主 agent 代为最小化决策以跑满至 CONCLUSION.md（§4 要求
-eval_report 产物状态为 built，不可停在 Stage 3）——所以嵌入运行的 Brief A/B 派发必须由
-主 agent 做。
+**何时用**：orient 报上游产物「eval_report」为 [absent]（该产物是可选的），且用户在
+三分支问题里选了「现在内联生产」——此时要先对留出站跑一遍 result-eval playbook
+（背景见 playbook.md §4 与引擎 `references/engine-core.md`「上游产物三分支」纪律）。
+
+**为什么由主 agent 亲自编排**：subagent 不能再派 subagent；且 result-eval 自身
+Stage 3→4 的停顿点（问用户是否深挖）在嵌入运行时由主 agent 代为最小化决策，直接跑满
+至 CONCLUSION.md（§4 要求 eval_report 状态为 built，不允许停在 Stage 3）。所以嵌入
+运行中的 Brief A/B 派发必须由主 agent 做。
 
 ```
 1. mkdir <会话根目录>/eval_report/（独立目录——绝不写其他实验线的任何已有分析目录）。
@@ -38,24 +42,25 @@ eval_report 产物状态为 built，不可停在 Stage 3）——所以嵌入运
      true_label   = influence_config.test_label（同一份留出站真值）
      predicted    = {M1..M4, ensemble: 留出站【最终模型】预测 parquet}
                     ——influence_config 里没有这些路径，向用户要；
-                      逐 chunk 预测属本技能 Stage 2 的 rmse_series，不进 result-eval 流程。
-     train_stations = {全部训练站: 逐站 parquet}（可选；给了本技能 Stage 4 漂移就白捡）
+                      逐 chunk 预测属本 playbook Stage 2 的 rmse_series，不进 result-eval 流程。
+     train_stations = {全部训练站: 逐站 parquet}（可选；给了本 playbook Stage 4 漂移就白捡）
 2. cd 该目录跑 `python3 "<result-eval playbook 目录>/../../scripts/orient.py" --playbook
-   result-eval`；随后照 result-eval playbook 的 `references/subagent-briefs.md` 派发：
-   Brief B（metric）×1 → 完成后 Brief A（figure+fact）×N 并行。
+   result-eval`；随后照 result-eval playbook 的 `references/subagent-briefs.md` 派发
+   （Brief A/B 的定义在那份文档里）：Brief B（metric）×1 → 完成后 Brief A
+   （figure+fact）×N 并行。
    参数覆盖：工作目录 = eval_report 绝对路径；Brief B 已通用（figures/<留出站拼音>/，
    站名以 analysis_config.station 为准），无需改写该句。
 3. 跑满 result-eval 全部阶段直至 CONCLUSION.md（Stage 4 深归因可按需最小化——只求
    `gate_reports/conclusion_gate.json` 与 CONCLUSION.md 落盘，不必穷尽假设；深归因不是
-   本步重点，本技能 Stage 2–5 自己接管留出站的归因）。CONCLUSION.md + conclusion_gate
-   receipt 缺一样产物核验就过不了，不可只停在 Stage 3 现象清单。
+   本步重点，本 playbook 的 Stage 2–5 自己接管留出站的归因）。CONCLUSION.md +
+   conclusion_gate receipt 缺任何一样，产物核验都过不了，不可只停在 Stage 3 现象清单。
 4. 回 influence 工作目录：往 diagnose_config.json 回填
    `config.products.eval_report = {workdir: <eval_report 绝对路径>, status: "built"}`；
    把现象清单摘要（≤15 行）记入 PROGRESS.md；重跑 orient 确认 [built]；继续 Stage 0。
 ```
 
-用户拒绝 → 不登记 `config.products.eval_report`（保持 absent/declined），继续
-influence-only；FINDINGS/CONCLUSION 里注明"缺预测侧上下文（基线指标/天气分型/数据质量
+用户拒绝 → 不登记 `config.products.eval_report`（保持 absent/declined），继续只做
+影响力侧分析；FINDINGS/CONCLUSION 里注明"缺预测侧上下文（基线指标/天气分型/数据质量
 未核）"。
 
 ---
@@ -82,14 +87,15 @@ influence-only；FINDINGS/CONCLUSION 里注明"缺预测侧上下文（基线指
 - RMSE 序列粗貌：min / max / std（读你自己写的分片 CSV 算，一行）
 ```
 
-**主 agent 收到后**：收齐各分片 → concat 成 `rmse_series.csv`（见开头合并命令）→
+**主 agent 收到后**：收齐各分片 → concat 成 `rmse_series.csv`（见开头的合并命令）→
 更新 state/PROGRESS → Stage 2 可跑。
 
 ---
 
 ## Brief D：TracIn 梯度 subagent（Stage 3，Mode B）
 
-单卡：派 1 个跑全量（GPU 不并行时分片无收益）。多卡/多机才按 `--models` 分片。
+单卡：派 1 个 subagent 跑全量（GPU 不能并行时分片没有收益）。多卡/多机才按
+`--models` 分片。
 
 ```
 你是一个计算子 agent，只负责【TracIn 梯度对齐计算】，不做升级判定。
@@ -105,14 +111,15 @@ influence-only；FINDINGS/CONCLUSION 里注明"缺预测侧上下文（基线指
 只回传（≤12 行）：
 - 每模型 harm 排名前 5 + 后 3（读汇总 JSON 的 ranking_harmful_first）
 - 覆盖率披露：实际取了多少 checkpoint（--every）、每站多少窗口（--n-windows）
-  ——抽样别让主 agent 读成全量（silent cap 必须写明）
+  ——抽样必须写明覆盖范围（silent cap），别让主 agent 读成全量
 - 汇总 JSON 里 cross_model_spearman（有就转述数字）
 禁止：自行下"与 Stage 2 排名一致 → 假设成立"之类结论（升级判定是主 agent 的活）。
 ```
 
-**主 agent 收到后**：分片则 concat 原始 CSV 为 `tracin_dots.csv` 后重跑一次
-`tracin_influence.py`（无 --raw/--out，秒级，只做汇总）得合并版 `tracin_scores.json`；
-对照 `influence_coefs.json` 算/核 Spearman → 升级判定 + 更新 state/PROGRESS。
+**主 agent 收到后**：若做了分片，先 concat 原始 CSV 为 `tracin_dots.csv`，再重跑一次
+`tracin_influence.py`（不带 --raw/--out，秒级完成，只做汇总）得到合并版
+`tracin_scores.json`；对照 `influence_coefs.json` 算/核 Spearman → 做升级判定 + 更新
+state/PROGRESS。
 
 ---
 
@@ -143,7 +150,8 @@ influence-only；FINDINGS/CONCLUSION 里注明"缺预测侧上下文（基线指
 ```
 
 **主 agent 收到后**：把清单记入 FINDINGS（状态="现象"，注明是 loss 侧现象）→
-更新 state/PROGRESS。解释（气候/容量/数据质量四象限）等 Stage 2/3 排名出来后一起做。
+更新 state/PROGRESS。解释工作（气候/容量/数据质量的四象限判读）等 Stage 2/3 排名出来
+后一起做。
 
 ---
 
@@ -163,20 +171,20 @@ result-eval playbook 目录 MAIN：ts-diagnose/playbooks/result-eval
    - 非 built：在 influence 工作目录写一个**最小** analysis_config.json
      （station="<留出站拼音>"、true_label=influence_config.test_label、
      train_stations=<全部训练站逐站 parquet，向主 agent 要>）——该文件只服务 run_drift，
-     不代表跑过主技能；绝不碰任何已有分析目录。
+     不代表完整跑过预测侧分析；绝不碰任何已有分析目录。
 2. 跑：python3 "<MAIN>/scripts/run_drift.py" --cols "GHI-solargis,observe_power_future"
 3. 判读只读 drift 产物表/脚本打印摘要，不 Read PNG。
 
-只回传【现象清单】（仿主技能 Brief A 格式，每条带数字）：
+只回传【现象清单】（固定格式如下，每条带数字）：
 - [现象] 逐站 GHI PSI 排名（最像留出站 → 最不像）| 数字：各站 PSI | 来源：drift 表
 - [现象] 嫌疑站 <占位：主 agent 传入 Stage 2/3 top 站> 在气候距离榜第 X 位 | 数字：PSI
 - [现象] "气候相似却有害"红旗站：<有则点名，无则写无> | 数字：PSI + θ/harm
 （禁止"为什么"；红旗站只标记，数据质量核查是主 agent 反驳门#3 的活。）
 ```
 
-**主 agent 收到后**：现象入 FINDINGS →（eval_report built 时）对照 suspect_days/event-log
-走反驳门 →
-两法一致 + 有机制解释的站升"假设"（登记 H-XSTN-*）→ 决定是否进 Stage 5。
+**主 agent 收到后**：现象记入 FINDINGS →（eval_report 为 built 时）对照
+suspect_days/event-log 走反驳门 → 两法一致 + 有机制解释的站升"假设"（登记
+H-XSTN-*）→ 决定是否进 Stage 5。
 
 ---
 

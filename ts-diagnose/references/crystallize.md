@@ -17,10 +17,20 @@
 
 1. **新技能名**（kebab-case，建议 `<领域>-<目标>` 如 `pv-chunk-training`）；
 2. **触发词**：用户会怎么说这件事？要 3–5 条**用户原话**（决定 description 的召回）；
-3. **路径分层**：本次 config 里哪些路径/字段是跨次稳定的（进 profile config_defaults 或引用实验线）、哪些每次会变（**不进 profile**，留给下次问）；
-4. **问答固化范围**：questions 块里哪些答案跨次成立（schema/结构/判据通常成立；样例行若来自会轮换的日志则不固化）；
-- **materials 同为固化原料**：config.materials 里跨次稳定的条目（layout/schema——路径通常每次不同，别固化具体路径）搬进 profile.yaml 的 `materials:` 块，结构同 config 条目；orient --profile 时只补缺合并，source 记 `profile`。degraded_ok 绝不固化——降级豁免须每次运行经用户确认，merge 时强制剥除。products 登记不入 profile——产物是每次运行的现场事实（同 degraded_ok），固化它会把上次会话的产物路径当成这次的。
-5. **入库**：新技能目录是否提交 git 主仓（profile 含项目路径事实，仓库公开时需用户知情——同 project-context 先例）。
+3. **路径分层**：本次 config 里哪些路径/字段是跨次稳定的、哪些每次都会变？
+   稳定的进 profile 的 config_defaults（或写成实验线引用）；会变的**不进 profile**，
+   留给下次运行现场问；
+4. **问答固化范围**：questions 块里哪些答案下次还成立？schema、结构、判据类的答案
+   通常成立；样例行若来自会轮换的日志，则不固化。
+   **materials 同为固化原料**：config.materials 里跨次稳定的条目（layout、schema）
+   搬进 profile.yaml 的 `materials:` 块，结构与 config 条目相同；具体路径通常每次
+   不同，不要固化。orient --profile 合并时只补缺、不覆盖，source 记 `profile`。
+   有两样东西**绝不固化**：
+   - `degraded_ok`：降级豁免必须每次运行都经用户确认，merge 时强制剥除；
+   - `products` 登记：产物是每次运行的现场事实，固化它等于把上次会话的产物路径
+     当成这次的；
+5. **入库**：新技能目录要不要提交 git 主仓？profile 含项目路径等事实，仓库公开时
+   需用户知情同意（与 project-context 同一先例）。
 
 ## 2. 生成薄技能 `<仓库根>/<new-skill>/`
 
@@ -102,11 +112,10 @@ python3 <ENGINE>/scripts/crystallize_gate.py --record crystallize_record.json --
    `crystallize_min_cases`，默认 3；training-sufficiency 为 5）。case 不能是同一场景微调，
    每个要注明覆盖的**适用域边界**（boundary 字段：如"文本日志源/单曲线退化形态/大规模多 series"）。
 2. **关2 held-out**：一个**从未参与开发调参**的留出场景，固化前跑一遍且 passed=true，
-   `input_hash` 不与任何开发 case 重合。它专门暴露"引擎是否过拟合那几次成功运行的环境"。
+   `input_hash` 不与任何开发 case 重合。
    （held-out 场景库排后续轮；本轮判据要求该记录存在且通过。）
-3. **关3 快照自洽**：每个待快照脚本经 `gen_gate.py` 在其 playbook 金标准上重跑 PASS——
-   防"固化了一份当时能跑、换环境就崩"的脚本。golden 未覆盖的阶段列 unchecked 警告，
-   须有 PROGRESS.md 验证记录人工确认。
+3. **关3 快照自洽**：每个待快照脚本经 `gen_gate.py` 在其 playbook 金标准上重跑 PASS。
+   golden 未覆盖的阶段列 unchecked 警告，须有 PROGRESS.md 验证记录人工确认。
 
 **crystallize_record.json schema**（主 agent 跨运行汇总；input_hash 取各次运行
 provenance.json 的 `data.combined`）：
@@ -149,4 +158,4 @@ provenance.json 的 `data.combined`）：
 - **profile 漂移**：某固化答案被现实推翻（日志格式变了）→ 改 profile 对应条目 + 技能
   CHANGELOG 记一行；连续两次都要现场改 → 考虑该字段本就不该固化，移回"每次问"。
 - **反向回流**：固化技能运行中暴露的**通用**问题（菜谱歧义、机制 bug）改回引擎/playbook
-  并跑 pytest——不要在薄技能里就地打补丁（那会让它悄悄长成厚技能）。
+  并跑 pytest——不要在薄技能里就地打补丁。

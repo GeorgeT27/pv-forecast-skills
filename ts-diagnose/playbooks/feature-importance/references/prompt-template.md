@@ -1,9 +1,8 @@
-# 标准调用 prompt 模板（用户口径约定，2026-07-16 定稿；2026-07-24 随方法并入
-# ts-diagnose 的 feature-importance playbook 后更新槽位映射与阶段号）
+# 标准调用 prompt 模板
 
-用户按下面模板发起本变体（ts-diagnose 引擎 → `feature-importance` playbook → `feature-quality`
-/`counterfactual` 变体，`material:feature_true` 解锁）。**方括号是槽位**：给了就直接映射进
-`blame_config.json`，缺了才 AskUserQuestion；不要重复问模板里已经写明的内容。
+（用户口径约定，2026-07-16 定稿；2026-07-24 随方法并入 ts-diagnose 的 feature-importance playbook 后更新槽位映射与阶段号。）
+
+用户按下面模板发起本变体。路由链条：ts-diagnose 引擎 → `feature-importance` playbook → `feature-quality`/`counterfactual` 变体，由 `material:feature_true` 解锁。**方括号是槽位**：用户填了的内容直接映射进 `blame_config.json`；缺了的才用 AskUserQuestion 问。不要重复问模板里已经写明的内容。
 
 ```text
 目标：光伏功率预测的预测特征质量归因（ts-diagnose 引擎 feature-importance playbook）——
@@ -36,13 +35,12 @@ Stage 6 反事实先 --dry-run 给我确认计划表和 payload 再打真实 API
 
 | 槽位 | 映射 |
 |------|------|
-| 三件套路径 | `config.test_label / predict / feature_true`（feature_true 硬规则不变：缺了 Stage 5 不解锁，必问） |
-| 模型列 | `find_bad_rows.py --models`（"全部" = auto） |
+| 三件套路径 | `config.test_label / predict / feature_true`（feature_true 硬规则不变：缺了 Stage 5 不解锁，必须问用户） |
+| 模型列 | `find_bad_rows.py --models`（填"全部" = auto） |
 | 口径 | `config.metrics`。**当前默认 `rmse_192` = 每行全 192 点 RMSE、全部行参与**（用户 2026-07-16 定：不再默认看 ultra_short/short，除非模板里点名） |
 | top_pct | `config.top_pct`（数据量小时跟用户确认，见 playbook.md §7） |
-| FastAPI 地址 | `config.api.endpoint`；"暂时没有" → Stage 6（counterfactual 变体）不解锁，Stage 5 点名后停，不追问反事实 |
-| 契约说明 | 用户给了**示例代码**就照示例填工作目录 `adapter.py`（build_payload/parse_response），不臆测字段名；给不出 → 复制 `<本 playbook 目录>/scripts/api_adapter_template.py` 让用户填。无论哪种，首跑必 `--dry-run` 用户确认 |
-| experiment 名 | project-context 实验线流程（Step 0.5）；留空 → 列 experiments/*.json 问一次 |
+| FastAPI 地址 | `config.api.endpoint`；填"暂时没有" → Stage 6（counterfactual 变体）不解锁，Stage 5 点名后停下，不追问反事实 |
+| 契约说明 | 用户给了**示例代码**，就照示例填工作目录 `adapter.py`（build_payload/parse_response），不臆测字段名；给不出 → 复制 `<本 playbook 目录>/scripts/api_adapter_template.py` 让用户填。无论哪种，首跑必 `--dry-run` 给用户确认 |
+| experiment 名 | 走 project-context 实验线流程（Step 0.5）；留空 → 列出 experiments/*.json 问用户一次 |
 
-模板尾部两条流程约定与 playbook.md §7-8 一致（Stage 5 pause_after、Stage 6 先 dry-run），
-不因模板出现而跳过任何门控（api.confirmed / neighbor_swap_confirmed 仍须逐项确认）。
+模板尾部两条流程约定与 playbook.md §7-8 一致：Stage 5 事实提取后停下（pause_after）、Stage 6 先 dry-run 确认再打真实 API。模板的出现不豁免任何门控——api.confirmed / neighbor_swap_confirmed 仍须逐项确认。

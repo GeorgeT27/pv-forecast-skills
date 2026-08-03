@@ -19,11 +19,12 @@ bridge_hooks: >
 验证步: 恒 3 倍误差对 → dm p<0.05 且秩分离;同款模型对 → 同组且 p=1(tests/test_chart_model_rank_significance.py)
 ---
 
-# model-rank-significance:平均秩 + 临界差 + DM 检验
+# model-rank-significance：平均秩 + 临界差 + DM 检验
 
 ## 适用问题
-多模型对比的最后一道统计门:平均秩差超过 Nemenyi 临界差才算"排名可信",
-成对 DM 检验(HAC 方差,容忍误差自相关)给逐对 p 值。
+多模型对比的最后一道统计门。平均秩差超过 Nemenyi 临界差（多模型两两
+比较的显著性阈值）才算「排名可信」。成对 DM 检验（Diebold-Mariano，
+检验两模型损失差是否显著）给逐对 p 值；其 HAC 方差估计能容忍误差自相关。
 
 ## CLI 与参数
 ```bash
@@ -33,16 +34,15 @@ python3 chartbook/scripts/chart_model_rank_significance.py \
 < 2 模型抛 ValueError(§5.5)。
 
 ## JSON schema
-见 frontmatter;损失矩阵 = 每 (unit_id,window_ts) 行的行 RMSE,只保留全模型
-齐的行;Nemenyi q_α 表内置 k=2..10。
+见 frontmatter；损失矩阵 = 每 (unit_id,window_ts) 行的行 RMSE，只保留全模型
+齐的行；Nemenyi q_α 表内置 k=2..10。
 
 ## 判读
-- best_group 只有一个成员且它对第二名 dm p<0.05 → 排名可信,可下"谁最优";
-- best_group 多成员 → 只能说"这几个不可区分地并列最优",禁止点单一冠军;
-- dm.degenerate 出现 → 损失差没有变化(克隆/恒差),对照数据核实而非下结论。
-只给候选假设;结论回 playbook 三道门。
+- best_group 只有一个成员且它对第二名 dm p<0.05 → 排名可信，可下「谁最优」；
+- best_group 多成员 → 只能说「这几个不可区分地并列最优」，禁止点单一冠军；
+- dm.degenerate 出现 → 损失差没有变化（克隆/恒差），对照数据核实而非下结论。
+只给候选假设；结论回 playbook 三道门。
 
 ## 验证步
-A 恒 1 倍、B 恒 3+0.5·(widx%2) 倍误差 → 每行 A 胜,avg_rank A=1、B=2,
-40 窗下秩差 1 > cd≈0.31,dm p<0.05;C 与 D 同款(恒同损失)→ 同组、p=1。
-```
+A 恒 1 倍、B 恒 3+0.5·(widx%2) 倍误差 → 每行 A 胜，avg_rank A=1、B=2，
+40 窗下秩差 1 > cd≈0.31，dm p<0.05；C 与 D 同款（恒同损失）→ 同组、p=1。

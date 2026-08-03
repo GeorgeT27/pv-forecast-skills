@@ -16,11 +16,11 @@ bridge_hooks: >
 验证步: 植入 y_pred=0.8·y_true → slope 与两尾比值精确回收 0.8(tests/test_chart_pp_calibration.py)
 ---
 
-# pp-calibration:分位数-分位数校准
+# pp-calibration：分位数-分位数校准
 
 ## 适用问题
-边缘分布层面的校准:不看逐点误差,看"预测值的分布"与"真值的分布"是否同形。
-系统性压缩/抬升在散点图上易被点云掩盖,分位数对上一目了然。
+边缘分布层面的校准：不看逐点误差，看「预测值的分布」与「真值的分布」是否同形。
+系统性压缩/抬升在散点图上易被点云掩盖，分位数对上一目了然。
 
 ## CLI 与参数
 ```bash
@@ -29,17 +29,17 @@ python3 chartbook/scripts/chart_pp_calibration.py \
 ```
 
 ## JSON schema
-见 frontmatter;分位点固定 q ∈ {0.01,0.05,0.1,...,0.9,0.95,0.99}(0.1 步进主体);
-ratio = y_pred_q / y_true_q,|y_true_q| < 1e-9 时该点 ratio 为 null。
+见 frontmatter；分位点固定 q ∈ {0.01,0.05,0.1,...,0.9,0.95,0.99}（0.1 步进主体）；
+ratio = y_pred_q / y_true_q，|y_true_q| < 1e-9 时该点 ratio 为 null。
 
 ## 判读
-- `slope < 0.9` 且 `high_tail_ratio < 0.9` → 候选:整体幅值压缩——去
-  true-vs-pred-scatter 看高值段是否同证;
-- 两尾比值一高一低 → 候选:分布被"往中间挤"(过平滑),转 worst-points 看
-  极值点占比;
-- slope≈1、尾比≈1 但误差仍大 → 分布对齐、逐点错位,转 time-shift-diagnosis。
-只给候选假设;结论回 playbook 三道门。
+- `slope < 0.9` 且 `high_tail_ratio < 0.9` → 候选：整体幅值压缩——去
+  true-vs-pred-scatter 看高值段是否同证；
+- 两尾比值一高一低 → 候选：分布被「往中间挤」（过平滑），转 worst-points 看
+  极值点占比；
+- slope≈1、尾比≈1 但误差仍大 → 分布对齐、逐点错位，转 time-shift-diagnosis。
+只给候选假设；结论回 playbook 三道门。
 
 ## 验证步
-golden 植入 y_pred = 0.8·y_true(y 随 step 变化保证分位数非退化)→
+golden 植入 y_pred = 0.8·y_true（y 随 step 变化保证分位数非退化）→
 slope、high_tail_ratio、low_tail_ratio 全部精确回收 0.8。

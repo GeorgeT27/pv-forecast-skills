@@ -65,11 +65,14 @@ bridge_hooks: >                    # 必填，形状描述符 → 架构假设�
    脚本内固定种子置换例外——种子显式 CLI 参数并落 JSON，期望由同种子实跑钉住。
 4. 每脚本 CLI 公共参数：`--pred`（规范长表路径）、`--out-dir`；其余 recipe 特有。
 5. 多模型才有意义的图（对比类）在 <2 模型时抛 ValueError 并说明，不静默出空图。
-6. **领域中立**:recipe 的 id/frontmatter 字段/图内标签/判读不得出现领域名词
-   (天气/站点/光伏/医学等;id 英文黑名单 weather/station/solar/irradiance 由
-   test_recipes_conform 闸)。领域语义只允许运行时经 intake 背景(data_profile)
-   注入呈现层——如给聚类簇起领域名。周期性假设图(如 intraday-profile)须在
-   recipe 内标注"周期性数据专用",orient 按 data_profile 判断适用。
+6. **领域中立**：recipe 是通用图谱，不绑定任何业务领域。具体要求：
+   - id、frontmatter 字段、图内标签、判读文字里都不得出现领域名词
+     （天气/站点/光伏/医学等）；id 的英文黑名单（weather/station/solar/irradiance）
+     由 test_recipes_conform 机器把关；
+   - 领域语义只允许在运行时注入呈现层——依据是 intake 收的背景材料
+     （data_profile），例如给聚类出的簇起领域名字；
+   - 依赖周期性假设的图（如 intraday-profile）必须在 recipe 里标注
+     "周期性数据专用"，orient 按 data_profile 判断适不适用。
 
 ## 6. 模型访问契约(predict adapter;attribution 类图专用)
 
@@ -98,8 +101,13 @@ def get_model():
     feature_names)——model 输入 (N,D) tensor、输出 (N,B);GradientExplainer 用。"""
 ```
 
-用户给 FastAPI 就在 predict 里打 API,给本地模型就本地推理——预写脚本无感。
-能力不满足的图由选择门如实标注不可画。归因脚本经 attribution_common 的
-BudgetedAdapter 调用:预算上限(--max-calls,超限截断记 coverage)+ 请求哈希
-缓存(jsonl,重跑不重打)。背景集定义与所用 explainer/种子必须落盘进归因
-JSON(background_meta)——换背景集=换归因基线。
+adapter 对模型形态无感：FastAPI 服务就在 predict() 里打 API，本地模型就本地推理。
+adapter 声明的能力不满足某张图的需要时，选择门如实标注"不可画"，不出错也不硬画。
+
+归因脚本不直接调 adapter，而是经 attribution_common 的 BudgetedAdapter 包一层：
+
+- **预算上限**（`--max-calls`）：模型调用超限就截断，截断了多少记进 coverage；
+- **请求哈希缓存**（jsonl 文件）：同样的请求不重打，重跑不浪费预算。
+
+背景集的定义、所用 explainer、随机种子必须落盘进归因 JSON 的 `background_meta`
+（换背景集 = 换归因基线，必须可复现）。

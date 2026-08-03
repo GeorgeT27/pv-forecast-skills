@@ -98,3 +98,21 @@
 - orient.py：playbook 声明 produces 时打印 🤝 生产者提醒（提问在主 agent、机械段按 §5
   派发、回填 config.products）——机械输出钉在决策时刻，不指望模型记得 prose。
 - 验证：`python3 -m pytest ts-diagnose/scripts/tests -q` 164 全绿。
+
+## 2026-07-30 全库文档"说人话"改写（结构不动、规则不丢）
+
+- 触发反馈原文：用户："description 太冗余……我看不懂它怎么工作的。用容易理解的句子，
+  但要 clear 和 critical。说白了就是说人话。不要改结构。"
+- 范围：SKILL.md description 压缩（触发词与 11 个 id 全保留）；_playbook-spec.md 全文
+  重写（frontmatter 字段逐组拆讲、指纹/产物/难例规则拆成短句）；engine-core.md 全文
+  重写；mechanisms / intake / crystallize / _recipe-spec 最密段落拆写；11 个 playbook
+  正文及其 references、chartbook recipes 正文按同一风格契约改写（frontmatter 机器读
+  部分零改动）。
+- 纪律：只重写句子，不动结构与规则；命令/路径/阈值/保留字原样。
+- 附带：仓库 .gitignore 增补运行时产物（gate_reports/、.pytest_cache/、
+  diagnose_state/config、provenance、crystallize_record）——运行产物不属于技能本体。
+- 二轮收紧（同日，触发反馈："I don't want any explanation in this skill folder…
+  waste token"）：删除首轮加入的解释性内容——名词速查/术语定义、"教训"故事（只留
+  提炼出的规则）、设计动机旁白、超一行的文件用途介绍；句子仍是自然语言，不回退缩略。
+  全库字数回落到 HEAD ±2%；frontmatter 与跨 playbook id 引用逐文件核对无变化。
+- 验证：`python3 -m pytest ts-diagnose -q` 全绿（见本次会话）。

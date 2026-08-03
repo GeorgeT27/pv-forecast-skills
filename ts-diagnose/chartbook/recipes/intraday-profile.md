@@ -19,8 +19,8 @@ bridge_hooks: >
 # intraday-profile：日内时段误差剖面
 
 ## 适用问题
-> ⚠️ 周期性数据专用:本图假设序列存在日周期;无周期数据(如部分医学时序)不适用,
-> orient/判读按 intake 的 data_profile 判断。
+> ⚠️ 周期性数据专用：本图假设序列存在日周期。无日周期的数据不适用；
+> 适不适用由 orient/判读按 intake 的 data_profile 判断。
 
 时段维度的误差定位；与 error-breakdown 的 hour 边际互为印证（本图多出 bias 方向
 与不对称度）。
