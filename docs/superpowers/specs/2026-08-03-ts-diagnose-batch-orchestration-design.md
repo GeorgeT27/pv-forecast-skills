@@ -93,15 +93,24 @@ FINDINGS/CONCLUSION；`batch_plan.json` 只由 batch.py 重扫渲染。
 
 - **A — 生产者只跑一次**：`batch.py` 从选中 playbook 的 `upstream` 算出生产者并集
   （单数据集场景即 `setup`），只跑一次进 `_shared/setup/`，把它登记进每条 playbook 的
-  `config.products`。
+  `config.products`——**同时**登记进 batch 级 `batch_config.json` 的 `products`（供
+  `derive_phase` 判 phase A）**和**每条 playbook 子目录 `<pb>/diagnose_config.json` 的
+  `products`（供该 playbook 的 compute subagent 跑 orient 时读到——`orient` 只读本地
+  `diagnose_config.json`，不读 `batch_config.json`；机制同 `_playbook-spec.md` 内联生产
+  的"拷进子 config"规矩）。多个生产者时按 engine-core 分层原则外包：满足三条件的
+  （data-setup / metric-eval）按 `Brief-PRODUCER` 整体外包；model-audit / fact-scan 保留
+  主 agent 裁决，按各自 §5 拆分外包，**不整体外包**。前置：批量开工先跑
+  `batch.py --select <id1,id2,...> --workdir <批量工作目录>` 初始化 `batch_config.json`。
 - **B — 一次合并提问**：`batch.py` 生成问题并集——`setup` 本就"拥有" schema/freq/对齐键
   （随生产者问一次）；恒问五类（口径/成功判据）去重成一问；再加每条 playbook 自己
   frontmatter 里声明的问题。`batch.py` 标出两条 playbook 想要同一 qid 但语义分歧的冲突。
   主 agent 问一次，把答案写进每个子 `diagnose_config.json`。
-- **C — 并行计算 fan-out**：每条 playbook 一个 subagent（远低于 20 并发上限；每个还可
-  再嵌自己 §5 的计算子-subagent，深度 ≤3）。brief 用 `Brief-BATCH-COMPUTE`（见 §7）。
-  失败隔离天然成立：某 subagent 挂掉只在 `batch_plan.json` 把该 playbook 标 `failed`，
-  其余继续。
+- **C — 并行计算 fan-out**：每条 playbook 一个 subagent（远低于 20 并发上限）。brief 用
+  `Brief-BATCH-COMPUTE`（见 §7）。**不嵌套**（引擎硬规则 `subagent 不能再派 subagent`）：
+  某条 playbook 的计算重到单窗口扛不住时，由**主 agent**把它的 §5 子任务作为**额外的
+  扁平 Phase-C 兄弟 subagent**派发（主 agent 是唯一派发者，树保持扁平），不让 compute
+  subagent 自己再派。失败隔离天然成立：某 subagent 挂掉只在 `batch_plan.json` 把该
+  playbook 标 `failed`，其余继续。
 - **D — 一次合并停顿**：主 agent 收齐所有 `phenomena_<pb>.json`，一并呈现，用户点名
   要深挖哪些（可跨 playbook 选）。这是 N 个分散 `pause_after` 停顿的唯一替代。
 - **E — 结论**：对每个选中的深挖目标，主 agent 照今天的流程跑该 playbook 的结论
@@ -117,15 +126,15 @@ FINDINGS/CONCLUSION；`batch_plan.json` 只由 batch.py 重扫渲染。
 |---|---|---|
 | `workdir` | `<batch_workdir>/<playbook>/`（绝对路径） | subagent 的工作目录，已含预填好的 `diagnose_config.json` |
 | `playbook` | playbook id | 只跑这一条 |
-| `shared_setup` | `<batch_workdir>/_shared/setup/`（绝对路径） | 已就绪的共享产物，已登记进 `config.products` |
-| `entry` | `python3 <ENGINE>/scripts/orient.py`（在 workdir 内） | subagent 自己反复调 orient 被逐阶带走 |
+| `shared_products` | `<batch_workdir>/_shared/<产物id>/`（各绝对路径） | 已就绪的共享产物（setup 及本 playbook upstream 的其他产物如 model_profile / chart_sweep），**已登记进本 playbook 子 `diagnose_config.json` 的 `products`** |
+| `entry` | `python3 <ENGINE>/scripts/orient.py`（在 workdir 内） | subagent 自己反复调 orient 被逐阶带走；orient 从本地 `diagnose_config.json` 读 products |
 | `run_range` | `stage 0 → 事实提取 stage（含）` | **停止点钉死**：跑到 `pause_after` 那个 stage 产出现象清单为止 |
 | `stop_after` | 事实提取 stage 完成、`phenomena_<pb>.json` 写盘 | **不得进入结论 stage**（结论 `subagent_ok:false`，且属主 agent） |
 | `out` | `phenomena_<pb>.json`（现象清单：观察+数字+来源，禁机制语言） | `--out` 命名钉死，防并发写冲突 |
 | `return` | ≤30 行数字摘要 + `phenomena_<pb>.json` 路径 | 回主 agent 的唯一内容；不贴 CSV/parquet/大日志 |
 | `gates` | golden 覆盖的 stage 必过 `gen_gate.py`；整形脚本必过对账两关 | 与单跑同规矩，不放松 |
-| `nesting` | 重 stage（按模型分片、批量 API…）可嵌 §5 子-subagent，深度 ≤3 | 单窗口扛不住时的逃生门 |
-| `forbid` | 改任何共享状态文件（`batch_*`、别的 playbook 的产物、FINDINGS/CONCLUSION）；提问用户；进结论 stage；跨越 `stop_after` | **禁止项钉死** |
+| `no_nesting` | **不得再派 subagent**（引擎硬规则）。重 stage 扛不住时返回，由主 agent 拆成扁平 Phase-C 兄弟重派 | 树保持扁平，主 agent 是唯一派发者 |
+| `forbid` | 再派 subagent；改任何共享状态文件（`batch_*`、别的 playbook 的产物、FINDINGS/CONCLUSION）；提问用户；进结论 stage；跨越 `stop_after` | **禁止项钉死** |
 | `on_fail` | 出错即返回错误摘要，不重试破坏性操作 | 主 agent 据此标 `failed` 并向用户报告，供单条重派 |
 
 ## 8. 上下文预算（补充项 b）
@@ -138,8 +147,9 @@ FINDINGS/CONCLUSION；`batch_plan.json` 只由 batch.py 重扫渲染。
   N 条 playbook 并行 = N 份独立 256k 分担重活。
 - **不靠记忆**：subagent 每步先跑 orient，从磁盘重算"下一步"，上下文即便变长/被压缩，
   `落盘 → orient → 下一步` 循环可随时重建状态。主 agent 同理，断点续跑。
-- **重 stage 再嵌 §5**：单条 playbook 若仍逼近 256k，其重 stage 下钻子-subagent
-  （各自新 256k），把明细挡在下层，只上浮摘要。
+- **重 stage 拆成扁平兄弟**：单条 playbook 若仍逼近 256k，compute subagent **不自己嵌套**
+  （引擎硬规则）；返回后由主 agent 把其 §5 子任务作为额外的扁平 Phase-C 兄弟 subagent
+  重派（各自新 256k），把明细挡在旁路，只上浮摘要。主 agent 是唯一派发者。
 - **golden 不进上下文**：golden 是磁盘上的验证闸（`gen_gate.py` 调用），不是 subagent
   要"记住"的任务；运行期只作为一条命令的输入存在。
 
