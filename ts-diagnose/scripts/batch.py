@@ -52,3 +52,25 @@ def question_union(playbook_ids):
     union = [seen[k] for k in sorted(seen)]
     conflicts = [{"qid": k, "owners": list(seen[k]["owners"])} for k in sorted(conflicting)]
     return union, conflicts
+
+
+def dispatch_list(workdir, playbook_ids):
+    """每条 playbook 的派发条目 + 从磁盘派生的 status（磁盘产物永远覆盖 batch_state 标注）。"""
+    state = ec.read_json(os.path.join(workdir, BATCH_STATE)) or {}
+    out = []
+    for pid in playbook_ids:
+        pbwd = os.path.join(workdir, pid)
+        concl = os.path.join(pbwd, "CONCLUSION.md")
+        gate = os.path.join(pbwd, "gate_reports", "conclusion_gate.json")
+        phen = os.path.join(pbwd, phenomena_name(pid))
+        if os.path.exists(concl) and os.path.exists(gate):
+            status = "done"
+        elif os.path.exists(phen):
+            status = "compute-done"
+        else:
+            status = state.get(pid, "pending")
+            if status not in ("running", "failed"):
+                status = "pending"
+        out.append({"playbook": pid, "workdir": f"./{pid}",
+                    "out": phenomena_name(pid), "status": status})
+    return out

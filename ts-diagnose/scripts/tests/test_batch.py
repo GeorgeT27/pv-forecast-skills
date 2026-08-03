@@ -157,3 +157,41 @@ questions:
 
 def test_producer_playbooks_maps_id_to_producer(pbdir):
     assert batch.producer_playbooks(["setup"]) == ["setup-prod"]
+
+def _touch(path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("x")
+
+def test_dispatch_status_pending_by_default(pbdir, tmp_path):
+    wd = str(tmp_path)
+    disp = {d["playbook"]: d for d in batch.dispatch_list(wd, ["pb-x", "pb-y"])}
+    assert disp["pb-x"]["status"] == "pending"
+    assert disp["pb-x"]["out"] == "phenomena_pb-x.json"
+    assert disp["pb-x"]["workdir"] == "./pb-x"
+
+def test_dispatch_status_compute_done_when_phenomena_exists(pbdir, tmp_path):
+    wd = str(tmp_path)
+    _touch(os.path.join(wd, "pb-x", "phenomena_pb-x.json"))
+    disp = {d["playbook"]: d for d in batch.dispatch_list(wd, ["pb-x", "pb-y"])}
+    assert disp["pb-x"]["status"] == "compute-done"
+    assert disp["pb-y"]["status"] == "pending"
+
+def test_dispatch_status_done_when_conclusion_and_gate_exist(pbdir, tmp_path):
+    wd = str(tmp_path)
+    _touch(os.path.join(wd, "pb-x", "phenomena_pb-x.json"))
+    _touch(os.path.join(wd, "pb-x", "CONCLUSION.md"))
+    _touch(os.path.join(wd, "pb-x", "gate_reports", "conclusion_gate.json"))
+    disp = {d["playbook"]: d for d in batch.dispatch_list(wd, ["pb-x"])}
+    assert disp["pb-x"]["status"] == "done"
+
+def test_dispatch_state_annotation_overridden_by_disk(pbdir, tmp_path):
+    wd = str(tmp_path)
+    ec.dump_json({"pb-x": "failed"}, os.path.join(wd, batch.BATCH_STATE))
+    # 无磁盘产物 → 采用标注
+    d1 = {d["playbook"]: d for d in batch.dispatch_list(wd, ["pb-x"])}
+    assert d1["pb-x"]["status"] == "failed"
+    # 磁盘出现 phenomena → 磁盘覆盖标注
+    _touch(os.path.join(wd, "pb-x", "phenomena_pb-x.json"))
+    d2 = {d["playbook"]: d for d in batch.dispatch_list(wd, ["pb-x"])}
+    assert d2["pb-x"]["status"] == "compute-done"
