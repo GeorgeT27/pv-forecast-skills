@@ -44,6 +44,16 @@ def test_card_conforms(card):
     stages = pb_fm["stages"]
     by_id = {str(s["id"]): s for s in stages}
 
+    # regression guard (commit 4eca085): evidence_lines ids must never be listed as up-front questions.
+    # Cards keep evidence lines on a SEPARATE bullet, so only lines containing "已答问题" are checked.
+    ev_ids = [e["id"] for e in (pb_fm.get("evidence_lines") or [])]
+    for line in body.splitlines():
+        if "已答问题" in line:
+            for ev in ev_ids:
+                assert not re.search(rf'(?<![\w-]){re.escape(ev)}(?![\w-])', line), (
+                    f"{pid}: evidence_line id '{ev}' appears on a 已答问题 line — "
+                    f"evidence lines must not be presented as up-front questions")
+
     if mode == "producer":
         assert fm.get("produces") in PRODUCTS, "producer 必须声明已知产物"
         assert not any(s.get("pause_after") for s in stages), "producer 的 playbook 不应有 pause_after"
