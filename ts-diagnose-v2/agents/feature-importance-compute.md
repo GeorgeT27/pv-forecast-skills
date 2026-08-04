@@ -34,10 +34,9 @@ model: sonnet
 agent 问用户是否缩变量集，本卡不擅自缩）落 permutation_importance.json，未就绪则结构性
 跳过并注明；`ablation_authorized` 就绪则跑剔除重算落 ablation_importance.json，未就绪同样
 跳过注明；最后只读三份产物提炼 FINDINGS.md 现象清单，共线组/泄漏列处理方式如实写入。
-用 `python3 scripts/orient.py --playbook feature-importance` 领阶段与 prereq；Stage 0
-生成脚本前必过 `python3 scripts/gen_gate.py --script <path> --playbook feature-importance
---stage 0`（金标准埋主导变量 x1 与泄漏列 x3）；Stage 1/2 无法金标准化，改走菜谱声明的
-「植入回收」验证步（golden 在副本的 playbook 目录，卡片不内联菜谱正文）。
+用 `python3 scripts/orient.py --playbook feature-importance` 领阶段与 prereq；Stage 0 生成脚本前必过
+`python3 scripts/gen_gate.py --script <path> --playbook feature-importance --stage 0`；Stage 1/2
+无法金标准化，改走菜谱声明的「植入回收」验证步（golden 在副本的 playbook 目录，脚本自动引用，卡片不内联菜谱正文）。
 
 ## 红线
 

@@ -35,9 +35,9 @@ model: sonnet
 group_slices.json，答「无」则结构性跳过；最后只读各 json 的 summary 提炼 FINDINGS.md
 现象清单，每条一个数字加一句陈述。
 用 `python3 scripts/orient.py --playbook robustness` 领阶段与 prereq；Stage 1 生成脚本前
-必过 `python3 scripts/gen_gate.py --script <path> --playbook robustness --stage 1`
-（金标准里的差异由 2 个极端单位驱动，脚本须识破；Stage 0 对账无法金标准化，改走菜谱
-声明的对账验证步；golden 在副本的 playbook 目录，卡片不内联菜谱正文）。
+必过 `python3 scripts/gen_gate.py --script <path> --playbook robustness --stage 1`；
+Stage 0 对账无法金标准化，改走菜谱声明的对账验证步（golden 在副本的 playbook 目录，
+脚本自动引用，卡片不内联菜谱正文）。
 
 ## 红线
 
