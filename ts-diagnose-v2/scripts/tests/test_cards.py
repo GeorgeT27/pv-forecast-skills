@@ -47,6 +47,19 @@ def test_card_conforms(card):
     if mode == "producer":
         assert fm.get("produces") in PRODUCTS, "producer 必须声明已知产物"
         assert not any(s.get("pause_after") for s in stages), "producer 的 playbook 不应有 pause_after"
+
+        lo, hi = _stage_range(fm["compute_stages"])
+        prod = pb_fm.get("produces") or {}
+        targets = [prod.get("manifest")] + list(prod.get("marker_files") or [])
+        targets = [t for t in targets if t]
+        producing = sorted({int(s["id"]) for s in stages
+                            if any(t in ((s.get("done_when") or {}).get("artifacts") or [])
+                                   for t in targets)})
+        if producing:
+            assert hi == max(producing), (
+                f"{pid}: producer compute_stages ends at stage {hi}, but the product "
+                f"manifest/marker is finalized at stage {max(producing)}; the card must stop "
+                f"at the product stage (later main-agent-only stages are not the card's)")
     elif mode == "compute":
         lo, hi = _stage_range(fm["compute_stages"])
         for sid in range(lo, hi + 1):

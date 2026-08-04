@@ -3,7 +3,7 @@ name: model-audit-compute
 description: 把模型代码目录固化为代码锚定的模型参考档案，产 model_profile 供机制归因消费
 mode: producer
 playbook: model-audit
-compute_stages: "0-4"
+compute_stages: "0-3"
 produces: model_profile
 tools: [Bash, Read, Write]
 model: sonnet
@@ -22,9 +22,9 @@ model_profile 产物」的计算，不问用户、不下结论。
 
 ## 步骤（去菜谱）
 
-按 `playbooks/model-audit/playbook.md` 全程跑到产物落盘：定位模型、（可选）数据画像、
-逐模型三层抽取（工程/数学/桥接）、reconcile + 落盘 + 回执，最后过 Stage 4 自检落
-`AUDIT_SELFCHECK.md`。
+按 `playbooks/model-audit/playbook.md` 跑 Stage 0-3：定位模型、（可选）数据画像、
+逐模型三层抽取（工程/数学/桥接）、reconcile + 落盘 + 回执，落 `MODELMAP_RECEIPT.json`
+即止。Stage 4 自检不在本卡片范围内（见下方「停顿/交回」）。
 用 `python3 scripts/orient.py --playbook model-audit` 领阶段与 prereq；
 生成脚本前必过 `python3 scripts/gen_gate.py --script <path> --playbook model-audit --stage <n>`
 （golden 在副本的 playbook 目录，脚本自动引用，卡片不内联菜谱正文）。
@@ -34,10 +34,12 @@ model_profile 产物」的计算，不问用户、不下结论。
 - 不问用户：缺答案不猜，走 NEED_INFO（production-version 未答时不许自行裁决）。
 - 不下结论：只产代码锚定的档案，不写归因结论；证据强度用 ✅/📊/📐/⚠️ 标签，无支撑
   不许标 ✅。
-- 单写者：只写 `.modelmap/`、pointer、`MODELMAP_RECEIPT.json`、`AUDIT_SELFCHECK.md`
-  等自己的产物，不碰 `batch_state.json`/`*config.json` 等共享状态（那些由主 agent 写）。
+- 单写者：只写 `.modelmap/`、pointer、`MODELMAP_RECEIPT.json` 等自己的产物，不碰
+  `batch_state.json`/`*config.json` 等共享状态（那些由主 agent 写），也不碰
+  `AUDIT_SELFCHECK.md`（Stage 4 产物，归主 agent）。
 - 禁再派 subagent：重活拆分是主 agent 的事，本卡片不得自行派发下一层 subagent。
-- Stage 4 自检必须亲自做（playbook 标 `subagent_ok: false`），不得外包。
+- Stage 4 自检不属于本卡片：playbook 标 `subagent_ok: false`，只能主 agent 亲自做，
+  本卡片跑到 Stage 3 即止，不得越界代跑。
 
 ## 输出契约
 
@@ -62,4 +64,6 @@ model_profile 产物」的计算，不问用户、不下结论。
 
 ## 停顿/交回
 
-产物落盘即返回 `COMPUTE_DONE`，`produces_dir` = 产物工作目录。
+Stage 3 落盘（`MODELMAP_RECEIPT.json`）即返回 `COMPUTE_DONE`，`produces_dir` = 产物
+工作目录。Stage 4 自检（`AUDIT_SELFCHECK.md`）是**主 agent** 的事，不是本卡片的事：
+防止「自己抽取、自己自检」，独立性要求自检者不能是抽取者本身，本卡片不得代跑。
