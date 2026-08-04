@@ -54,6 +54,16 @@ def test_card_conforms(card):
         assert any(by_id[str(s)].get("pause_after") for s in range(lo, hi + 1)), "compute 区间须含 pause_after"
         if fm.get("produces"):
             assert fm["produces"] in PRODUCTS
+            prod = pb_fm.get("produces") or {}
+            targets = [prod.get("manifest")] + list(prod.get("marker_files") or [])
+            targets = [t for t in targets if t]
+            producing = sorted({int(s["id"]) for s in stages
+                                if any(t in ((s.get("done_when") or {}).get("artifacts") or [])
+                                       for t in targets)})
+            if producing:
+                assert all(lo <= sid <= hi for sid in producing), (
+                    f"{pid}: produces manifest/marker written at stage(s) {producing}, "
+                    f"outside compute range {lo}-{hi}")
     else:  # compute-fine
         assert not any(s.get("subagent_ok") for s in stages), "compute-fine 的 playbook 不应有 subagent_ok:true 阶段"
         assert str(fm.get("compute_stages")) == "scripts"

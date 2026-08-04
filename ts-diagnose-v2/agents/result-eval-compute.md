@@ -4,7 +4,6 @@ description: 评估一次预测结果（默认 rmse_192），算指标+画标准
 mode: compute
 playbook: result-eval
 compute_stages: "0-3"
-produces: eval_report
 tools: [Bash, Read, Write]
 model: sonnet
 ---
@@ -63,5 +62,7 @@ model: sonnet
 ## 停顿/交回
 
 跑到区间终点（pause，Stage 3）即返回 `COMPUTE_DONE` + `phenomena_file` + `artifacts`
-（含 eval_report 产物：指标表、图谱、FINDINGS.md 现象清单）；不再往后跑 Stage 4——
-深归因、结论三道门、CONCLUSION.md 收尾由主 agent 在用户点名待深挖现象后接手。
+（指标表、图谱、FINDINGS.md 现象清单——只是中间产出，不是 eval_report 产物）；不再往后跑
+Stage 4——`eval_report` 产物的 manifest（`gate_reports/conclusion_gate.json`）与
+marker（`CONCLUSION.md`）只在 Stage 4 落盘，本卡不产出、不声明 `produces`；深归因、结论
+三道门、CONCLUSION.md 收尾由主 agent 在用户点名待深挖现象后接手，产物由主 agent 那一步产出。
