@@ -93,7 +93,10 @@ model: sonnet                         # 计算工默认 sonnet；重推理阶段
 
 ### 3.1 producer 卡片的正文差异
 
-- 「步骤」= 跑 playbook 全程到 `produces` 声明的产物落盘 + 产出清单，不停在中途。
+- 「步骤」= 跑 playbook 全程到 `produces` 声明的产物落盘 + 产出清单，不停在中途；
+  替换后的「步骤」正文**仍必须保留字面指针** `playbooks/<id>/playbook.md`（例如写成
+  「按 `playbooks/<id>/playbook.md` 全程跑到产物落盘」），不得只留语义描述、丢了这条指针——
+  守卫按字面子串匹配，缺了这行原样字符串就会判卡片不合规。
 - 「输入」里「已答问题」= 该 playbook §7 表里列的上游问题（主 agent 派发前已问过）。
 - 无「停顿/交回」节的等待语义——改写为：产物落盘即返回
   `status: COMPUTE_DONE, produces_dir: <产物工作目录>`（六节标题本身仍保留「停顿」二字以过守卫）。
@@ -103,6 +106,9 @@ model: sonnet                         # 计算工默认 sonnet；重推理阶段
 - 「步骤」= 只按主 agent 指派运行**一个**具名重活脚本（例如 `find_bad_rows.py` / `feature_blame.py` /
   影响力回归 / `tracin` / `counterfactual_api.py`），逐次落各自产物文件，回数字摘要；
   阶段进度、Mode 选择、结论均由主 agent 驱动，卡片本身不整段交接。
+  替换后的「步骤」正文**仍必须保留字面指针** `playbooks/<id>/playbook.md`（例如写成
+  「步骤总纲仍指向 `playbooks/<id>/playbook.md`，具名脚本定义在其对应 Stage」）——
+  具名脚本本身没有独立菜谱文件，这条指针是卡片与菜谱之间唯一的字面连接，不得省略。
 - 「红线」额外加一条：一次只跑被指派的一个脚本/一层，不自行连跑下一个。
 
 ## 4. 命名律与薄卡预算
