@@ -1,0 +1,72 @@
+{
+  "playbook": "feature-importance",
+  "note": "金标准输入由 make_golden.py 确定性生成（零随机）：error 由 x1 主导、x2 无关、x3 为泄漏列（由目标派生）。期望值来自 reference/correlation_screen.py 实跑并留容差。Stage 1/2 需要真实模型入口/重训授权，无法预置金标准——Stage 1 的植入回收验证步（玩具模型 x1 top-1）在菜谱里。改期望前先改 make_golden.py 并重跑 pytest。",
+  "planted": {
+    "dominant_feature": "x1",
+    "irrelevant_feature": "x2",
+    "leakage_feature": "x3"
+  },
+  "stages": {
+    "0": {
+      "desc": "相关筛查：泄漏列被隔离，排除泄漏后 top-1 必须是 x1，x2 接近 0",
+      "inputs": [
+        "features.csv"
+      ],
+      "args": [
+        "--data",
+        "features.csv",
+        "--target",
+        "error",
+        "--leakage",
+        "x3",
+        "--out",
+        "correlation_screen.json"
+      ],
+      "expect": [
+        {
+          "file": "correlation_screen.json",
+          "path": "n_rows",
+          "op": "eq",
+          "value": 100
+        },
+        {
+          "file": "correlation_screen.json",
+          "path": "dropped_rows",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "file": "correlation_screen.json",
+          "path": "leakage_flagged",
+          "op": "contains",
+          "value": "x3"
+        },
+        {
+          "file": "correlation_screen.json",
+          "path": "ranking_nonleak",
+          "op": "first_is",
+          "value": "x1"
+        },
+        {
+          "file": "correlation_screen.json",
+          "path": "features.x1.spearman_vs_error",
+          "op": "between",
+          "value": [
+            0.8,
+            1.0
+          ]
+        },
+        {
+          "file": "correlation_screen.json",
+          "path": "features.x2.spearman_vs_error",
+          "op": "between",
+          "value": [
+            -0.3,
+            0.3
+          ]
+        }
+      ],
+      "reference": "reference/correlation_screen.py"
+    }
+  }
+}
