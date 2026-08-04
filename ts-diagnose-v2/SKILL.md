@@ -1,0 +1,60 @@
+---
+name: ts-diagnose-v2
+description: 卡片派发版时序模型诊断引擎：单入口 + 11 个可插拔 playbook，与 v1 同菜谱同闸门，只改派发层——按预定义卡片派发计算子任务，不再实时生成 Brief。按用户目标触发：训练是否充分 / batch 不足 / chunk·fold 构成 / loss 震荡收敛慢（training-sufficiency）；结论或模型在扰动与分组切片下稳不稳（robustness）；哪个输入变量对误差影响最大 / feature_true 对照归因 / 反事实验证（feature-importance）；为什么模型 A 比 B 好、模型对比归因（model-comparison）；上线后是否退化 / 误差何时开始变大 / 漂移诊断（deployment-drift）；只画标准分析图看现象、不要结论（fact-scan）；分析模型代码 / 生成模型档案（model-audit）；评估预测结果 / 算指标 / 月度或时段归因（result-eval）；把原始预测与真值规范成长表和对齐报告（data-setup，通常由引擎自动先跑）；N 个训练条目里哪个拖累留出目标 / 负迁移归因（subset-influence）；只算 RMSE / 只要指标表、不用分析（metric-eval）。已固化的代理技能（crystallize 产出）若覆盖当前场景则优先级最高。
+---
+
+# ts-diagnose-v2：Layer 0 路由层（卡片派发版）
+
+本文件只做三件事：**识别诊断目标 → 匹配 playbook → 派发**。同 v1 菜谱与闸门，只换派发机制；命中之前不要读引擎的其他文件。
+
+## 路由优先级（两级）
+
+1. **已固化代理技能**最高——命中其场景直接短路（`orient.py --profile` 入口，已验证脚本 + 免重复提问）；
+2. **本引擎**——其余诊断与评估目标一律由下方 11 个 playbook 覆盖。
+
+## 路由表（识别目标 → 匹配 playbook）
+
+| 用户的目标像这样 | playbook |
+|---|---|
+| 训练是否充分 / batch 或数据量不足 / chunk·fold 构成与分配 / loss 震荡收敛慢 | `training-sufficiency` |
+| 结论或模型在扰动、分组切片、子期下稳不稳 | `robustness` |
+| 哪个输入变量对误差/目标指标影响最大 / 有 feature_true 对照的预测特征质量归因与反事实验证 | `feature-importance` |
+| 为什么模型 A 比 B 好/差、多模型对比归因 | `model-comparison` |
+| 上线/部署后是不是退化了、误差从什么时候开始变大、漂移诊断 | `deployment-drift` |
+| 只想体检/把标准分析图画一遍/看现象不要结论 | `fact-scan` |
+| 给定模型代码目录：分析模型/生成模型档案/核验描述与代码一致 | `model-audit` |
+| 评估一次预测结果 / 算指标（默认 rmse_192）/ 月度或时段归因 / 深度分析 | `result-eval` |
+| N 个训练条目里哪些拖累留出目标（负迁移）/ chunk loss 震荡解释 | `subset-influence` |
+| 只想先把原始数据规范成长表/对齐报告（其他目标的必需前置，一般自动先跑） | `data-setup` |
+| 只算指标 / 算个 RMSE / 给我指标表，不用分析 | `metric-eval` |
+
+都不像 → 先跑下方 orient 看菜单再与用户确认；菜单里也没有 → 按 `playbooks/_playbook-spec.md` 写新 playbook（先征得用户同意）。
+
+用户想在**同一份数据上一次跑多条 playbook**（多角度诊断）→ 批量模式：读 `references/engine-core.md` 的「批量编排」节。
+
+## 卡片索引（playbook → 预定义卡片 · mode）
+
+- `training-sufficiency` → `agents/training-sufficiency-compute.md`（compute）
+- `robustness` → `agents/robustness-compute.md`（compute）
+- `feature-importance` → `agents/feature-importance-compute.md`（compute）
+- `model-comparison` → `agents/model-comparison-compute.md`（compute）
+- `deployment-drift` → `agents/deployment-drift-compute.md`（compute）
+- `fact-scan` → `agents/fact-scan-compute.md`（compute）
+- `model-audit` → `agents/model-audit-compute.md`（producer）
+- `result-eval` → `agents/result-eval-compute.md`（compute）
+- `subset-influence` → `agents/subset-influence-compute.md`（compute-fine）
+- `data-setup` → `agents/data-setup-compute.md`（producer）
+- `metric-eval` → `agents/metric-eval-compute.md`（producer）
+
+## 转发（命中 playbook 后，按顺序）
+
+1. 读 `references/engine-core.md`（执行纪律：提问/推进/结论/常见错误）＋ `playbooks/<id>/playbook.md`（该目标的阶段与菜谱）；
+2. 在工作目录跑 orient（引擎目录 `<ENGINE>` = 本 SKILL.md 所在目录）：`python3 "<ENGINE>/scripts/orient.py" [--playbook <id> | --profile <技能>/profile.yaml] [--goto N]`；
+3. 照 orient 输出与 engine-core 纪律执行；固化操作见 `references/crystallize.md`。
+
+## 派发增量段（只这一处与 v1 不同）
+
+执行纪律全部继承 `references/engine-core.md`（提问上浮 / 停顿归主 / 结论归主 / 禁嵌套 / 单写者 / 批量编排见其「批量编排」节）。**只替换派发机制**：不再按 subagent-briefs.md 注入 Brief，改为按名字派发预定义卡片 `agents/<id>-compute.md`；派发前先按该 playbook 的上浮问题问用户、把答案随派发带入。选卡与协议见 dispatch-protocol.md。
+
+<!-- Layer 边界（scripts/tests/test_layering.py 守卫）：本文件 ≤60 行 / ~6K token，
+     禁止出现任何 playbook 方法词汇与阶段内容——想加执行细节，去 engine-core.md 或 playbook。 -->

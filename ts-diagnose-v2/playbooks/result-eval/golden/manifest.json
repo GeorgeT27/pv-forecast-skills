@@ -1,0 +1,20 @@
+{
+  "playbook": "result-eval",
+  "note": "本 playbook 的主线（口径可配的指标计算、chartbook 画图、事实提取、深归因）依赖用户的真实 predict/truth 数据与（可能是外部提供的）口径脚本，无法用确定性合成小样覆盖 Stage 0-3——那些阶段靠正文声明的对账步骤（口径对账、合成小样跑质检/对齐）与 chartbook 各 recipe 自带的 golden 兜底（chartbook/recipes/*.md 各自过 gen_gate）。唯一可确定性验证、且是全部归因结论共同前置闸的是结论三道门第一道——稳健性门槛（data_utils.robustness_check：按天配对 Wilcoxon + 剔最差 3 天方向不变）。金标准植入两个大误差天验证 trim 逻辑真的在起作用（不是摆设）。",
+  "stages": {
+    "1": {
+      "desc": "稳健性门槛：按天配对 Wilcoxon 显著 + 剔除最差 3 天后方向不变 → passed=true",
+      "inputs": ["rmse_pairs.csv"],
+      "args": ["--data", "rmse_pairs.csv", "--trim", "3", "--out", "robustness_check.json"],
+      "expect": [
+        {"file": "robustness_check.json", "path": "n_rows", "op": "eq", "value": 120},
+        {"file": "robustness_check.json", "path": "wilcoxon_p", "op": "le", "value": 0.05},
+        {"file": "robustness_check.json", "path": "direction_stable", "op": "eq", "value": true},
+        {"file": "robustness_check.json", "path": "mean_diff", "op": "between", "value": [-0.3, -0.15]},
+        {"file": "robustness_check.json", "path": "trimmed_mean_diff", "op": "between", "value": [-0.2, -0.1]},
+        {"file": "robustness_check.json", "path": "passed", "op": "eq", "value": true}
+      ],
+      "reference": "reference/robustness_check.py"
+    }
+  }
+}

@@ -1,0 +1,198 @@
+{
+  "top_pct": 10,
+  "threshold_rule": "top_pct_above_mean",
+  "models": [
+    "pred_M1",
+    "pred_M3",
+    "pred_M4res",
+    "pred_ensemble"
+  ],
+  "metrics": {
+    "ultra_short": {
+      "pred_M1": {
+        "csv": "bad_rows_ultra_short_pred_M1.csv",
+        "n_rows": 40,
+        "mean_error": 0.45,
+        "std_error": 2.810249,
+        "n_bad": 1,
+        "worst_timestamp": "2025-01-02 09:00:00",
+        "top5_timestamps": [
+          "2025-01-02 09:00:00",
+          "2025-01-01 06:00:00",
+          "2025-01-01 13:15:00",
+          "2025-01-01 11:30:00",
+          "2025-01-01 11:45:00"
+        ]
+      },
+      "pred_M3": {
+        "csv": "bad_rows_ultra_short_pred_M3.csv",
+        "n_rows": 40,
+        "mean_error": 7.010462,
+        "std_error": 1.191994,
+        "n_bad": 4,
+        "worst_timestamp": "2025-01-01 08:00:00",
+        "top5_timestamps": [
+          "2025-01-01 08:00:00",
+          "2025-01-01 07:45:00",
+          "2025-01-01 08:15:00",
+          "2025-01-01 07:30:00",
+          "2025-01-01 08:30:00"
+        ]
+      },
+      "pred_M4res": {
+        "csv": "bad_rows_ultra_short_pred_M4res.csv",
+        "n_rows": 40,
+        "mean_error": 3.162342,
+        "std_error": 3.141521,
+        "n_bad": 4,
+        "worst_timestamp": "2025-01-08 09:00:00",
+        "top5_timestamps": [
+          "2025-01-08 09:00:00",
+          "2025-01-07 09:00:00",
+          "2025-01-06 09:00:00",
+          "2025-01-05 09:00:00",
+          "2025-01-04 09:00:00"
+        ]
+      },
+      "pred_ensemble": {
+        "csv": "bad_rows_ultra_short_pred_ensemble.csv",
+        "n_rows": 40,
+        "mean_error": 0.225,
+        "std_error": 1.405125,
+        "n_bad": 1,
+        "worst_timestamp": "2025-01-02 09:00:00",
+        "top5_timestamps": [
+          "2025-01-02 09:00:00",
+          "2025-01-01 06:00:00",
+          "2025-01-01 13:15:00",
+          "2025-01-01 11:30:00",
+          "2025-01-01 11:45:00"
+        ]
+      }
+    },
+    "short": {
+      "pred_M1": {
+        "csv": "bad_rows_short_pred_M1.csv",
+        "n_rows": 8,
+        "mean_error": 1.299038,
+        "std_error": 3.436932,
+        "n_bad": 1,
+        "worst_timestamp": "2025-01-01 09:00:00",
+        "top5_timestamps": [
+          "2025-01-01 09:00:00",
+          "2025-01-02 09:00:00",
+          "2025-01-03 09:00:00",
+          "2025-01-04 09:00:00",
+          "2025-01-05 09:00:00"
+        ]
+      },
+      "pred_M3": {
+        "csv": "bad_rows_short_pred_M3.csv",
+        "n_rows": 8,
+        "mean_error": 5.493841,
+        "std_error": 0.0,
+        "n_bad": 0,
+        "worst_timestamp": "2025-01-01 09:00:00",
+        "top5_timestamps": [
+          "2025-01-01 09:00:00",
+          "2025-01-02 09:00:00",
+          "2025-01-03 09:00:00",
+          "2025-01-04 09:00:00",
+          "2025-01-05 09:00:00"
+        ]
+      },
+      "pred_M4res": {
+        "csv": "bad_rows_short_pred_M4res.csv",
+        "n_rows": 8,
+        "mean_error": 6.341128,
+        "std_error": 1.977422,
+        "n_bad": 1,
+        "worst_timestamp": "2025-01-08 09:00:00",
+        "top5_timestamps": [
+          "2025-01-08 09:00:00",
+          "2025-01-07 09:00:00",
+          "2025-01-06 09:00:00",
+          "2025-01-05 09:00:00",
+          "2025-01-04 09:00:00"
+        ]
+      },
+      "pred_ensemble": {
+        "csv": "bad_rows_short_pred_ensemble.csv",
+        "n_rows": 8,
+        "mean_error": 0.649519,
+        "std_error": 1.718466,
+        "n_bad": 1,
+        "worst_timestamp": "2025-01-01 09:00:00",
+        "top5_timestamps": [
+          "2025-01-01 09:00:00",
+          "2025-01-02 09:00:00",
+          "2025-01-03 09:00:00",
+          "2025-01-04 09:00:00",
+          "2025-01-05 09:00:00"
+        ]
+      }
+    },
+    "rmse_192": {
+      "pred_M1": {
+        "csv": "bad_rows_rmse_192_pred_M1.csv",
+        "n_rows": 40,
+        "mean_error": 6.234334,
+        "std_error": 2.619987,
+        "n_bad": 4,
+        "worst_timestamp": "2025-01-01 06:00:00",
+        "top5_timestamps": [
+          "2025-01-01 06:00:00",
+          "2025-01-01 12:15:00",
+          "2025-01-01 10:45:00",
+          "2025-01-01 06:15:00",
+          "2025-01-01 11:15:00"
+        ]
+      },
+      "pred_M3": {
+        "csv": "bad_rows_rmse_192_pred_M3.csv",
+        "n_rows": 40,
+        "mean_error": 5.493841,
+        "std_error": 0.0,
+        "n_bad": 4,
+        "worst_timestamp": "2025-01-01 06:00:00",
+        "top5_timestamps": [
+          "2025-01-01 06:00:00",
+          "2025-01-01 06:15:00",
+          "2025-01-01 11:30:00",
+          "2025-01-01 11:45:00",
+          "2025-01-01 12:00:00"
+        ]
+      },
+      "pred_M4res": {
+        "csv": "bad_rows_rmse_192_pred_M4res.csv",
+        "n_rows": 40,
+        "mean_error": 3.906317,
+        "std_error": 1.474117,
+        "n_bad": 4,
+        "worst_timestamp": "2025-01-08 09:00:00",
+        "top5_timestamps": [
+          "2025-01-08 09:00:00",
+          "2025-01-07 09:00:00",
+          "2025-01-06 09:00:00",
+          "2025-01-05 09:00:00",
+          "2025-01-04 09:00:00"
+        ]
+      },
+      "pred_ensemble": {
+        "csv": "bad_rows_rmse_192_pred_ensemble.csv",
+        "n_rows": 40,
+        "mean_error": 3.117167,
+        "std_error": 1.309994,
+        "n_bad": 4,
+        "worst_timestamp": "2025-01-01 06:00:00",
+        "top5_timestamps": [
+          "2025-01-01 06:00:00",
+          "2025-01-01 12:15:00",
+          "2025-01-01 10:45:00",
+          "2025-01-01 06:15:00",
+          "2025-01-01 11:15:00"
+        ]
+      }
+    }
+  }
+}

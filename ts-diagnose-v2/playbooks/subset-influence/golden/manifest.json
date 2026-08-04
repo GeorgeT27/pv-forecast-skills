@@ -1,0 +1,30 @@
+{
+  "playbook": "subset-influence",
+  "note": "本 playbook 的主线（回放校验、动力学、TracIn、Stage 5 重训确认）依赖用户的真实训练代码/checkpoint/日志格式，无法用确定性合成小样覆盖 Stage 0/1/3/4/5——那些阶段靠正文声明的对账步骤（回放指纹校验、金标准兜底）与实际 adapter 接线时的合成小样自检。唯一可确定性验证、且是 Mode A 主证据链核心的是 Stage 2 影响力回归：assignments.csv/rmse_series.csv → 岭回归 θ_entry。金标准植入一个系统性有害条目（e3，跨位置 ΔRMSE 常数正效应 +0.30）与两个中性条目（e1/e2，仅小幅确定性摆动，无系统效应），验证'中心化条目指示 + 岭回归 + 差分去趋势'这套设计矩阵处理真的把有害条目排到第一名且 CI 排除 0——不是摆设。",
+  "stages": {
+    "2": {
+      "desc": "影响力回归：e3 系统性有害（跨位置常数 +0.30），e1/e2 中性 → e3 应排名第一且 CI 排除 0（>0）",
+      "inputs": ["assignments.csv", "rmse_series.csv"],
+      "args": ["--assignments", "assignments.csv", "--rmse", "rmse_series.csv",
+                "--stations", "e1,e2,e3", "--models", "M1", "--lam", "1.0", "--boot", "1000",
+                "--out", "influence_coefs.json"],
+      "expect": [
+        {"file": "influence_coefs.json", "path": "n_iterations", "op": "eq", "value": 12},
+        {"file": "influence_coefs.json", "path": "models.M1.n_obs", "op": "eq", "value": 23},
+        {"file": "influence_coefs.json", "path": "models.M1.ranking_harmful_first",
+         "op": "first_is", "value": "e3"},
+        {"file": "influence_coefs.json", "path": "models.M1.theta.e3",
+         "op": "between", "value": [0.1, 0.3]},
+        {"file": "influence_coefs.json", "path": "models.M1.theta.e1",
+         "op": "le", "value": 0.0},
+        {"file": "influence_coefs.json", "path": "models.M1.theta.e2",
+         "op": "le", "value": 0.0},
+        {"file": "influence_coefs.json", "path": "models.M1.theta",
+         "op": "argmax", "value": "e3"},
+        {"file": "influence_coefs.json", "path": "models.M1.ci_excludes_zero",
+         "op": "contains", "value": "e3"}
+      ],
+      "reference": "reference/influence_regression_ref.py"
+    }
+  }
+}
