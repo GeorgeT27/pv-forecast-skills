@@ -83,12 +83,14 @@ ts-diagnose-v2/
 | 3 | metric-eval | **producer** | metric_table | 0–1（全程到产物） | 无 | metric-spec |
 | 4 | fact-scan | compute | chart_sweep | 0（即终点即停顿） | stage 0 | 无 |
 | 5 | result-eval | compute | —（见下方说明） | 0–3 | stage 3 | metric-caliber |
-| 6 | model-comparison | compute | —（分析） | 0–1 | stage 1 | metric-caliber, model-set, total-gap, slice-gap, cross-dim |
-| 7 | deployment-drift | compute | —（分析） | 0–2 | stage 2 | metric-caliber, deploy-timeline, degradation-criterion, error-changepoint |
-| 8 | feature-importance | compute | —（分析） | 0–3（+按需变体 5–6） | stage 3 | importance-scope, feature-list, model-access, collinearity-handling, correlation, permutation, ablation |
-| 9 | robustness | compute | —（分析） | 0–3 | stage 3 | conclusions-under-test, metric-and-pairing, perturbation-families, group-columns, perturbation, slices |
-| 10 | training-sufficiency | compute | —（分析） | 0–5 | stage 5 | loss-source, unit-structure, training-config, loss-composition, external-metric, target-link, fig-style |
+| 6 | model-comparison | compute | —（分析） | 0–1 | stage 1 | metric-caliber, model-set |
+| 7 | deployment-drift | compute | —（分析） | 0–2 | stage 2 | metric-caliber, deploy-timeline, degradation-criterion |
+| 8 | feature-importance | compute | —（分析） | 0–3（+按需变体 5–6） | stage 3 | importance-scope, feature-list, model-access, collinearity-handling |
+| 9 | robustness | compute | —（分析） | 0–3 | stage 3 | conclusions-under-test, metric-and-pairing, perturbation-families, group-columns |
+| 10 | training-sufficiency | compute | —（分析） | 0–5 | stage 5 | loss-source, unit-structure, training-config, external-metric, fig-style |
 | 11 | subset-influence | **compute-fine** | —（分析） | 无整段交接 | 无 | 无（阶段由主 agent 驱动） |
+
+『主 agent 派发前须答的问题』取自各 playbook 的 `questions:` 块（stage ≤ pause），与 `evidence_lines`（产物证据行，非问题）区分。
 
 **result-eval 不声明 `produces`**：`eval_report` 的 manifest（`gate_reports/conclusion_gate.json`）与 marker（`CONCLUSION.md`）只在 Stage 4（结论，`subagent_ok:false`）落盘，落在 `result-eval-compute` 卡片的 `0-3` 计算区间之外。卡片若声明 `produces: eval_report` 会让主 agent 误判该产物已建好，因此卡片 frontmatter 不带 `produces` 字段；卡片本身只回 Stage 0–3 的中间产出（指标表、图谱、FINDINGS.md 现象清单），`eval_report` 产物由主 agent 亲自跑完 Stage 4（结论 + manifest）后才算产出。守卫新增不变式：**compute 卡片一旦声明 `produces`，该产物的 manifest/marker 所在阶段必须落在卡片的 `compute_stages` 区间内**（`scripts/tests/test_cards.py` 里 `mode == "compute"` 分支据 playbook frontmatter 的 `produces.manifest`/`produces.marker_files` 反查其所在 stage 校验）；fact-scan 的 `chart_sweep_manifest.json` 落在 Stage 0（∈ 区间 0–0），因此仍可声明 `produces: chart_sweep`。
 

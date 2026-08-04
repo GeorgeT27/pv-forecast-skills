@@ -16,9 +16,9 @@ model: sonnet
 ## 输入（主 agent 派发时给你）
 
 - 工作目录：`<workdir>`
-- 已答问题：loss-source, unit-structure, training-config, loss-composition, external-metric,
-  target-link, fig-style（前 5 项是 playbook `questions`；loss-composition/target-link 是
-  Stage 3/4 证据线 id，非待答问题，随 phenomena 一并交回）
+- 已答问题：loss-source, unit-structure, training-config, external-metric, fig-style
+- 本阶段产出的证据线（非问题，随 phenomena 一并交回）：loss-composition（Stage 3）、
+  target-link（Stage 4）
 - 已就绪的上游产物目录：`setup=<path>`（`required:false`——present 时按 Stage 0「可以少问的
   情况」免问 loss-source/unit-structure 的『在哪』；缺席时两问都要单独问齐，且缺席本身写进
   FINDINGS 现象注记，按 playbook 降级说明处理，不视为 BLOCKED）

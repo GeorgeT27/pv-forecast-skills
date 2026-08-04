@@ -15,8 +15,8 @@ model: sonnet
 ## 输入（主 agent 派发时给你）
 
 - 工作目录：`<workdir>`
-- 已答问题：metric-caliber（考核口径，缺省 rmse_192）、model-set（对比模型集合与最关注配对）；
-  另有两项证据线 id（非待答问题，随 phenomena 一并交回）：total-gap（Stage 0）、
+- 已答问题：metric-caliber（考核口径，缺省 rmse_192）、model-set（对比模型集合与最关注配对）
+- 本阶段产出的证据线（非问题，随 phenomena 一并交回）：total-gap（Stage 0）、
   slice-gap/cross-dim（Stage 1，出自 worst-slice-compare/cross-dim-stability 两图）
 - 已就绪的上游产物目录：`setup=<path>`（可选 `model_profile=<path>`/`chart_sweep=<path>`/
   `metric_table=<path>`，present 且口径一致时按 playbook 复用规则跳过重算/重画）
