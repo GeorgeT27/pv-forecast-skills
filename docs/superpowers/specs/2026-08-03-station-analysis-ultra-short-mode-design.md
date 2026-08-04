@@ -4,7 +4,9 @@
 **Target file:** `短期分析/station_analysis_short.py`
 **Tests:** `短期分析/test_station_analysis_short.py`
 **Docs:** `短期分析/README.md`
-**Status:** approved for planning
+**Status:** SUPERSEDED by `2026-08-04-station-analysis-ultra-short-16lead-design.md` — the
+ultra-short input model here (single 192-point-list parquet, single-window reuse of
+`run_analysis`) and the unified mandatory `--timestamp` are both obsolete. Do not implement.
 
 ## Problem
 
