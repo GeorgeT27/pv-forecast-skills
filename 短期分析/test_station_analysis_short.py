@@ -28,12 +28,13 @@ SCRIPT = os.path.join(HERE, "station_analysis_short.py")
 def _run(wd, extra=()):
     r = subprocess.run(
         [sys.executable, SCRIPT, "--input", str(wd / "input.parquet"),
-         "--predict", str(wd / "predict.parquet"), "--out-dir", str(wd / "out")] + list(extra),
+         "--predict", str(wd / "predict.parquet"), "--out-dir", str(wd / "out"),
+         "--date", "2026-07-15", "--pred-col-template", "{station}"] + list(extra),
         cwd=str(wd), capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
 
     def load(name):
-        p = wd / "out" / name
+        p = wd / "out" / "20260715" / "D+1" / name
         return pd.read_csv(p) if os.path.exists(p) else None
     return {"power": load("station_power_rmse.csv"), "feat": load("station_feature_rmse.csv"),
             "fleet": load("fleet_ranking.csv"), "cf": load("counterfactual_results.csv"),
@@ -259,7 +260,8 @@ def test_no_station_plots_keeps_csv(data, tmp_path):
     """--no-station-plots：不出逐站图，但站级 CSV 与总览仍在。"""
     r = _run(data, ["--no-station-plots"])
     assert r["power"] is not None
-    assert not any(f.endswith("_Power.png") for f in os.listdir(data / "out"))
+    pngs = [f for _, _, fs in os.walk(data / "out") for f in fs if f.endswith("_Power.png")]
+    assert pngs == []
 
 
 # ---------------------------------------------------------------- 反事实测试
@@ -453,8 +455,7 @@ def short_data(tmp_path):
 def _run_short(wd, extra=()):
     r = subprocess.run(
         [sys.executable, SCRIPT, "--input", str(wd / "input.parquet"),
-         "--predict", str(wd / "predict.parquet"), "--out-dir", str(wd / "out"),
-         "--short"] + list(extra),
+         "--predict", str(wd / "predict.parquet"), "--out-dir", str(wd / "out")] + list(extra),
         cwd=str(wd), capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
     return r
@@ -492,17 +493,6 @@ def test_short_date_shifts_window(short_data):
     assert set(pw["n_points"]) == {96}
     assert set(pw["t_start"]) == {"2026-07-28 00:00:00"}    # D+1 = --date + 1 day, moved off the auto-inferred D+1
     assert "using D" not in r.stdout                        # explicit date -> no fallback line
-
-
-def test_default_no_short_folders(short_data):
-    # 常规模式（无 --short）：直接写 out/，不建 D+1/D+4
-    subprocess.run(
-        [sys.executable, SCRIPT, "--input", str(short_data / "input.parquet"),
-         "--predict", str(short_data / "predict.parquet"), "--out-dir", str(short_data / "out"),
-         "--no-plots", "--pred-col-template", "{station}"],
-        cwd=str(short_data), capture_output=True, text=True, check=True)
-    assert not (short_data / "out" / "D+1").exists()
-    assert (short_data / "out" / "station_power_rmse.csv").exists()
 
 
 def test_short_worst_only(short_data):
@@ -550,7 +540,7 @@ def test_short_counterfactual_per_window(short_cf_data, fake_api):
     r = subprocess.run(
         [sys.executable, SCRIPT, "--input", str(short_cf_data / "input.parquet"),
          "--predict", str(short_cf_data / "predict.parquet"),
-         "--out-dir", str(short_cf_data / "out"), "--short", "--no-plots",
+         "--out-dir", str(short_cf_data / "out"), "--no-plots", "--pred-col-template", "{station}",
          "--counterfactual", "--api-url", _url(fake_api)],
         cwd=str(short_cf_data), capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr

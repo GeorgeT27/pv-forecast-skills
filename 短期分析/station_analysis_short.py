@@ -126,9 +126,9 @@ def nanwang_official(p_real, p_pred, gccap):
     return (1.0 - float(np.sqrt(np.mean(r ** 2)))) * 100.0
 
 
-def resolve_pred_col(st, pred):
-    """站点 -> 预测表列名 predict_power_{station}；列不存在返回 None（调用方 warn + skip）。"""
-    col = f"predict_power_{st}"
+def resolve_pred_col(st, pred, template):
+    """站点 -> 预测表列名 template.format(station=st)；列不存在返回 None（调用方 warn + skip）。"""
+    col = template.format(station=st)
     return col if col in pred.columns else None
 
 
@@ -784,7 +784,7 @@ def run_counterfactual(inp, pred, args, cap_map, step, out_dir=None, win=None, g
     exclude |= set(swap.values())               # truth columns are labels, not sent as fields
 
     stations = [s for s in pd.unique(inp[args.station_col])
-                if resolve_pred_col(s, pred) is not None]
+                if resolve_pred_col(s, pred, args.pred_col_template) is not None]
     if args.cf_stations:
         want = {s.strip() for s in args.cf_stations.split(",")}
         stations = [s for s in stations if str(s) in want]
@@ -823,7 +823,7 @@ def run_counterfactual(inp, pred, args, cap_map, step, out_dir=None, win=None, g
         raise SystemExit("--counterfactual real run requires --api-url (or --cf-dry-run first to check payload)")
 
     for st in todo:
-        col = resolve_pred_col(st, pred)   # non-None: the station list was filtered above
+        col = resolve_pred_col(st, pred, args.pred_col_template)   # non-None: the station list was filtered above
         sub = inp[inp[args.station_col] == st].sort_values(args.win_col)
         pq = pred[col].dropna()
         dtimes = pq.index.sort_values()
@@ -937,10 +937,10 @@ def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, gccap_m
 
         # ---- Power (prediction from predict table) ----
         truth = ser(args.power_col)
-        col = resolve_pred_col(st, pred)
+        col = resolve_pred_col(st, pred, args.pred_col_template)
         if col is None:
             print(f"  [warn] station {st}: predict table has no column "
-                  f"'predict_power_{st}', skip Power plot")
+                  f"'{args.pred_col_template.format(station=st)}', skip Power plot")
         else:
             al = _aligned(truth, pred[col].dropna(), args.drop_night, args.night_end_hour, win)
             if al is None:
@@ -1163,10 +1163,13 @@ def run_history(inp, args, step, out_dir):
     print("  [history] " + "; ".join(f"{c}: {p} plotted, {k} skipped" for c, (p, k) in summary.items()))
 
 
-def compute_windows(inp, win_col):
-    """起报日 D = timestamp_win 的日期（起报时间恒为当日 10:00），切 [D+1 00:00,+24h) 与 [D+4 00:00,+24h)。
-    返回 (report_name=D.strftime('%Y%m%d'), [(label, start, end), ...])。"""
-    D = pd.Timestamp(inp[win_col].min()).normalize()
+def compute_windows(inp, win_col, date_arg):
+    """起报日 D：--date 显式给定，否则取 timestamp_win 最早日期并播报；切 [D+1 00:00,+24h) 与 [D+4 00:00,+24h)。"""
+    if date_arg:
+        D = pd.Timestamp(date_arg).normalize()
+    else:
+        D = pd.Timestamp(inp[win_col].min()).normalize()
+        print(f"  [short] --date not given; using D = {D:%Y-%m-%d} (from earliest {win_col})")
     day = pd.Timedelta(days=1)
     d1, d4 = D + day, D + 4 * day
     return D.strftime("%Y%m%d"), [("D+1", d1, d1 + day), ("D+4", d4, d4 + day)]
@@ -1192,6 +1195,9 @@ def main():
     ap.add_argument("--ghi-pred", default="GHI_SOLARGIS_predict", help="predicted column for overview scatter/GHI ranking")
     ap.add_argument("--ghi-true", default="GHI_real_future", help="truth column for overview scatter/GHI ranking")
     ap.add_argument("--station-col", default="station")
+    ap.add_argument("--date", default=None, help="起报日 YYYY-MM-DD；缺省取 timestamp_win 最早日期并播报")
+    ap.add_argument("--pred-col-template", default="predict_power_{station}",
+                    help='预测表列名模板，{station} 占位，如 "{station}" 或 "predict_power_{station}"')
     ap.add_argument("--win-col", default="timestamp_win")
     ap.add_argument("--power-col", default="observe_power_future")
     ap.add_argument("--dtime-col", default="dtime")
@@ -1251,7 +1257,7 @@ def main():
         print(f"  [warn] overview GHI columns missing {miss} -> skip GHI ranking and scatter (power overview still output)")
 
     os.makedirs(args.out_dir, exist_ok=True)
-    report_name, windows = compute_windows(inp, args.win_col)
+    report_name, windows = compute_windows(inp, args.win_col, args.date)
     report_root = os.path.join(args.out_dir, report_name)
     os.makedirs(report_root, exist_ok=True)
     for label, start, end in windows:
