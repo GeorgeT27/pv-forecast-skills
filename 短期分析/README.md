@@ -1,6 +1,6 @@
 # station_analysis_short.py —— 多站光伏预测分析（一个脚本、两层视图）
 
-给定「宽表 `input` + `dtime×station` 预测表」这套输入，**一次运行同产两层视图**：逐站两线对比曲线（预测 vs 真实，标 RMSE）+ 全场总览仪表盘（定位「谁最离谱」）。可选反事实归因、短期切片、历史曲线。
+给定「宽表 `input` + `dtime×station` 预测表」这套输入，**一次运行同产两层视图**：逐站两线对比曲线（预测 vs 真实，标 RMSE）+ 全场总览仪表盘（定位「谁最离谱」）；必含上线关心的两个 24h 切片（D+1、D+4）+ 历史曲线。可选反事实归因。
 
 > **完全自包含**：不 import 任何 skill / data_utils，只依赖 `pandas / numpy / pyarrow / matplotlib`。单个 `station_analysis_short.py` 拷到任何机器都能跑。
 >
@@ -37,18 +37,18 @@
 ### ③ 反事实（`--counterfactual` 门控，可选，需 FastAPI 预测服务）
 oracle GHI swap：把 GHI 预测列换成 GHI 真值经统一模型重预测，把每站误差**因果地**分解为 `nRMSE基线 = 模型底线（GHI 完美仍剩）+ GHI 归因（换真值即消失）`——B 散点的相关性暗示由此升级成证据。
 
-每站 2 次调用：**基线复现**（原特征原样发，输出与 predict 表核对 = 复现闸，差超 `--cf-check-tol`% 告警）+ **换真值**。逐站算完立即落盘 `counterfactual_results.csv`，中断重跑自动跳过已完成站（`--cf-force` 重算）。**首跑必 `--cf-dry-run`**：零 HTTP，打印调用计划 + 首站 payload 骨架，确认契约后再实跑。**跑哪些站**：默认全部；`--cf-stations st1,st2` 指定显式子集；`--cf-worst N` 只跑功率 nRMSE 最差 N 站（复用本切片 `fleet_ranking.csv`，故 `--short` 下 D+1/D+4 各按自己的排名选最差 N 站；无 ranking 文件或 `--no-fleet` 时告警回退跑全部）。两者同时给时 `--cf-stations` 优先、`--cf-worst` 忽略。
+**窗口守卫**：某站某窗口内真值列全空 → 该站该窗口记 `no_overlap` 状态，**零 API 调用**（不发往预测服务）。整站全窗口真值都空 → 整站跳过、不调用。每站最多 2 次调用：**基线复现**（原特征原样发，输出与 predict 表核对 = 复现闸，差超 `--cf-check-tol`% 告警）+ **换真值**。逐站算完立即落盘 `counterfactual_results.csv`，中断重跑自动跳过已完成站（`--cf-force` 重算）。**首跑必 `--cf-dry-run`**：零 HTTP，打印调用计划 + 首站 payload 骨架，确认契约后再实跑。**跑哪些站**：默认全部；`--cf-stations st1,st2` 指定显式子集；`--cf-worst N` 只跑功率 nRMSE 最差 N 站（复用本切片 `fleet_ranking.csv`，D+1/D+4 各按自己的排名选最差 N 站；无 ranking 文件或 `--no-fleet` 时告警回退跑全部）。两者同时给时 `--cf-stations` 优先、`--cf-worst` 忽略。
 
 产出 `counterfactual_overview.png`：左图堆叠条（灰 = 模型的锅、橙 = GHI 输入的锅、蓝 = 换真值反而差 = **共适应警示**，Δ<−0.1 个百分点才标），右图各站「GHI 可解释比例 %」。
 
 API 契约：`POST {"data":[{行dict}]}`（字段 = parquet 列名、list 原样、不带站名与真值 label 列）；响应 = `{"status":..., "predictions":[{"timestamp_win":..., "ensemble":[192值]}, ...]}` —— 逐窗返回、只取 `ensemble`，按响应自带 `timestamp_win` 摊平去重，返回窗数 ≠ 发送行数 = 对齐闸拦下只跳该站；也兼容扁平 list 响应（与 predict 表该站列按 dtime 逐点对应）。两条诚实注意（已写进图注）：① Δ≈0 ≠ GHI 预报没问题（模型可能不敏感或已共适应）；② 「模型底线」含其它无真值输入（温度等）的误差，是模型自身误差的上界。
 
-### ④ 短期模式（`--short`，可选）
-只看上线最关心的两个 24h 切片：**D+1**（次日）与 **D+4**（第 4 天），各出一整套产物（逐站图 + 总览 + CSV，`--worst-only` 等开关照常在每个切片内独立生效）。起报日 `D` 用 `--date YYYY-MM-DD` 指定，缺省自动取 input 表最早 `timestamp_win` 的日期（终端打印 `using D = ...`；显式 `--date` 则不打印）。切片按绝对时刻 `[D+1 00:00, +24h)` / `[D+4 00:00, +24h)` 各取 24h（15min 步长即 96 点），逐站 RMSE 只在切片内计算。
+### ④ 短期视图（D+1、D+4、历史）
+上线关心的两个 24h 切片：**D+1**（次日）与 **D+4**（第 4 天），各出一整套产物（逐站图 + 总览 + CSV，`--worst-only` 等开关照常在每个切片内独立生效）。起报日 `D` 用 `--date YYYY-MM-DD` 指定（缺省自动取 input 表最早 `timestamp_win` 的日期，终端播报 `using D = ...`）。切片按绝对时刻 `[D+1 00:00, +24h)` / `[D+4 00:00, +24h)` 各取 24h（15min 步长即 96 点），逐站 RMSE 只在切片内计算。
 
-**目录以起报日归档**：`--short` 时全部产物落在 `<out>/<YYYYMMDD>/` 下，`D+1`/`D+4`/`history` 三个子目录并列；不加 `--short` 时行为不变（直接写 `<out>/`，无起报日层、无 history）。
+**目录结构**：全部产物落在 `<out>/<YYYYMMDD>/` 下，`D+1`/`D+4`/`history` 三个子目录并列。
 
-### ⑤ 历史曲线（`history/`，`--short` 专属）
+### ⑤ 历史曲线（`history/`）
 每站两张单线图（无真值对照、不算指标）：历史（过去实测）列 `observe_power` 与 `GHI_SOLARGIS` 的**最近 2 天**曲线。这两列是预测列 `observe_power_future` / `GHI_SOLARGIS_predict` 的历史对照，其 list **反向**排列——最后一个元素落在起报时间 `T`（`list[-1] → T`），逐元素往前退 15min，故 7 天历史里只画 `[T−2天, T]` 这段，避免太长糊成一团。落 `<out>/<YYYYMMDD>/history/stations/station_<站>_observe_power.png` 与 `..._GHI_SOLARGIS.png`；某站某列缺失/窗口内空 → 只跳那一张并告警，终端汇总 `[history] observe_power: N plotted, M skipped`。`--no-plots` / `--no-station-plots` 时整段跳过；`--worst-only` 对 history 不生效（无 nRMSE 可排，画全部站）。
 
 ## 时间对齐
@@ -78,7 +78,7 @@ python3 station_analysis_short.py --input input.parquet --predict predict.parque
   [--cf-swap "GHI_SOLARGIS_predict:GHI_real_future"]            # 可多对 = 联合替换
   [--cf-exclude-cols "observe_power_future,GHI_real_future"]    # 不发给 API 的 label 列
   [--cf-timeout 120] [--cf-retries 1] [--cf-check-tol 1.0] [--cf-curves]
-  [--short [--date 2026-07-26]]        # 短期：<out>/<起报日>/ 下 D+1、D+4 各一套 + history 两日历史曲线
+  [--date YYYY-MM-DD]                 # 起报日（缺省自动取 timestamp_win 最早日期）；<out>/<YYYYMMDD>/ 下 D+1、D+4 各一套 + history
 ```
 
 ## 产物
@@ -91,4 +91,27 @@ python3 station_analysis_short.py --input input.parquet --predict predict.parque
 
 > **南网官方口径 `nanwang_official`**（需 `--info-csv` 提供各站 `GCCAPCITY`）：准确率 = `(1 − sqrt( mean( ((p_real − p_pred) / max(p_real, 0.2·GCCAPCITY))² ) )) × 100%`。分母 `0.2·GCCAPCITY` 下限使夜间/近零点良态，故**该指标始终用全窗所有点（含夜间，不受 `--drop-night` 影响）**。`GCCAPCITY` 只用于此指标，不改变既有 nRMSE 的归一化口径。info.csv 缺某站 → 该站留空并告警。
 
-**`--short`**：以上全部各出一份到 `<out>/<YYYYMMDD>/D+1/` 与 `<out>/<YYYYMMDD>/D+4/`（结构不变，每份只覆盖对应 24h 切片），外加 `<out>/<YYYYMMDD>/history/stations/` 的两日历史曲线。
+**短期视图**：常规产物（逐站图、全场总览、CSV 等）各出一份到 `<out>/<YYYYMMDD>/D+1/` 与 `<out>/<YYYYMMDD>/D+4/`（结构不变，每份只覆盖对应 24h 切片），外加 `<out>/<YYYYMMDD>/history/stations/` 的两日历史曲线。
+
+## 超短期：station_analysis_ultra_short.py
+
+自包含，同样只依赖 pandas / numpy / pyarrow / matplotlib。
+
+```bash
+python3 station_analysis_ultra_short.py --input-dir <根目录> --predict-dir <预测目录> \
+  --date 20260723 --out-dir out_us
+```
+
+**预测侧（--predict-dir）**：扁平目录，每 15min 一个 起报、每 起报 一个 parquet，文件名含 `YYYYMMDDHHMM`（按该 token glob，容忍文件名拼写漂移；同 token 多文件报错退出）。表结构 = `dtime` 列 + 每站一列（`--pred-col-template`，默认 `predict_power_{station}`）；行自 起报+15min 起，只取前 16 点（lead 1..16 = 15min..4h）。
+
+**真值侧（--input-dir）**：Hive 分区 `date=YYYY-MM-DD/time=HH:MM/` 下唯一 parquet（schema 同短期 input，list 列长 192）；只取 `observe_power_future` / `GHI_real_future` / `GHI_SOLARGIS_predict` 各 list 的第 0 个元素（= 起报+15min 处的值）。
+
+**重建**：目标网格 = D 00:00..23:45（96 点）。目标 t 的 16 个预测来自 起报 t-4h..t-15min；线 `p_j` = 恒定 lead(17-j)：**p1 = 4h 前（最旧），p16 = 15min 前（最新）**。t=00:00 的真值来自 `date=D-1/time=23:45`；p1 需要 `D-1 20:00` 起的预测 parquet。缺 起报 → 告警 + NaN 缺口，不中断。
+
+**产物**（`<out>/<YYYYMMDD>/`）：
+- `stations/station_<站>_Power.png` — 17 线（真值黑粗 + p1..p16 由浅到深）
+- `stations/station_<站>_GHI.png` — 2 线（lead-1 GHI 预测 vs 真值；两者都来自 input 侧 = 特征质量图）
+- `station_power_rmse.csv` — 每站 16 lead 合并 RMSE（降序 = 排名）
+- `station_feature_rmse.csv` — 每站 lead-1 GHI RMSE
+
+无散点 / Theil / 舰队总览 / 反事实 / history / 南网指标。
