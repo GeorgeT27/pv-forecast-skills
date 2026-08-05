@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 DEFAULT_FEATURE_PAIRS = [("GHI_SOLARGIS_predict", "GHI_real_future", "GHI")]
-HISTORY_DAYS = 2                                  # --short history plots: how many days back from 起报时间 T
+HISTORY_DAYS = 2                                  # history plots: how many days back from 起报时间 T
 HISTORY_COLS = ["observe_power", "GHI_SOLARGIS"]  # historical (past-observed) list columns to plot
 
 
@@ -745,7 +745,7 @@ def plot_cf_overview(df, out_dir, swap_label):
 
 def cf_select_worst(stations, out_dir, n):
     """Restrict to the worst-n runnable stations by power nRMSE, read from THIS window's fleet_ranking.csv
-    (written by run_analysis into the same out_dir, so --short picks worst-n per window). Returned worst-first.
+    (written by run_analysis into the same out_dir, so each D+1/D+4 window picks worst-n independently). Returned worst-first.
     Missing file / column / --no-fleet -> warn and keep all stations."""
     rank_path = os.path.join(out_dir, "fleet_ranking.csv")
     if not os.path.exists(rank_path):
@@ -862,7 +862,7 @@ def run_counterfactual(inp, pred, args, cap_map, step, out_dir=None, win=None, g
             _cf_append(csv_path, {"station": st, "status": "no_overlap"})
             continue
         m, (times, t, b, c) = got
-        al_pq = _aligned(p_base, pq, args.drop_night, args.night_end_hour, win)   # reproduction gate: compare on common time points, windowed in --short
+        al_pq = _aligned(p_base, pq, args.drop_night, args.night_end_hour, win)   # reproduction gate: compare on common time points within this window
         bvp = rmse(al_pq[1], al_pq[2]) / m["capacity"] * 100.0 if al_pq else float("inf")
         m["base_vs_parquet_pct"] = round(bvp, 4) if np.isfinite(bvp) else ""
         m["status"] = "ok" if bvp <= args.cf_check_tol else "baseline_mismatch"

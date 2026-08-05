@@ -19,13 +19,13 @@
 
 ## 视图
 
-### ① 逐站细看（`<out>/stations/`）
+### ① 逐站细看（`<切片目录>/stations/`）
 每站若干张图：
 - **Power** —— 预测功率（predict 表 `dtime×站列`）vs 真实功率（input 的 `observe_power_future`）两线对比，标 RMSE。
 - **特征** —— 预测 vs 真值两线对比（默认 `GHI`），二者都在 input 宽表 list 列里。
 - **散点** —— `station_<站>_scatter.png`：真值-预测散点 + OLS 拟合 + 十分位分箱均值，回答「系统性偏高/低？高值被压缩？」（斜率<1 且顶部 20% 负偏 = 压缩嫌疑）；文本框附 Theil `u_bias/u_var/u_cov` 份额。
 
-### ② 全场总览（`<out>/`）
+### ② 全场总览（`<切片目录>/`）
 单张 `fleet_overview.png`（2×2 仪表盘）+ `theil_decomposition.png`：
 - **A1/A2 排行榜** —— 各站 **nRMSE** 降序（worst 在顶），中位线 + 离群站红标（功率 + GHI）。
 - **B 散点** —— GHI-nRMSE vs 功率-nRMSE，一站一点：功率差落在右上（GHI 输入差可解释）还是左上（GHI 好但功率仍差 = 模型/其它问题）。
