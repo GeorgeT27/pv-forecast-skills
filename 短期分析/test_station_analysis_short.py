@@ -340,6 +340,47 @@ def test_cf_worst_no_fleet_falls_back(cf_data, fake_api):
     assert "not found" in r["out"] and fake_api.hits == 4
 
 
+def test_cf_empty_truth_series_no_crash(tmp_path, fake_api):
+    """站的 observe_power_future 全 None（空真值序列）-> no_overlap 状态、0 API 调用、不崩溃。
+    Regression test: guard must tolerate fully-empty truth series (RangeIndex from series_from_lists).
+    """
+    def ghi(v0):
+        return [float(v0 + 100 * k) for k in range(4)]
+
+    OFF = {"c1": 40.0, "c2": 20.0, "c3": 0.0}
+    rows = []
+    def add(st, T, gt):
+        rows.append({"station": st, "timestamp_win": pd.Timestamp(T), "observe_power": 1.0,
+                     "observe_power_future": [g / 10.0 for g in gt] if gt else None,
+                     "GHI_SOLARGIS_predict": [g + OFF[st] for g in gt] if gt else None,
+                     "GHI_real_future": gt if gt else None})
+
+    # c1, c2: normal data with truth
+    add("c1", "2026-07-16 10:00:00", ghi(100)); add("c1", "2026-07-16 10:15:00", ghi(200))
+    add("c2", "2026-07-16 10:00:00", ghi(100)); add("c2", "2026-07-16 10:15:00", ghi(200))
+    # c3: empty truth (observe_power_future=None)
+    add("c3", "2026-07-16 10:00:00", None)
+    pd.DataFrame(rows).to_parquet(tmp_path / "input.parquet")
+
+    dt = pd.date_range("2026-07-16 10:15:00", "2026-07-16 11:30:00", freq="15min")
+    flat = {"c1": [100., 200, 300, 400, 500], "c2": [100., 200, 300, 400, 500, 600], "c3": [0., 100, 200, 300, 400, 500]}
+    pred = pd.DataFrame({"dtime": dt})
+    pred["c1"] = [(flat["c1"][i] + 40) / 10 if i < 5 else float('nan') for i in range(6)]
+    pred["c2"] = [(flat["c2"][i] + 20) / 10 for i in range(6)]
+    pred["c3"] = [(flat["c3"][i] + 0) / 10 for i in range(6)]
+    pred.to_parquet(tmp_path / "predict.parquet")
+
+    r = _run(tmp_path, ["--no-station-plots", "--counterfactual", "--api-url", _url(fake_api)])
+    assert r["cf"] is not None
+    d = r["cf"].set_index("station")
+    # c1 and c2 should be ok (normal processing)
+    assert d.loc["c1", "status"] == "ok" and d.loc["c2", "status"] == "ok"
+    # c3 should be no_overlap due to empty truth (guard catches it before API calls)
+    assert d.loc["c3", "status"] == "no_overlap"
+    # Only 2 stations should have made API calls (c1 and c2, 2 calls each = 4 total)
+    assert fake_api.hits == 4
+
+
 # ---------------------------------------------------------------- 南网 nanwang_official 指标测试
 def _write_info(wd, mapping):
     pd.DataFrame([{"station": s, "GCCAPCITY": g} for s, g in mapping.items()]).to_csv(wd / "info.csv", index=False)

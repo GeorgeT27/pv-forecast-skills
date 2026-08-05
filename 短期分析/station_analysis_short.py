@@ -827,7 +827,7 @@ def run_counterfactual(inp, pred, args, cap_map, step, out_dir=None, win=None, g
         sub = inp[inp[args.station_col] == st].sort_values(args.win_col)
         truth = series_from_lists(sub[args.win_col].to_numpy(),
                                   sub[args.power_col].to_numpy(), step)
-        if win is not None and not window_mask(truth.index, win).any():
+        if win is not None and (truth.empty or not window_mask(truth.index, win).any()):
             print(f"  [warn] station {st}: truth has no points in this window -> counterfactual skipped (0 API calls)")
             _cf_append(csv_path, {"station": st, "status": "no_overlap"})
             continue
