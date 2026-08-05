@@ -277,7 +277,7 @@ def test_cf_decomposition(cf_data, fake_api):
     assert float(d.loc["c1", "base_vs_parquet_pct"]) == pytest.approx(0.0, abs=1e-9)
     assert int(d.loc["c1", "coadapt"]) == 0
     assert fake_api.hits == 4                                     # 2 站 × 2 次
-    assert os.path.exists(cf_data / "out" / "counterfactual_overview.png")
+    assert os.path.exists(cf_data / "out" / "20260715" / "D+1" / "counterfactual_overview.png")
 
 
 def test_cf_dry_run_zero_calls(cf_data, fake_api):
