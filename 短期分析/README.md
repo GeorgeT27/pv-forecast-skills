@@ -83,7 +83,7 @@ python3 station_analysis_short.py --input input.parquet --predict predict.parque
 
 ## 产物
 
-**常规**（`<out>/` 下）：
+**常规产物**（`<out>/<YYYYMMDD>/D+1/` 与 `D+4/` 下各一份）：
 - 逐站 `stations/station_<站>_Power.png` / `station_<站>_<特征>.png` / `station_<站>_scatter.png`（图宽随点数自适应，标题含站名 + 起始时间戳）。
 - `station_power_rmse.csv` + `station_feature_rmse.csv`。
 - 全场 `fleet_overview.png` + `theil_decomposition.png` + `fleet_ranking.csv`（每站 nRMSE / bias / Theil 份额 / 斜率 / r² / 离群标记 / 排名；给 `--info-csv` 时再加 `GCCAPCITY` + `nanwang_official_power` 两列）。
