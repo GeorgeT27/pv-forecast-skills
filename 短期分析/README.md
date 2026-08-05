@@ -114,4 +114,10 @@ python3 station_analysis_ultra_short.py --input-dir <根目录> --predict-dir <�
 - `station_power_rmse.csv` — 每站 16 lead 合并 RMSE（降序 = 排名）
 - `station_feature_rmse.csv` — 每站 lead-1 GHI RMSE
 
-无散点 / Theil / 舰队总览 / 反事实 / history / 南网指标。
+无散点 / Theil / 舰队总览 / 反事实 / history。
+
+**南网超短期准确率**（可选，给 `--info-csv`——两列 `station,GCCAPCITY`，可复用短期同一文件——即开启）：
+`Acc = (1 − mean_t mean_i |P_real(t) − p_i(t)| / max(P_real(t), 0.2·GCCAPCITY)) × 100%`，每时刻对 16 条
+lead 取绝对误差均值、再对全天 96 时刻取均值。恒用全部目标点（含夜间，`0.2·GCCAPCITY` 分母下限保证良态，
+不受 `--drop-night` 影响）；缺 (lead,时刻) 项按可用项平均。**仅逐站打印到日志（附 fleet mean），不写入任何
+CSV**；info-csv 缺某站 → 该站告警跳过。

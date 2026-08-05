@@ -152,6 +152,49 @@ def test_e2e_missing_input_dir_warns_and_gaps(us_data):
     assert int(ft.loc["s1", "n_points"]) == 95
 
 
+# ---------------------------------------------------------------- 南网超短期准确率（仅打印）
+def _write_info(wd, mapping):
+    pd.DataFrame([{"station": s, "GCCAPCITY": g} for s, g in mapping.items()]).to_csv(
+        wd / "info.csv", index=False)
+    return str(wd / "info.csv")
+
+
+def test_e2e_nanwang_ultrashort_print_only(us_data):
+    """C=500 → 0.2C=100 > 真值峰 95 → 分母恒 100：s1 逐 lead |误差|=k → Acc=1−8.5/100=91.50%；
+    s2 |误差|=2k → 83.00%。全点含夜间：--drop-night 不改变该指标。产物 CSV 不得含 nanwang 列。"""
+    info = _write_info(us_data, {"s1": 500.0, "s2": 500.0})
+    r = _run_us(us_data, ["--info-csv", info, "--no-plots"])
+    assert "station s1: 91.50%" in r.stdout
+    assert "station s2: 83.00%" in r.stdout
+    assert "fleet mean: 87.25%" in r.stdout                           # (91.50+83.00)/2
+    pw = pd.read_csv(_out(us_data) / "station_power_rmse.csv")
+    ft = pd.read_csv(_out(us_data) / "station_feature_rmse.csv")
+    assert not any("nanwang" in c.lower() for c in list(pw.columns) + list(ft.columns))
+    r2 = _run_us(us_data, ["--info-csv", info, "--no-plots", "--drop-night"])
+    assert "station s1: 91.50%" in r2.stdout                          # 恒用全 96 点，不受夜滤影响
+
+
+def test_e2e_nanwang_missing_station_warns(us_data):
+    info = _write_info(us_data, {"s1": 500.0})                        # s2 缺
+    r = _run_us(us_data, ["--info-csv", info, "--no-plots"])
+    assert "station s1: 91.50%" in r.stdout
+    assert "station s2: not in --info-csv" in r.stdout
+    assert "station s2:" not in r.stdout.replace("station s2: not in --info-csv", "")
+
+
+def test_nanwang_ultrashort_gap_handling():
+    """真值 NaN 的时刻整时刻剔除；lead 缺失的项按可用 lead 取均值。"""
+    idx = pd.date_range("2026-07-23", periods=3, freq="15min")
+    truth = pd.Series([10.0, np.nan, 10.0], index=idx)
+    leads = pd.DataFrame({"p1": [12.0, 5.0, 14.0], "p2": [8.0, 5.0, np.nan]}, index=idx)
+    acc, n_t = us.nanwang_ultrashort(truth, leads, gccap=50.0)        # 0.2C=10=denom
+    # t0: (|10−12|+|10−8|)/2/10 = 0.2；t1 剔除；t2: |10−14|/1/10 = 0.4 → mean=0.3 → 70%
+    assert n_t == 2
+    assert acc == pytest.approx(70.0, abs=1e-9)
+    assert us.nanwang_ultrashort(truth, leads, gccap=None) == (None, 0)
+    assert us.nanwang_ultrashort(truth, leads, gccap=0.0) == (None, 0)
+
+
 def test_e2e_no_plots(us_data):
     _run_us(us_data, ["--no-plots"])
     assert not (_out(us_data) / "stations").exists()

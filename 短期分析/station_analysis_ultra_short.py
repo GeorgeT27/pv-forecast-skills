@@ -12,7 +12,8 @@
 lead(17-j)：p1=4h 前（最旧）、p16=15min 前（最新）。真值/GHI 取 time=(t-15min) 目录的 list[0]
 （t=00:00 → date=D-1/time=23:45）。缺 起报 → 告警+NaN 缺口，不中断；同 token 多文件 → 退出。
 产物：stations/ 17 线 Power 图 + 2 线 GHI 图；station_power_rmse.csv（16 lead 合并 RMSE）、
-station_feature_rmse.csv（lead-1 GHI RMSE）。无散点/Theil/舰队图/反事实/history/南网。"""
+station_feature_rmse.csv（lead-1 GHI RMSE）。无散点/Theil/舰队图/反事实/history。
+给 --info-csv（station+GCCAPCITY）时逐站打印南网超短期准确率到日志（仅打印，不进 CSV）。"""
 from __future__ import annotations
 
 import argparse
@@ -175,6 +176,40 @@ def pooled_rmse(truth: pd.Series, leads: pd.DataFrame, keep: np.ndarray):
     return float(np.sqrt(np.mean(err ** 2))), int(err.size)
 
 
+def load_gccap(path, station_col, cap_col="GCCAPCITY"):
+    """info_csv -> {str(station): GCCAPCITY float}. Joins on station_col; needs station_col + GCCAPCITY columns.
+    Rows with a missing/blank GCCAPCITY are skipped. Used only for the 南网 nanwang_ultrashort metric."""
+    df = pd.read_csv(path)
+    miss = [c for c in (station_col, cap_col) if c not in df.columns]
+    if miss:
+        raise SystemExit(f"--info-csv missing columns {miss}; actual columns: {list(df.columns)[:30]}")
+    out = {}
+    for _, r in df.iterrows():
+        v = r[cap_col]
+        if pd.notna(v):
+            out[str(r[station_col])] = float(v)
+    return out
+
+
+def nanwang_ultrashort(truth: pd.Series, leads: pd.DataFrame, gccap):
+    """南网超短期准确率（仅打印不落 CSV）：
+        Acc = (1 − mean_t mean_i |P_real(t) − p_i(t)| / max(P_real(t), 0.2·GCCAPCITY)) × 100，
+    逐项 sqrt(x²) 即 |x|。恒用全 96 目标点（含夜间，0.2C 分母下限保证良态，不受 --drop-night 影响）。
+    缺项跳过：时刻内对可用 lead 取均值，日内对（真值有效且 ≥1 lead 有值）的时刻取均值。
+    返回 (百分比, 有效时刻数)；gccap 缺失/非正或无有效时刻 → (None, 0)。"""
+    if gccap is None or not (gccap > 0):
+        return None, 0
+    t = truth.to_numpy(float)
+    P = leads.to_numpy(float)
+    r = np.abs(t[:, None] - P) / np.maximum(t, 0.2 * gccap)[:, None]
+    ok = np.isfinite(r)
+    valid_t = np.flatnonzero(ok.any(axis=1))
+    if valid_t.size == 0:
+        return None, 0
+    per_t = np.array([r[j][ok[j]].mean() for j in valid_t])
+    return (1.0 - float(per_t.mean())) * 100.0, int(valid_t.size)
+
+
 # ================================================================ plots
 def plot_power_17(st, truth: pd.Series, leads: pd.DataFrame, rmse_v, n, out_dir, tick_hours):
     """17 线：真值黑粗 + p1..p16 由浅到深（p1=4h 前最旧最浅、p16=15min 前最新最深）。"""
@@ -241,8 +276,11 @@ def main():
     ap.add_argument("--night-end-hour", type=float, default=5.0)
     ap.add_argument("--tick-hours", type=int, default=1)
     ap.add_argument("--no-plots", action="store_true", help="no plots, still writes CSVs")
+    ap.add_argument("--info-csv", default=None,
+                    help="CSV 含 station+GCCAPCITY 两列；给了就逐站打印南网超短期准确率（仅日志，不进 CSV）")
     args = ap.parse_args()
     D = pd.Timestamp(args.date).normalize()
+    gccap_map = load_gccap(args.info_csv, args.station_col) if args.info_csv else {}
 
     truth, miss_in = load_truth(args.input_dir, D, args.station_col)
     if not truth:
@@ -293,6 +331,23 @@ def main():
     if feat_rows:
         pd.DataFrame(feat_rows).sort_values("rmse", ascending=False).to_csv(
             os.path.join(out_root, "station_feature_rmse.csv"), index=False)
+
+    if gccap_map:
+        accs = []
+        for st in sts:
+            gc = gccap_map.get(str(st))
+            if gc is None:
+                print(f"  [warn] station {st}: not in --info-csv, nanwang_ultrashort skipped")
+                continue
+            acc, n_t = nanwang_ultrashort(truth[st]["power_true"], mats[st], gc)
+            if acc is None:
+                print(f"  [warn] station {st}: no valid (truth, lead) pair, nanwang_ultrashort skipped")
+                continue
+            accs.append(acc)
+            print(f"[nanwang_ultrashort] station {st}: {acc:.2f}%   (C={gc:g}, {n_t}/96 时刻, 全点含夜间)")
+        if accs:
+            print(f"[nanwang_ultrashort] fleet mean: {float(np.mean(accs)):.2f}%   ({len(accs)} stations)")
+
     print(f"[ultra_short] D={D:%Y-%m-%d}   stations x{len(sts)}   "
           f"missing 起报: predict {miss_pred}/{len(issue_times(D))}, input {miss_in}/96   -> {out_root}/")
 
