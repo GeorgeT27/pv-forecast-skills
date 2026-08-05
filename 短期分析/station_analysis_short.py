@@ -825,6 +825,12 @@ def run_counterfactual(inp, pred, args, cap_map, step, out_dir=None, win=None, g
     for st in todo:
         col = resolve_pred_col(st, pred, args.pred_col_template)   # non-None: the station list was filtered above
         sub = inp[inp[args.station_col] == st].sort_values(args.win_col)
+        truth = series_from_lists(sub[args.win_col].to_numpy(),
+                                  sub[args.power_col].to_numpy(), step)
+        if win is not None and not window_mask(truth.index, win).any():
+            print(f"  [warn] station {st}: truth has no points in this window -> counterfactual skipped (0 API calls)")
+            _cf_append(csv_path, {"station": st, "status": "no_overlap"})
+            continue
         pq = pred[col].dropna()
         dtimes = pq.index.sort_values()
         try:
@@ -846,8 +852,6 @@ def run_counterfactual(inp, pred, args, cap_map, step, out_dir=None, win=None, g
             print(f"  [warn] station {st}: {e}")
             _cf_append(csv_path, {"station": st, "status": "api_error"})
             continue
-        truth = series_from_lists(sub[args.win_col].to_numpy(),
-                                  sub[args.power_col].to_numpy(), step)
         cap = cap_map.get(str(st)) or cap_map.get(st)
         gccap = gccap_map.get(str(st))
         if gccap_map and gccap is None:
