@@ -102,3 +102,57 @@ def test_missing_predict_file_gap(us_data):
     mats, miss = us.load_predict_matrix(str(us_data / "predict"), D, ["s1"], "predict_power_{station}")
     assert miss == 1
     assert int(mats["s1"].isna().sum().sum()) == 16           # 16 targets lose exactly one lead each
+
+
+# ---------------------------------------------------------------- e2e
+def _run_us(wd, extra=()):
+    r = subprocess.run(
+        [sys.executable, SCRIPT, "--input-dir", str(wd / "input"),
+         "--predict-dir", str(wd / "predict"), "--date", "20260723",
+         "--out-dir", str(wd / "out")] + list(extra),
+        cwd=str(wd), capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    return r
+
+
+def _out(wd):
+    return wd / "out" / "20260723"
+
+
+def test_e2e_metrics_and_outputs(us_data):
+    _run_us(us_data)
+    pw = pd.read_csv(_out(us_data) / "station_power_rmse.csv")
+    assert list(pw["station"]) == ["s2", "s1"]                        # sorted worst-first
+    pw = pw.set_index("station")
+    assert pw.loc["s1", "power_rmse"] == pytest.approx(math.sqrt(93.5), abs=1e-6)
+    assert pw.loc["s2", "power_rmse"] == pytest.approx(2 * math.sqrt(93.5), abs=1e-6)
+    assert set(pw["n_points"]) == {96 * 16}
+    ft = pd.read_csv(_out(us_data) / "station_feature_rmse.csv").set_index("station")
+    assert ft.loc["s1", "rmse"] == pytest.approx(5.0)
+    assert int(ft.loc["s1", "n_points"]) == 96
+    for st in ("s1", "s2"):
+        assert (_out(us_data) / "stations" / f"station_{st}_Power.png").exists()
+        assert (_out(us_data) / "stations" / f"station_{st}_GHI.png").exists()
+
+
+def test_e2e_drop_night(us_data):
+    _run_us(us_data, ["--drop-night"])                                # removes hod<5 → 20 targets
+    pw = pd.read_csv(_out(us_data) / "station_power_rmse.csv").set_index("station")
+    assert set(pw["n_points"]) == {76 * 16}
+    assert pw.loc["s1", "power_rmse"] == pytest.approx(math.sqrt(93.5), abs=1e-6)   # per-lead常数误差不变
+
+
+def test_e2e_missing_input_dir_warns_and_gaps(us_data):
+    shutil.rmtree(us_data / "input" / "date=2026-07-23" / "time=12:00")
+    r = _run_us(us_data)
+    assert "input 起报 2026-07-23 12:00" in r.stdout
+    pw = pd.read_csv(_out(us_data) / "station_power_rmse.csv").set_index("station")
+    assert set(pw["n_points"]) == {96 * 16 - 16}                      # target 12:15 unscored on all 16 leads
+    ft = pd.read_csv(_out(us_data) / "station_feature_rmse.csv").set_index("station")
+    assert int(ft.loc["s1", "n_points"]) == 95
+
+
+def test_e2e_no_plots(us_data):
+    _run_us(us_data, ["--no-plots"])
+    assert not (_out(us_data) / "stations").exists()
+    assert (_out(us_data) / "station_power_rmse.csv").exists()

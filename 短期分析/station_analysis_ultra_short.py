@@ -163,3 +163,139 @@ def load_truth(input_dir: str, D: pd.Timestamp, station_col: str = "station"):
                 if arr.size and np.isfinite(arr[0]):
                     fr.at[t, out_col] = float(arr[0])
     return frames, n_missing
+
+
+# ================================================================ metrics
+def pooled_rmse(truth: pd.Series, leads: pd.DataFrame, keep: np.ndarray):
+    """16 lead 合并 RMSE：leads 每列减 truth，keep（夜滤）行内所有有限 (lead,目标) 对。-> (rmse|None, n)。"""
+    err = leads.sub(truth, axis=0).to_numpy(float)[keep]
+    err = err[np.isfinite(err)]
+    if err.size == 0:
+        return None, 0
+    return float(np.sqrt(np.mean(err ** 2))), int(err.size)
+
+
+# ================================================================ plots
+def plot_power_17(st, truth: pd.Series, leads: pd.DataFrame, rmse_v, n, out_dir, tick_hours):
+    """17 线：真值黑粗 + p1..p16 由浅到深（p1=4h 前最旧最浅、p16=15min 前最新最深）。"""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.dates as mdates
+    import matplotlib.pyplot as plt
+    from matplotlib import cm
+    _cn_font()
+    fig, ax = plt.subplots(figsize=(24, 7))
+    colors = cm.viridis(np.linspace(0.88, 0.10, N_LEADS))
+    for j, lab in enumerate(leads.columns):
+        ax.plot(leads.index, leads[lab], color=colors[j], lw=0.9, alpha=0.8,
+                label=f"{lab} ({(N_LEADS - j) * 15}min ahead)")
+    ax.plot(truth.index, truth, color="#000000", lw=2.2, label="observed power")
+    rtxt = f"pooled RMSE={rmse_v:.3f}" if rmse_v is not None else "no scored points"
+    ax.set_title(f"Station {st} - ultra-short 16-lead power   {rtxt}   (n={n} lead-target pairs)",
+                 fontsize=13, fontweight="bold")
+    ax.xaxis.set_major_locator(mdates.HourLocator(interval=max(1, int(tick_hours))))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
+    plt.setp(ax.get_xticklabels(), rotation=90, fontsize=7)
+    ax.set_xlabel("time"); ax.set_ylabel("power")
+    ax.legend(loc="upper right", fontsize=6, ncol=2); ax.grid(alpha=0.25)
+    fig.tight_layout()
+    path = os.path.join(_station_dir(out_dir), f"station_{sanitize(st)}_Power.png")
+    fig.savefig(path, dpi=110); plt.close(fig)
+    return path
+
+
+def plot_ghi(st, ghi_true: pd.Series, ghi_pred: pd.Series, rmse_v, out_dir, tick_hours):
+    """2 线：lead-1 GHI 预测 vs GHI 真值（都来自 input 侧 list[0]，是特征质量图不是模型输出图）。"""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.dates as mdates
+    import matplotlib.pyplot as plt
+    _cn_font()
+    fig, ax = plt.subplots(figsize=(24, 6))
+    ax.plot(ghi_true.index, ghi_true, label="GHI_real_future (true)", color="#1f77b4", lw=1.3)
+    ax.plot(ghi_pred.index, ghi_pred, label="GHI_SOLARGIS_predict (lead-1 pred)",
+            color="#d62728", lw=1.1, alpha=0.85)
+    ax.fill_between(ghi_true.index, ghi_true.to_numpy(float), ghi_pred.to_numpy(float),
+                    color="#d62728", alpha=0.12)
+    ax.set_title(f"Station {st} - GHI (lead-1)   RMSE={rmse_v:.3f}", fontsize=13, fontweight="bold")
+    ax.xaxis.set_major_locator(mdates.HourLocator(interval=max(1, int(tick_hours))))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
+    plt.setp(ax.get_xticklabels(), rotation=90, fontsize=7)
+    ax.set_xlabel("time"); ax.set_ylabel("GHI"); ax.legend(loc="upper right"); ax.grid(alpha=0.25)
+    fig.tight_layout()
+    path = os.path.join(_station_dir(out_dir), f"station_{sanitize(st)}_GHI.png")
+    fig.savefig(path, dpi=110); plt.close(fig)
+    return path
+
+
+# ================================================================ main
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--input-dir", required=True, help="真值侧根目录：date=YYYY-MM-DD/time=HH:MM/ 分区")
+    ap.add_argument("--predict-dir", required=True, help="预测侧扁平目录：每 起报 一个 parquet，文件名含 YYYYMMDDHHMM")
+    ap.add_argument("--date", required=True, help="分析日 D，如 20260723 或 2026-07-23")
+    ap.add_argument("--out-dir", default="station_analysis_ultra_short_out")
+    ap.add_argument("--pred-col-template", default="predict_power_{station}")
+    ap.add_argument("--station-col", default="station")
+    ap.add_argument("--drop-night", action="store_true", help="remove each day's 00:00-night_end_hour points")
+    ap.add_argument("--night-end-hour", type=float, default=5.0)
+    ap.add_argument("--tick-hours", type=int, default=1)
+    ap.add_argument("--no-plots", action="store_true", help="no plots, still writes CSVs")
+    args = ap.parse_args()
+    D = pd.Timestamp(args.date).normalize()
+
+    truth, miss_in = load_truth(args.input_dir, D, args.station_col)
+    if not truth:
+        raise SystemExit("no input data found in any 起报 dir -- check --input-dir/--date")
+    probe = None
+    for S in issue_times(D):
+        probe = find_parquet(args.predict_dir, S.strftime("%Y%m%d%H%M"))
+        if probe:
+            break
+    if probe is None:
+        raise SystemExit("no predict parquet found for any 起报 -- check --predict-dir/--date")
+    pred_sts = set(stations_from_columns(pd.read_parquet(probe).columns, args.pred_col_template))
+    sts = sorted(set(truth) & pred_sts, key=str)
+    only_in, only_pred = sorted(set(truth) - pred_sts), sorted(pred_sts - set(truth))
+    if only_in:
+        print(f"  [warn] stations only on input side, skipped: {only_in}")
+    if only_pred:
+        print(f"  [warn] stations only on predict side, skipped: {only_pred}")
+    if not sts:
+        raise SystemExit("no station present on both input and predict sides")
+    mats, miss_pred = load_predict_matrix(args.predict_dir, D, sts, args.pred_col_template)
+
+    out_root = os.path.join(args.out_dir, D.strftime("%Y%m%d"))
+    os.makedirs(out_root, exist_ok=True)
+    keep = night_mask(target_grid(D), args.drop_night, args.night_end_hour)
+    power_rows, feat_rows = [], []
+    for st in sts:
+        tr = truth[st]
+        rv, n = pooled_rmse(tr["power_true"], mats[st], keep)
+        if rv is not None:
+            power_rows.append({"station": st, "power_rmse": round(rv, 6), "n_points": n})
+        else:
+            print(f"  [warn] station {st}: no scored (lead, target) pairs, power skipped")
+        gt, gp = tr["ghi_true"][keep], tr["ghi_pred"][keep]
+        both = np.isfinite(gt.to_numpy(float)) & np.isfinite(gp.to_numpy(float))
+        grm = rmse(gp.to_numpy(float)[both], gt.to_numpy(float)[both]) if both.any() else None
+        if grm is not None:
+            feat_rows.append({"station": st, "feature": "GHI", "rmse": round(grm, 6),
+                              "n_points": int(both.sum())})
+        if not args.no_plots:
+            plot_power_17(st, tr["power_true"][keep], mats[st][keep], rv, n, out_root, args.tick_hours)
+            if grm is not None:
+                plot_ghi(st, gt, gp, grm, out_root, args.tick_hours)
+
+    if power_rows:
+        pd.DataFrame(power_rows).sort_values("power_rmse", ascending=False).to_csv(
+            os.path.join(out_root, "station_power_rmse.csv"), index=False)
+    if feat_rows:
+        pd.DataFrame(feat_rows).sort_values("rmse", ascending=False).to_csv(
+            os.path.join(out_root, "station_feature_rmse.csv"), index=False)
+    print(f"[ultra_short] D={D:%Y-%m-%d}   stations x{len(sts)}   "
+          f"missing 起报: predict {miss_pred}/{len(issue_times(D))}, input {miss_in}/96   -> {out_root}/")
+
+
+if __name__ == "__main__":
+    main()
