@@ -118,3 +118,19 @@ def test_charts_rooted_citation_required_even_with_lookalike_file(tmp_path):
     r = run_gate(wd)
     assert r.returncode == 1 and "图" in r.stdout
     assert not (wd / "gate_reports" / "conclusion_gate.json").exists()
+
+
+def test_fail_arch_causal_without_ablation_receipt(tmp_path):
+    c = ("# 结论\n（见 charts/error-breakdown.png）\n## 模型结构依据\n"
+         "档案 H3：跨变量注意力**导致**近端优势。\n")
+    r = run_gate(setup(tmp_path, c))
+    assert r.returncode == 1 and "消融" in r.stdout
+    assert not (tmp_path / "gate_reports" / "conclusion_gate.json").exists()
+
+
+def test_pass_arch_causal_with_ablation_receipt(tmp_path):
+    c = ("# 结论\n（见 charts/error-breakdown.png）\n## 模型结构依据\n"
+         "档案 H3：跨变量注意力**导致**近端优势。\n"
+         "## 消融证据\n"
+         "- H3 confirmed: switch=--itrans_no_attn delta=+0.031 noise_floor=0.0102 seeds=3\n")
+    assert run_gate(setup(tmp_path, c)).returncode == 0

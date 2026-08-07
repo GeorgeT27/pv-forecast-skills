@@ -15,6 +15,9 @@ import engine_common as ec
 SECTION = "## 模型结构依据"
 ANCHOR_RE = re.compile(r"(?:H-?\d+|\.modelmap|file:\d+)")
 CHART_REF_RE = re.compile(r"[\w./_-]+\.(?:png|svg|json)")
+CAUSAL_RE = re.compile(r"(导致|因为|归因于|caused by|due to|→\s*优势|使得)")
+RECEIPT_LINE_RE = re.compile(r"(confirmed|refuted|undecided).*(switch|delta).*seeds?=\d")
+ABLATION_SECTION = "## 消融证据"
 
 
 def fail(msg):
@@ -51,6 +54,14 @@ def main():
         missing = [c for c in cited if not os.path.exists(c)]
         if missing:
             fail(f"结论引用了不存在的图：{missing}")
+
+    # 规则 4：架构/组件因果表述必须附消融 receipt
+    if CAUSAL_RE.search(sec):
+        abl = text.split(ABLATION_SECTION, 1)[1] if ABLATION_SECTION in text else ""
+        if not RECEIPT_LINE_RE.search(abl):
+            fail("结论含架构因果表述但「## 消融证据」节无对应 receipt"
+                 "（须含 confirmed/refuted/undecided + switch/delta + seeds=N）——"
+                 "降级为「未验证假设」或补 receipt")
 
     os.makedirs("gate_reports", exist_ok=True)
     ec.dump_json({"passed": True,
