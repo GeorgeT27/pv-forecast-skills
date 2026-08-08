@@ -246,7 +246,16 @@ CONCLUSION.md 按 `references/conclusion-reporting.md` 的通用骨架写，`## 
 
 `## 消融证据` 一字不差抄 Stage 3 `ablation_verdict.py` 打印的 receipt 行——那一行本身就是 `conclusion_gate.RECEIPT_LINE_RE` 要匹配的格式，不要手改措辞。
 
-Stage 3 走了降级路径（§2 Stage 3「降级路径」段——checkpoint/experiment_config absent-confirmed，或 model_profile 产物 declined）时，`## 模型结构依据` 固定写这句模板，两个触发源都覆盖，不必分叉措辞："模型结构依据不可用：model_profile 产物 declined（或其材料 model_code 处于 absent-confirmed），checkpoint/experiment_config 材料同为 absent-confirmed，结构性解释降级为未验证假设"——不管实际命中哪一个触发条件，都照抄这句模板（不要只挑命中的那半句删掉另一半），因为 conclusion_gate 的降级豁免机械匹配 `absent-confirmed` 与"降级"两个词的同时出现（`test_conclusion_gate.py::test_degraded_statement_accepted` 是这条豁免的既有先例），少写一半就可能漏掉字面匹配。
+Stage 3 走了降级路径（§2 Stage 3「降级路径」段）时，`## 模型结构依据` **照命中的触发写对应句；只命中一个就只写一个；禁止谎称另一个也缺**——两个触发源各自独立成句、各自都自带 `absent-confirmed` 与"降级"两个词，不需要凑成一整句、更不许为了凑字面匹配而断言一个实际存在的材料"也缺"：
+
+- 命中 `skipped_reason: "no_model_profile"`（model_profile 产物 declined）→ 只写这句："model_profile declined → 模型代码锚点 absent-confirmed，结构性解释降级为未验证假设。"
+- 命中 `skipped_reason: "no_trainable_framework"`（checkpoint/experiment_config 材料 absent-confirmed）→ 只写这句："checkpoint/experiment_config 材料 absent-confirmed → 无法干预，结论降级为未验证假设。"
+- 两个 `skipped_reason` 都命中（Stage 3 recipe「降级路径」段允许同时写两个）→ 两句都写。
+
+单独任何一句都已经同时含 `absent-confirmed` 与"降级"，conclusion_gate 的降级豁免
+（`"absent-confirmed" in sec and "降级" in sec`，对整个「模型结构依据」节做子串匹配，
+不要求两个词出现在同一句、也不要求两个触发源都被断言）单独一句就能过闸——不必也不许
+再多断言一个没有发生的缺失去"确保过闸"，那是伪造证据，违反闸本身要防的事。
 
 特有反驳门——写结论前逐条自问并记录：
 - **平局停手门**：Stage 0 是不是因为池化平局就没往下切片？没切完就写"无差异"＝违反 §1 首要陷阱，结论不可信。
