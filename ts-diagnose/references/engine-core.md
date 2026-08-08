@@ -141,6 +141,40 @@ AskUserQuestion 问用户要不要拿某条实验线预填；同意就把实验�
 - **上下文预算**：产物自足（json 自带完整数字与形状描述），判读读 json，不读 PNG、
   不读原始大文件；每阶段落盘，随时可断点续跑。
 
+## 假设验证循环
+
+分析 playbook 若声明了假设生成器角色（吐 `hypothesis_ledger.json`，如
+model-comparison），不在自己内部下结论——结论由引擎编排一个跨 playbook 的循环
+在出口处产一次。
+
+**循环步骤**：
+
+1. 生成器 playbook 产出假设账本（`slice_map` + `hypotheses[]`，字段纪律见
+   `scripts/hypothesis_ledger.py`），停顿移交，不下结论；
+2. 转入验证主脊 `architecture-attribution`：取账本里判别力最高的假设，单变量消融
+   干预，判定 confirmed / refuted / undecided；
+3. **否证（refuted）且预算未耗尽** → 回生成器提修正假设，标
+   `provenance: post-hoc`——不许用同一批数据既生成又确认；
+4. 确认 / 预算耗尽 / 生成器提不出新的判别性假设 → 收敛，退出循环；
+5. 结论只在循环出口产**一次**，过 `conclusion_gate`（架构因果表述须附「## 消融证据」
+   receipt），循环中途不产结论。
+
+**预算阶梯（防死循环）**：单轮干预上限 ~10 次训练；循环总轮数上限 3 轮。
+
+**终止条件**（任一满足即收）：
+1. 某假设确认（confirmed）且能解释切片版图；
+2. 预算耗尽；
+3. 生成器提不出新的判别性假设。
+
+**subagent 外包（强制）**：验证主脊的每条干预必须外包给 subagent 执行，主 agent
+只收一条紧凑 receipt（配置 diff + delta + 噪声底对照 + 种子数 + 判定），不吃训练
+过程的上下文。brief 模板见
+`playbooks/architecture-attribution/references/subagent-brief.md`，不在此重复。
+
+**回退（无 `trainable_framework`）**：`checkpoint`/`experiment_config` 材料
+absent-confirmed 时，验证主脊跳过，循环退化为"生成器吐带标注的未验证假设"；
+`conclusion_gate` 显式标注该结论未经干预验证——= 现状行为，对老用法零破坏。
+
 ## 结论纪律（硬规则；细则见 mechanisms.md）
 
 1. **三道门**——结论阶段逐条过（orient 在产 CONCLUSION.md 的阶段会打印这份清单；

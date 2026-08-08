@@ -21,7 +21,7 @@ ENGINE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 
 ALL_PLAYBOOK_IDS = (
     "training-sufficiency", "robustness", "feature-importance",
-    "model-comparison", "deployment-drift", "fact-scan",
+    "model-comparison", "architecture-attribution", "deployment-drift", "fact-scan",
     "model-audit", "result-eval", "subset-influence", "data-setup",
     "metric-eval",
 )

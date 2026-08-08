@@ -1,6 +1,6 @@
 ---
 name: ts-diagnose
-description: 泛化的时序模型诊断引擎：单入口 + 11 个可插拔 playbook，覆盖时序/预测任务的诊断与评估。按用户目标触发：训练是否充分 / batch 不足 / chunk·fold 构成 / loss 震荡收敛慢（training-sufficiency）；结论或模型在扰动与分组切片下稳不稳（robustness）；哪个输入变量对误差影响最大 / feature_true 对照归因 / 反事实验证（feature-importance）；为什么模型 A 比 B 好、模型对比归因（model-comparison）；上线后是否退化 / 误差何时开始变大 / 漂移诊断（deployment-drift）；只画标准分析图看现象、不要结论（fact-scan）；分析模型代码 / 生成模型档案（model-audit）；评估预测结果 / 算指标 / 月度或时段归因（result-eval）；把原始预测与真值规范成长表和对齐报告（data-setup，通常由引擎自动先跑）；N 个训练条目里哪个拖累留出目标 / 负迁移归因（subset-influence）；只算 RMSE / 只要指标表、不用分析（metric-eval）。已固化的代理技能（crystallize 产出）若覆盖当前场景则优先级最高。
+description: 泛化的时序模型诊断引擎：单入口 + 12 个可插拔 playbook，覆盖时序/预测任务的诊断与评估。按用户目标触发：训练是否充分 / batch 不足 / chunk·fold 构成 / loss 震荡收敛慢（training-sufficiency）；结论或模型在扰动与分组切片下稳不稳（robustness）；哪个输入变量对误差影响最大 / feature_true 对照归因 / 反事实验证（feature-importance）；为什么模型 A 比 B 好、模型对比归因（model-comparison）；已有差距版图、要消融实验验证是不是某模型组件造成的（architecture-attribution）；上线后是否退化 / 误差何时开始变大 / 漂移诊断（deployment-drift）；只画标准分析图看现象、不要结论（fact-scan）；分析模型代码 / 生成模型档案（model-audit）；评估预测结果 / 算指标 / 月度或时段归因（result-eval）；把原始预测与真值规范成长表和对齐报告（data-setup，通常由引擎自动先跑）；N 个训练条目里哪个拖累留出目标 / 负迁移归因（subset-influence）；只算 RMSE / 只要指标表、不用分析（metric-eval）。已固化的代理技能（crystallize 产出）若覆盖当前场景则优先级最高。
 ---
 
 # ts-diagnose：Layer 0 路由层
@@ -11,7 +11,7 @@ description: 泛化的时序模型诊断引擎：单入口 + 11 个可插拔 pla
 ## 路由优先级（两级）
 
 1. **已固化代理技能**最高——命中其场景直接短路（`orient.py --profile` 入口，已验证脚本 + 免重复提问）；
-2. **本引擎**——其余诊断与评估目标一律由下方 11 个 playbook 覆盖。
+2. **本引擎**——其余诊断与评估目标一律由下方 12 个 playbook 覆盖。
 
 ## 路由表（识别目标 → 匹配 playbook）
 
@@ -29,6 +29,9 @@ description: 泛化的时序模型诊断引擎：单入口 + 11 个可插拔 pla
 | N 个训练条目里哪些拖累留出目标（负迁移）/ chunk loss 震荡解释 | `subset-influence` |
 | 只想先把原始数据规范成长表/对齐报告（其他目标的必需前置，一般自动先跑） | `data-setup` |
 | 只算指标 / 算个 RMSE / 给我指标表，不用分析 | `metric-eval` |
+
+升级条件：`model-comparison` 只产假设、不下机制结论；用户要机制结论、且有可重训框架
+材料时，升级到 `architecture-attribution` 做干预验证。
 
 都不像 → 先跑下方 orient 看菜单再与用户确认；菜单里也没有 → 按 `playbooks/_playbook-spec.md`
 写新 playbook（先征得用户同意）。
