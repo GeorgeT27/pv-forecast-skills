@@ -21,6 +21,7 @@ description: 泛化的时序模型诊断引擎：单入口 + 11 个可插拔 pla
 | 结论或模型在扰动、分组切片、子期下稳不稳 | `robustness` |
 | 哪个输入变量对误差/目标指标影响最大 / 有 feature_true 对照的预测特征质量归因与反事实验证 | `feature-importance` |
 | 为什么模型 A 比 B 好/差、多模型对比归因 | `model-comparison` |
+| 已有差距版图，要往下验证是不是某个具体模型组件造成的、需要消融实验才能下因果结论 | `architecture-attribution` |
 | 上线/部署后是不是退化了、误差从什么时候开始变大、漂移诊断 | `deployment-drift` |
 | 只想体检/把标准分析图画一遍/看现象不要结论 | `fact-scan` |
 | 给定模型代码目录：分析模型/生成模型档案/核验描述与代码一致 | `model-audit` |

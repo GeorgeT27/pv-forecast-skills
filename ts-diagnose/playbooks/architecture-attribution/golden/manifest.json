@@ -1,0 +1,29 @@
+{
+  "playbook": "architecture-attribution",
+  "note": "本 playbook 的主线（假设账本读取、判别性干预设计、subagent 执行判定、结论落笔）依赖真实假设账本/真实可训练框架（checkpoint+experiment_config）/真实 subagent 训练，无法用确定性合成小样覆盖 Stage 1-4——那些阶段靠正文声明的对账步骤（validate_ledger + hypotheses 非空核验、单变量/预算阶梯纪律、强制 subagent receipt 契约）兜底，与 subset-influence 的同类取舍一致。唯一可确定性验证、且是 Stage 0 现象定位核心的是切片配对 z 检验：slice_metrics.csv 植入一个真实差异切片（far，3 种子配对差 [0.20,0.15,0.25]，z≈6.93）与一个噪声切片（near，配对差 [0.01,-0.02,0.015]，z≈0.15），验证 slice_zcheck.py 的 z>3=real / 否则 ~noise 判定没有算错。Stage 3 的 ablation_verdict.verdict() 是纯函数（标量输入，无文件态），已在 scripts/tests/test_ablation_verdict.py 直接单测覆盖 confirmed/refuted/undecided 三态 + CLI receipt 行格式，不需要另外的 golden/gen_gate 包装。改期望先改 make_golden.py 并重跑 pytest。",
+  "planted": {
+    "far_diffs": [0.20, 0.15, 0.25],
+    "far_z_approx": 6.93,
+    "near_diffs": [0.01, -0.02, 0.015],
+    "near_z_approx": 0.15
+  },
+  "stages": {
+    "0": {
+      "desc": "切片配对 z 检验：far 切片真实差异（z>3）、near 切片落噪声底内（~noise）",
+      "inputs": ["slice_metrics.csv"],
+      "args": ["--metrics", "slice_metrics.csv", "--out", "slice_zcheck.json"],
+      "expect": [
+        {"file": "slice_zcheck.json", "path": "n_slices", "op": "eq", "value": 2},
+        {"file": "slice_zcheck.json", "path": "n_real", "op": "eq", "value": 1},
+        {"file": "slice_zcheck.json", "path": "n_noise", "op": "eq", "value": 1},
+        {"file": "slice_zcheck.json", "path": "slices.far.n_seeds", "op": "eq", "value": 3},
+        {"file": "slice_zcheck.json", "path": "slices.far.verdict", "op": "eq", "value": "real"},
+        {"file": "slice_zcheck.json", "path": "slices.far.mean_diff", "op": "between", "value": [0.19, 0.21]},
+        {"file": "slice_zcheck.json", "path": "slices.far.z", "op": "between", "value": [6.8, 7.0]},
+        {"file": "slice_zcheck.json", "path": "slices.near.verdict", "op": "eq", "value": "~noise"},
+        {"file": "slice_zcheck.json", "path": "slices.near.z", "op": "between", "value": [0.1, 0.2]}
+      ],
+      "reference": "reference/slice_zcheck_ref.py"
+    }
+  }
+}
