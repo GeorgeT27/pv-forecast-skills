@@ -6,7 +6,7 @@ upstream:
   - product: setup
     required: true
   - product: model_profile
-    required: true
+    required: false
 stages:
   - id: 0
     name: 现象定位（噪声底核验 + 切片测量）
@@ -190,7 +190,7 @@ python3 <ENGINE>/scripts/ablation_verdict.py \
 
 汇总 `verdict_summary.json`（自足：`{"interventions":[{"hypothesis_id":str,"verdict":str,"receipt_line":str}],"n_confirmed":int,"n_refuted":int,"n_undecided":int,"budget_used":int}`）。FINDINGS.md 按结果更新状态：confirmed → 「已证实」；refuted → 「被推翻」（保留行，不删）；undecided → 状态仍写「假设」，结论文字里显式加注"（未决）"。
 
-**降级路径**：`checkpoint`/`experiment_config` 材料 absent-confirmed（§7）→ Stage 2/3 判定为不可执行；主 agent 人工写一份 `verdict_summary.json`，把 Stage 1 全部 pending 假设标 `skipped_reason: "no_trainable_framework"`，`n_confirmed=n_refuted=0`，`n_undecided=`全部待验假设数——满足本阶段 done_when 的产物存在性，进入 Stage 4 出具"未验证假设"结论（design doc §8 的既定回退，对无可重训框架的老用法零破坏）。
+**降级路径**（两个独立触发条件，任一命中即走同一条路径）：①`checkpoint`/`experiment_config` 材料 absent-confirmed——没有可重训框架，干预无法执行；②`model_profile` 产物 `declined`（`upstream` 里声明 `required: false`，用户在三分支问题里选了放弃，见 §7）——没有 `ablation_switches`，Stage 2 连"该干预哪个 switch"都定不出来，Stage 3 同样无从执行。两者任一命中 → Stage 2/3 判定为不可执行；主 agent 人工写一份 `verdict_summary.json`，把 Stage 1 全部 pending 假设标 `skipped_reason`（对应写 `"no_trainable_framework"` 或 `"no_model_profile"`，两者都缺则都写），`n_confirmed=n_refuted=0`，`n_undecided=`全部待验假设数——满足本阶段 done_when 的产物存在性，进入 Stage 4 出具"未验证假设"结论（design doc §8 的既定回退，对无可重训框架/无模型档案的老用法零破坏）。
 
 done：`verdict_summary.json` 落盘（正常路径含 ≥1 条 receipt；降级路径显式标注 skipped）。
 
@@ -246,7 +246,7 @@ CONCLUSION.md 按 `references/conclusion-reporting.md` 的通用骨架写，`## 
 
 `## 消融证据` 一字不差抄 Stage 3 `ablation_verdict.py` 打印的 receipt 行——那一行本身就是 `conclusion_gate.RECEIPT_LINE_RE` 要匹配的格式，不要手改措辞。
 
-无 `trainable_framework`（checkpoint/experiment_config absent-confirmed）的降级路径：`## 模型结构依据` 写"模型档案存在但无法验证：checkpoint/experiment_config 为 absent-confirmed，结构性解释降级为未验证假设"——含 `absent-confirmed` 与"降级"两个词，满足 conclusion_gate 的降级豁免。
+Stage 3 走了降级路径（§2 Stage 3「降级路径」段——checkpoint/experiment_config absent-confirmed，或 model_profile 产物 declined）时，`## 模型结构依据` 固定写这句模板，两个触发源都覆盖，不必分叉措辞："模型结构依据不可用：model_profile 产物 declined（或其材料 model_code 处于 absent-confirmed），checkpoint/experiment_config 材料同为 absent-confirmed，结构性解释降级为未验证假设"——不管实际命中哪一个触发条件，都照抄这句模板（不要只挑命中的那半句删掉另一半），因为 conclusion_gate 的降级豁免机械匹配 `absent-confirmed` 与"降级"两个词的同时出现（`test_conclusion_gate.py::test_degraded_statement_accepted` 是这条豁免的既有先例），少写一半就可能漏掉字面匹配。
 
 特有反驳门——写结论前逐条自问并记录：
 - **平局停手门**：Stage 0 是不是因为池化平局就没往下切片？没切完就写"无差异"＝违反 §1 首要陷阱，结论不可信。
@@ -258,8 +258,8 @@ CONCLUSION.md 按 `references/conclusion-reporting.md` 的通用骨架写，`## 
 ## 7. 材料降级说明
 
 - `predict`/`truth` 缺：`setup` 产物建不起来，本 playbook 连带不可做——向用户说明后终止。
-- `model_profile`（model-audit 产物）缺且用户 declined：Stage 1 无法把假设指向具体组件（`component` 字段没有锚点可查），本 playbook 连带不可做——机制归因离不开代码锚点，这不是可降级项。
-- `checkpoint`/`experiment_config` absent-confirmed：Stage 2/3 判定为不可执行——按 Stage 3 recipe 的"降级路径"写占位 `verdict_summary.json`，Stage 4 结论按 §6 的降级模板写"未验证假设"。这是 design doc §8 的既定回退：对没有可重训框架的老用法零破坏。
+- `model_profile`（model-audit 产物，`upstream` 声明 `required: false`——与引擎里其他消费同一产物的 playbook 一致）缺：orient 会问三分支——现在内联生产 model-audit / 链接已有 `.modelmap` / **放弃（declined）**。选"放弃"不终止全 playbook：Stage 0（切片测量）与 Stage 1（假设账本校验/选择，`component` 字段仍可登记，只是没有代码锚点核对）照常进行；Stage 2 的 `product:model_profile` 前置不满足，判定为不可执行，走 Stage 3 recipe 的"降级路径"（§2 Stage 3）——与 checkpoint/experiment_config 缺失走同一条路径，收敛到 Stage 4 的"未验证假设"结论（§6 模板）。机制归因离不开代码锚点是真的，但后果是**降级**、不是**终止**——终止会让已经做完的 Stage 0/1 现象与假设清单白白浪费。
+- `checkpoint`/`experiment_config` absent-confirmed：与上一条同一降级路径（Stage 2/3 判定为不可执行，按 Stage 3 recipe 的"降级路径"写占位 `verdict_summary.json`，Stage 4 结论按 §6 的降级模板写"未验证假设"）。这是 design doc §8 的既定回退：对没有可重训框架的老用法零破坏。
 - `training_log` 缺：不影响主线（仅用于旁证基线重训是否收敛稳定），缺席仅记录。
 - `model_code`（可选，独立于 `model_profile`）缺：不影响主线（`model_profile` 已含代码锚点摘要），仅在需要直接读代码消歧时缺席记录。
 
