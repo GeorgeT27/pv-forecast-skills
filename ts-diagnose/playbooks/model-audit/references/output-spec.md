@@ -24,6 +24,23 @@
 `models.md` 是从 `pipeline.md` + `math.md` 蒸馏出来的"分析面视图"；三个文件的事实与
 锚点必须一致，产出时互相对齐。
 
+## models.md 新增字段：`ablation_switches` / `diff_list`
+
+`model_profile` 产物 schema 新增两个字段，都写进 `models.md`，不新增独立文件、不改
+pointer 格式；结构模板见 `models-template.md`。
+
+- **`ablation_switches`**（每个模型一份，紧跟该模型的桥接假设小节）：
+  `[{component, switch, kind}]`。`kind ∈ {config-flag, code-stub, not-intervenable}`：
+  现成配置项（如 `--n_heads`）标 `config-flag`；需新写代码才能触发的置零/替换/初始化
+  覆盖（如 `--itrans_no_attn`）标 `code-stub`；确无法干预的标 `not-intervenable` 并写
+  清原因。范围须覆盖 `__init__`/初始化/默认参数，不能只看 forward——初始化差异常年
+  藏在这里，漏掉会把差距错记到别的组件。供 architecture-attribution 等验证脊 playbook
+  据此选 intervention。
+- **`diff_list`**（仅当本次审计涉及 ≥2 个模型对比时产出）：逐行列出两模型代码差异，
+  同样须覆盖 `__init__`/初始化/默认参数，不能只对比 forward；末尾附完备性自检声明——
+  声明已逐项核对 forward + `__init__` + 默认参数三处，或如实列出未覆盖处。清单不完备
+  ＝假设空间有洞＝错误归因，不许静默省略未覆盖处。
+
 ## pointer 文件格式（`scripts/pointer.py` 读写）
 ```
 path:   /abs/.../<repo>/.modelmap

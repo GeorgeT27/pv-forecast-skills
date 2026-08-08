@@ -132,7 +132,12 @@ done：人工判定（manual）——每个已确认的模型，三层抽取要�
 不许留半新半旧的假设。
 
 第二步落盘 + 回执：按 `references/output-spec.md` 写 `.modelmap/` 全套文件，其中
-`models.md` 的结构照 `references/models-template.md`。随后执行**回执纪律**（步骤详见
+`models.md` 的结构照 `references/models-template.md`——每个模型的桥接假设之后追加
+「组件→可干预开关映射」（`ablation_switches`：component/switch/kind 三元组，kind ∈
+{config-flag, code-stub, not-intervenable}，须覆盖 `__init__`/初始化/默认参数，不能
+只看 forward）；本次审计涉及 ≥2 个模型对比时，末尾追加「模型间差异清单」
+（`diff_list`：逐行列出两模型差异，同样覆盖 `__init__`/初始化/默认参数，附完备性
+自检声明——清单不完备＝假设空间有洞＝错误归因）。随后执行**回执纪律**（步骤详见
 §7）：①写 pointer；②写 `MODELMAP_RECEIPT.json`——commit 取
 `git -C <repo> rev-parse HEAD`，仓库没有 git 就填 `no-git`。**两步缺一不可**，回执是
 本阶段完成的产物判据。
@@ -143,7 +148,7 @@ done：`MODELMAP_RECEIPT.json` 落盘。
 
 输入：Stage 3 落盘的 `.modelmap/` 全套。
 
-菜谱：跑 `references/machinery.md` §5 的自检清单，共五项：
+菜谱：跑 `references/machinery.md` §5 的自检清单，共六项：
 - 落盘后置条件：预期的文件确实都存在（对照 `output-spec.md` 的清单）。
 - 锚点抽查：抽几条标 ✅ 的断言，打开它引用的 `file:line`，确认代码确实那么写；
   不符 → 降级为 ⚠️ 并记入 `open-questions.md`。
@@ -151,6 +156,9 @@ done：`MODELMAP_RECEIPT.json` 落盘。
 - 覆盖检查：代码里找到的模型数 vs 实际建档的模型数；没触达的模型逐个列出，
   不留静默缺口。
 - 无裸断言：每条非平凡陈述都带置信标签；标 ✅/📊 的必须带锚点。
+- 开关映射完备性：每个模型的 `ablation_switches` 是否覆盖 `__init__`/初始化/默认
+  参数（不能只看 forward）；涉及模型对比时 `diff_list` 是否带完备性自检声明，
+  声明缺失按未完成处理。
 
 产出 `AUDIT_SELFCHECK.md`：简短报告，含抽查结果、通过率、降级条目、覆盖率。
 

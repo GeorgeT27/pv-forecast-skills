@@ -19,17 +19,34 @@
 ### M1 架构 → 结果分析含义（桥接假设；每条 → 图# + H-ID）
 - <架构事实> → <预期误差形态> → <哪张图检验> （H-M1-<n>，📐 前提：<…>）
 
+### M1 组件 → 可干预开关映射（ablation_switches）
+> 覆盖范围含 `__init__`/初始化/默认参数，不能只看 forward。
+
+| 组件 | 开关 | kind | 锚点/理由 |
+|---|---|---|---|
+| <组件名> | <--flag，或"无"> | config-flag／code-stub／not-intervenable | <file:line；或需加代码的理由；或不可干预的原因> |
+
 ## M2 —— 类名 PatchRegForecast
-（同上骨架）
+（同上骨架，含 ablation_switches 小节）
 
 ## M3 —— 类名 MoiraiPvForecaster
-（同上骨架）
+（同上骨架，含 ablation_switches 小节）
 
 ## M4 —— 类名 PatchTSTPvForecaster
-（同上骨架）
+（同上骨架，含 ablation_switches 小节）
 
 ## ensemble
 - **组合方式** / **成员** / **权重确定方法** / **强弱项**：<…；若代码里找不到组合器，留空+⚠️>
+
+## 模型间差异清单（diff_list，仅本次审计涉及模型对比时产出）
+> 逐行对比，覆盖范围含 `__init__`/初始化/默认参数，不能只对比 forward。
+
+| 差异项 | 模型 A | 模型 B | 锚点 |
+|---|---|---|---|
+| <差异项> | <值/写法> | <值/写法> | <file:line> |
+
+**完备性自检**：<声明已逐项核对 forward + `__init__` + 默认参数三处，未见遗漏；或
+如实列出未覆盖处>
 
 ## 定位速查表（locate 步用）
 
