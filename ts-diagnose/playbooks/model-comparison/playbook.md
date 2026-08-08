@@ -1,7 +1,7 @@
 ---
 id: model-comparison
 name: 多模型对比归因
-goal: 量化「模型 A 为什么比 B 好/差」，把差距分解到片段/时效/输入并归因到机制
+goal: 量化「模型 A 为什么比 B 好/差」——切片分解差距事实，产出指向模型组件的可否证假设账本；不产结论，交验证主脊做干预判定
 upstream:
   - product: setup
     required: true
@@ -37,20 +37,14 @@ stages:
     charts: [worst-slice-compare, model-error-correlation, oracle-gap,
              horizon-degradation, cross-dim-stability]
   - id: 2
-    name: 机制归因（变体）
+    name: 机制归因（变体，产假设账本）
     done_when:
+      artifacts: ["hypothesis_ledger.json"]
       findings_marker: "假设"
     prereqs:
       - desc: 模型档案产物已解决（built/linked 或 declined）
         check: "config:products.model_profile.status"
-  - id: 3
-    name: 结论
-    done_when:
-      artifacts: ["CONCLUSION.md", "gate_reports/conclusion_gate.json"]
-    subagent_ok: false
-    prereqs:
-      - desc: 现象清单已停顿汇报
-        check: "stage:1"
+    pause_after: true
 materials:
   required: [predict, truth]
   optional: [model_code, training_log, experiment_config, features, train_y]
@@ -80,7 +74,7 @@ evidence_lines:
   - id: cross-dim
     stage: 1
     output: charts/cross-dim-stability.json
-upgrade_rule: "总差距方向与主导切片方向一致（slice-gap 仅在 worst-slice perm.verdict=significant 时计入）且 cross-dim time_split 两半同向，才把差距结论从「现象」升「假设」"
+upgrade_rule: "总差距方向与主导切片方向一致（slice-gap 仅在 worst-slice perm.verdict=significant 时计入）且 cross-dim time_split 两半同向，才把总差距从「现象」升级为可登记进假设账本的「假设」"
 ---
 
 # model-comparison：多模型对比归因
@@ -93,11 +87,11 @@ upgrade_rule: "总差距方向与主导切片方向一致（slice-gap 仅在 wor
 2. **在对齐样本上好。** 两个模型的缺窗不对称时，差距可能只是覆盖差异。先看 `<setup>/alignment_report.json` 的 dropped 统计。
 3. **好得稳定。** 差距全集中在某一个月 ≠ 普遍领先。看 worst-slice-compare 的集中度。
 
-首要陷阱：**排名 ≠ 机制**。Stage 0/1 全部是事实阶段，禁止使用机制语言。机制结论只能在 Stage 2 产生：由模型档案的桥接假设与图 JSON 证据合流得出。
+首要陷阱：**排名 ≠ 机制**。Stage 0/1 全部是事实阶段，禁止使用机制语言。机制假设只能在 Stage 2 产生：由模型档案的桥接假设与图 JSON 证据合流得出，产出的是可否证的假设账本，不是结论——机制判定移交验证主脊做干预确认。
 
 量纲纪律：点级 pool 口径（error-breakdown/horizon 等：所有点混在一起算）与行 RMSE 均值口径（rolling-stability/oracle-gap 等：先按行算 RMSE 再取均值），两族数值不可直接比大小，只比走势与排名。
 
-第四陷阱：**多图同源 ≠ 多证据**。多张图方向一致，只说明同一证据维度内部自洽（mechanisms.md §2「证据维度」），不构成第二条独立证据。升「假设」还必须过 cross-dim-stability 的正交切分稳定性检查（见 §3 三条腿）。
+第四陷阱：**多图同源 ≠ 多证据**。多张图方向一致，只说明同一证据维度内部自洽（mechanisms.md §2「证据维度」），不构成第二条独立证据。总差距要登记进假设账本，还必须过 cross-dim-stability 的正交切分稳定性检查（判据见 frontmatter `upgrade_rule`）。
 
 ## 2. 逐阶段菜谱
 
@@ -134,60 +128,58 @@ done：gap_summary.json 落盘。
 done：charts/*.json 至少一个 + INDEX.md + FINDINGS.md 含「现象」→ **pause_after 停顿**。
 
 ### Stage 2 机制归因（变体，material:model_code 解锁）
-输入两份：model_profile 产物（upstream 机制）——状态 built/linked 时用其工作目录下 models.md 里的桥接假设 H-ID，declined 时本阶段虽然解锁也只能停在现象层级、结论要声明缺档案；以及 Stage 1 的图 JSON。
-菜谱：逐条桥接假设 → 找出它预言的图形态（bridge_hooks）→ 与实际描述符对照；是否升级按 §3 的三条腿判定。产出写回 FINDINGS.md，状态只用保留字。
-done：FINDINGS.md 出现「假设」。
 
-### Stage 3 结论
-主 agent 亲自做（subagent_ok: false）。步骤：三道门（references/mechanisms.md）加上本 playbook 反驳门（§6），逐条过 → 跑 `scripts/provenance.py` 归因闸 → 写 CONCLUSION.md（末尾附 Provenance 块）→ 跑 conclusion_gate.py 拿 receipt。
+输入：model_profile 产物（upstream 机制）——状态 built/linked 时用其工作目录下 `models.md` 里的桥接假设 H-ID、`ablation_switches`（component→switch→kind 三元组）与（本次涉及 ≥2 模型对比时的）`diff_list`；declined 时见下方降级；以及 Stage 1 的图 JSON。
 
-## 3. 证据升级规则
+菜谱：逐条桥接假设 → 找出它预言的图形态（bridge_hooks）→ 与 Stage 1 实际描述符对照，挑出图证据支持的候选（只筛选可否证候选，不判定真假）。每条候选写成一条假设，落 `hypothesis_ledger.json`（顶层 `{"slice_map":[...], "hypotheses":[...]}`，schema 见 `scripts/hypothesis_ledger.py` 的 `REQUIRED` 字段），每条假设必须含：
 
-- 现象 → 假设，三条腿缺一不可：①upgrade_rule 的两线方向一致（总差距方向与主导切片方向一致；slice-gap 线仅在 worst-slice `perm.verdict=significant` 时计入，not-significant → 该线弃权，弃权后只剩单线 → 上限「现象」）；②|sign_z| ≥ 2，差距不是噪声；③cross-dim `time_stable=true`，时间对半切后两半的差距方向相同。
-  另：`caliber_stable=false` 不阻塞升级，但结论必须限定口径——例如「A 更好」只在行 RMSE 均值口径下成立。
-- 假设 → 已证实：仅当机制预言了**未用于生成假设的**新图形态且被验证（三道门之门 2），或用户提供外部实验（换 checkpoint、换输入重跑）证实。
-- 任何一步不满足 → 停在当前层级，结论如实写明所在层级。
+- `id`：H1/H2...
+- `claim`：一句话机制主张
+- `component`：必须是 `models.md` 里登记的具体组件（写到子模块，如 `itransformer.attention (cross-variable)`，不许只写模型名）；`diff_list` 里出现的差异行优先选，判别力更高
+- `falsifiable_pred`：可否证预测——"若干预该 component，某切片/机制的优势方向应如何变化"
+- `discriminating_power`：一次干预能区分几条候选假设的整数打分，验证主脊按此排序优先
+- `intervention`：`{"switch": ..., "seeds": ...}`——`switch` 从 `ablation_switches` 查该 component 对应条目填；`kind=not-intervenable` 的组件不得作为假设的 component（换一条可干预的候选，或如实标注该机制暂不可验证）；`seeds` 与噪声底同种子数，无噪声底材料时留空待验证主脊定
+- `status`：固定 `"pending"`（本阶段只登记，不判定）
+- `provenance`：固定 `"pre-registered"`（干预执行前登记）
+- `kill_receipt`：固定 `null`（本阶段不产生，键必须保留）
 
-## 4. 停顿点与汇报
+declined 时：本阶段解锁但产不出合规账本——`component` 必须锚定 model_profile 的具体组件，无档案锚不了。FINDINGS.md 记「机制归因缺模型档案，账本未产出」，流程止于 Stage 1 现象清单，移交时如实说明缺档案。
 
-Stage 1 完成即停，向用户汇报五件事：①gap_summary 的排名与 z；②已画/跳过图清单；③Top-3 现象，引用图 JSON 里的数字；④worst-slice 的置换基线判定——significant → 点名最差片，否则明说「集中未超随机基线，不点名」；⑤cross-dim 两个维度是否稳定。
-然后请用户点名：补画哪张图、调什么参数（top-N、切片粒度）、下一步关注哪个配对或片段。用户不点名，则按 orient 推荐推进。
+按 `discriminating_power` 降序排列。产出写回 FINDINGS.md：登记选中假设的 id/claim/component/falsifiable_pred/discriminating_power——状态只用「假设」保留字，不写"已验证"类字样。
 
-## 5. subagent 拆分建议
+done：`hypothesis_ledger.json` 落盘、`hypotheses` 数组非空（`validate_ledger` 对无 `hypotheses` 键的畸形账本不报错，是已知盲区——必须人工核对非空，不能只看校验通过）、过
+`python3 <ENGINE>/scripts/hypothesis_ledger.py hypothesis_ledger.json`，FINDINGS.md 出现「假设」→ pause_after 停顿，移交验证主脊。
 
-Stage 1 各图相互独立，可以并发：每张图一个子代理。brief 只带三样：命令模板、长表路径、输出目录（各图写不同的文件，天然防竞态；brief 写法见 references/subagent-briefs.md）。判读与 FINDINGS 汇总必须由主 agent 做。Stage 0/3 不拆。
+## 3. 停顿点与汇报
 
-## 6. 结论模板与特有反驳门
+Stage 1 完成即停，向用户汇报五件事：①gap_summary 的排名与 z；②已画/跳过图清单；③Top-3 现象，引用图 JSON 里的数字；④worst-slice 的置换基线判定——significant → 点名最差片，否则明说「集中未超随机基线，不点名」；⑤cross-dim 两个维度是否稳定。然后请用户点名：补画哪张图、调什么参数（top-N、切片粒度）、下一步关注哪个配对或片段。用户不点名，则按 orient 推荐推进。
 
-CONCLUSION.md 模板（按此顺序写）：口径与对齐声明 → 总差距（含 z）→ 差距结构（集中还是普遍，引 concentration_ratio）→ 机制归因（层级如实）→ 建议（换模/组合/维持，引 oracle-gap）→ Provenance 块。
+Stage 2（若解锁）完成即停，止步于交接——不产结论。向用户汇报：①`hypothesis_ledger.json` 里每条假设的 id/claim/component/falsifiable_pred/discriminating_power；②按 discriminating_power 排好的验证优先序；③因组件不可干预（`ablation_switches` 标 `not-intervenable`）或缺 model_profile 而未能登记的候选，逐条注明原因。产出：假设账本 → 移交验证主脊做干预验证，本 playbook 到此为止。
 
-特有反驳门——写结论前逐条自问并记录：
-- **对齐偏置门**：dropped 不对称吗？只在对齐子集上比较得出的结论，声明子集了吗？
-- **口径反转门**：horizon 交叉点存在吗？换口径后差距方向保持吗？引 cross-dim caliber_switch 数字；方向翻转 → 结论必须限定口径。
-- **切片挑拣门**：结论引用的片段，是事先声明的规则选出来的（最差片规则），还是看完结果事后挑的？
-- **随机集中门**：点名的最差片过置换基线了吗？把 perm_p、null_q95 抄进结论。
-- **半程运气门**：时间对半切之后，差距方向保持吗？引 cross-dim time_split 数字。
-- **同质化门**：模型间误差相关 >0.95 时，「A 略好」的差距还有实际意义吗？与 sign_z 联判。
+## 4. subagent 拆分建议
 
-## 7. 材料降级说明
+Stage 1 各图相互独立，可以并发：每张图一个子代理。brief 只带三样：命令模板、长表路径、输出目录（各图写不同的文件，天然防竞态；brief 写法见 references/subagent-briefs.md）。判读与 FINDINGS 汇总必须由主 agent 做。Stage 0/2 不拆——Stage 2 的桥接假设筛选与排序是整体判断，拆了会丢跨假设的判别力比较。
+
+## 5. 材料降级说明
 
 - predict / truth 缺：setup 产物建不起来，本 playbook 连带不可做——向用户说明后终止。
-- model_code 缺：Stage 2 锁死（变体不解锁），结论上限=「假设」，机制归因缺席要在 CONCLUSION 显式声明。
+- model_code 缺：Stage 2 锁死（变体不解锁）——流程止于 Stage 1 现象清单，机制假设账本不产出，移交时如实说明缺 model_code。
 - features 缺：D 组三图跳过，输入侧归因缺席（现象清单注明）。
 - train_y 缺：train-test-drift 跳过。"世界变了"这类候选解释只剩一个弱替代：y-vs-feature-mapping 的期内 split。
 - training_log / experiment_config 缺：不影响本 playbook 主线（它们只服务 Stage 2 的旁证），缺席仅记录。
 
-## 8. chartbook 覆盖声明
+## 6. 主题调色板 + 假设驱动选图
 
-已声明（frontmatter Stage 1，对比核心 5 张）：worst-slice-compare /
-model-error-correlation / oracle-gap / horizon-degradation / cross-dim-stability。
+规则：每一轮只画"生成或区分当前假设所必需"的图；不画固定清单，从下面调色板按需选——没有假设不画，post-hoc 需要新证据时"再挑一张"是正常动作。
 
-跳过的图（默认不画；可经图表选择门加画，或复用 chart_sweep 产物），逐组理由：
-- error-breakdown、intraday-profile、worst-points、rolling-stability、true-vs-pred-scatter：单模型广谱体检图，对比结论非必需，chart_sweep 覆盖；
-- feature-error-conditional、feature-trend-overlay、y-vs-feature-mapping、feature-regime-error：输入侧关联图，需 features 材料，对比主线可选加画；
-- train-test-drift、lookback-decay：需 train_y／训练侧材料，属训练类目标的默认集；
-- bad-window-clustering、good-bad-contrast、error-acf、horizon-error-quantiles、theil-decomposition、time-shift-diagnosis、pp-calibration、baseline-skill、revision-stability：误差结构细察图，深挖阶段按需加画；
-- model-rank-significance：与 Stage 0 的 sign_z 判定重叠，需要更细的排名显著性时加画；
-- global-attribution、local-waterfall：归因组图，需 serving_api 反事实通道，本目标默认不开。
+model-comparison 主题调色板（recipe id 均为 chartbook 已注册的合法 id；标 * 的已在 Stage 1 默认画过，直接复用其 JSON，不重画）：
 
-（已声明的 5 张不重复列出。）
+| 主题 | recipe id | 何时用 |
+|---|---|---|
+| 分 lead-time 误差曲线 | `horizon-degradation` * | 想看"差距在远端还是近端"——生成/验证长程依赖衰减（attention 有效窗口/位置编码外推）或起报对齐类假设时画 |
+| 分时段/hour 误差热图 | `intraday-profile` | 想看"差距集中在一天中的哪些物理时刻"——生成系统性标定/损失不对称或输入分辨率/滞后类假设时画 |
+| 分单元误差柱 | `error-breakdown` | 想看"哪个单元(站点)+月/时段组合吃亏最重"——区分局部事件/数据质量假设 vs 季节漂移假设时画 |
+| 高波动/极值段误差对比 | `worst-points` | 想看"是不是高波动/极值段吃亏"——生成高频容量不足或幅值压缩类假设时画（context.local_std/y_quantile 自带波动标签）|
+| 模型间残差相关 | `model-error-correlation` * | 想区分两个机制假设——全对高相关→降级为共享输入/标签缺陷候选，某对独低→架构差异候选成立——时画 |
+
+palette 之外的需求（如需 features 的输入侧关联图、需 train_y 的漂移图）：走图表选择门从可加画池按需加，不在本节穷举——加画理由要写清"服务哪条假设"。
