@@ -248,7 +248,15 @@ CONCLUSION.md 按 `references/conclusion-reporting.md` 的通用骨架写，`## 
 
 Stage 3 走了降级路径（§2 Stage 3「降级路径」段）时，`## 模型结构依据` **照命中的触发写对应句；只命中一个就只写一个；禁止谎称另一个也缺**——两个触发源各自独立成句、各自都自带 `absent-confirmed` 与"降级"两个词，不需要凑成一整句、更不许为了凑字面匹配而断言一个实际存在的材料"也缺"：
 
-- 命中 `skipped_reason: "no_model_profile"`（model_profile 产物 declined）→ 只写这句："model_profile declined → 模型代码锚点 absent-confirmed，结构性解释降级为未验证假设。"
+- 命中 `skipped_reason: "no_model_profile"`（model_profile 产物 declined）→ 只写这句：
+  "model_profile 档案 declined → 无结构档案可锚定（模型档案 absent-confirmed），结构性解释降级为未验证假设。"
+  ——`absent-confirmed` 挂在"模型档案"（model_profile 这份档案本身，用户确认放弃、
+  确凿缺失）上，不挂在 `model_code`（模型代码材料）上：`model_profile` 是产物
+  （状态 built/linked/declined/absent），`model_code` 是独立材料（状态
+  present/absent-confirmed/unknown）——两者可以不一致（用户手里明明有 model_code，
+  只是不想跑 model-audit，此时 declined 的是档案、`model_code` 依旧 present），把
+  "declined 的档案缺失"错写成"model_code 缺失"就是断言了一个实际存在的材料"缺"，
+  同样是伪造。
 - 命中 `skipped_reason: "no_trainable_framework"`（checkpoint/experiment_config 材料 absent-confirmed）→ 只写这句："checkpoint/experiment_config 材料 absent-confirmed → 无法干预，结论降级为未验证假设。"
 - 两个 `skipped_reason` 都命中（Stage 3 recipe「降级路径」段允许同时写两个）→ 两句都写。
 
