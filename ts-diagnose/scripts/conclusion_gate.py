@@ -56,7 +56,11 @@ def main():
             fail(f"结论引用了不存在的图：{missing}")
 
     # 规则 4：架构/组件因果表述必须附消融 receipt
-    if CAUSAL_RE.search(sec):
+    # 仅对声明 produces_ablation_receipts: true 的 playbook 生效（architecture-attribution）；
+    # 其余 6 个非 pilot playbook（robustness/subset-influence/training-sufficiency/
+    # result-eval/feature-importance/deployment-drift）用各自方法（置换/反事实/留一法）
+    # 验证因果表述，不产消融 receipt——不受本规则约束（零破坏契约）。
+    if fm.get("produces_ablation_receipts") and CAUSAL_RE.search(sec):
         abl = text.split(ABLATION_SECTION, 1)[1] if ABLATION_SECTION in text else ""
         if not RECEIPT_LINE_RE.search(abl):
             fail("结论含架构因果表述但「## 消融证据」节无对应 receipt"

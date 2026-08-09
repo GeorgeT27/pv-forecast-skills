@@ -2,6 +2,8 @@
 id: architecture-attribution
 name: 架构归因验证脊（消融验证）
 goal: 把切片级误差差异用单变量消融干预因果归因到模型具体组件，产出确认/否证/未决三态判定
+produces_ablation_receipts: true   # conclusion_gate 规则 4 只对本 playbook 生效——其余
+                                    # playbook 用各自方法（置换/反事实/留一法）验证因果，不产消融 receipt
 upstream:
   - product: setup
     required: true

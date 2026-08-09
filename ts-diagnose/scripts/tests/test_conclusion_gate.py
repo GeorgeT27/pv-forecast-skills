@@ -13,6 +13,25 @@ PB = """---
 id: gate-demo
 name: g
 goal: g
+produces_ablation_receipts: true
+stages:
+  - id: 0
+    name: 图
+    done_when: {artifacts: ['charts/*.json', 'INDEX.md']}
+    charts: [error-breakdown]
+  - id: 1
+    name: 结论
+    done_when: {artifacts: ['CONCLUSION.md', 'gate_reports/conclusion_gate.json']}
+---
+"""
+
+# 非消融 playbook 的对照 fixture：不声明 produces_ablation_receipts——
+# 代表 robustness/subset-influence/training-sufficiency/result-eval/
+# feature-importance/deployment-drift 这 6 个非 pilot playbook。
+PB_NON_ABLATION = """---
+id: non-ablation-demo
+name: n
+goal: n
 stages:
   - id: 0
     name: 图
@@ -31,10 +50,10 @@ GOOD = """# 结论
 """
 
 
-def setup(tmp_path, conclusion, with_chart=True):
+def setup(tmp_path, conclusion, with_chart=True, pb_text=PB):
     pb = tmp_path / "pb" / "playbook.md"
     pb.parent.mkdir()
-    pb.write_text(PB, encoding="utf-8")
+    pb.write_text(pb_text, encoding="utf-8")
     ec.dump_json({"playbook": str(pb)}, str(tmp_path / "diagnose_config.json"))
     if with_chart:
         (tmp_path / "charts").mkdir()
@@ -134,3 +153,16 @@ def test_pass_arch_causal_with_ablation_receipt(tmp_path):
          "## 消融证据\n"
          "- H3 confirmed: switch=--itrans_no_attn delta=+0.031 noise_floor=0.0102 seeds=3\n")
     assert run_gate(setup(tmp_path, c)).returncode == 0
+
+
+def test_pass_non_ablation_playbook_causal_wording_without_receipt(tmp_path):
+    """零破坏回归：非消融 playbook（frontmatter 无 produces_ablation_receipts）的结论，
+    「模型结构依据」节含因果词（因为…）+ 合法锚点（H-id），但没有「## 消融证据」节——
+    规则 4 不得对它生效（它用置换/反事实/留一法验证因果，不产消融 receipt）。
+    修复前：规则 4 对任何 playbook 一律生效，本用例会被误拦，破坏 6 个非 pilot playbook。"""
+    c = ("# 结论\n（见 charts/error-breakdown.png）\n## 模型结构依据\n"
+         "档案 H1：因为该特征置换后误差显著上升，判定其为主导因子。\n")
+    r = run_gate(setup(tmp_path, c, pb_text=PB_NON_ABLATION))
+    assert r.returncode == 0, r.stdout + r.stderr
+    rec = json.load(open(tmp_path / "gate_reports" / "conclusion_gate.json"))
+    assert rec["passed"] is True

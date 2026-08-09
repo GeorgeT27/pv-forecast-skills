@@ -28,3 +28,24 @@ def test_refuted_requires_kill_receipt():
     h = dict(VALID["hypotheses"][0], status="refuted", kill_receipt=None)
     errs = hl.validate_ledger({"slice_map": [], "hypotheses": [h]})
     assert any("kill_receipt" in e for e in errs)
+
+
+def test_empty_object_rejected():
+    """畸形账本：顶层无 hypotheses 键，不得静默视为合法（原 bug：{}.get(...) == [] → 无错误）。"""
+    errs = hl.validate_ledger({})
+    assert errs != []
+
+
+def test_object_missing_hypotheses_key_rejected():
+    errs = hl.validate_ledger({"foo": 1})
+    assert errs != []
+
+
+def test_non_list_hypotheses_rejected():
+    errs = hl.validate_ledger({"hypotheses": "x"})
+    assert errs != []
+
+
+def test_non_dict_hypothesis_entry_rejected_without_crash():
+    errs = hl.validate_ledger({"hypotheses": [1]})
+    assert errs != []

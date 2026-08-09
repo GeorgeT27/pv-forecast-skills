@@ -7,7 +7,15 @@ STATUSES = {"pending", "confirmed", "refuted", "undecided"}
 
 def validate_ledger(obj):
     errs = []
-    for h in obj.get("hypotheses", []):
+    if not isinstance(obj, dict) or "hypotheses" not in obj:
+        return ["顶层缺 hypotheses 键或非法对象"]
+    hyps = obj["hypotheses"]
+    if not isinstance(hyps, list):
+        return [f"hypotheses 须为 list，实际是 {type(hyps).__name__}"]
+    for h in hyps:
+        if not isinstance(h, dict):
+            errs.append(f"hypotheses 条目须为 dict，实际是 {type(h).__name__}")
+            continue
         hid = h.get("id", "?")
         for k in REQUIRED:
             if not h.get(k):
