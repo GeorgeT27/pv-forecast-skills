@@ -31,6 +31,20 @@
 4. **无 `trainable_framework` 回退路径**：未验证退化为"未验证假设"+ conclusion_gate 对无因果结论放行。
 5. **refuted / kill_receipt 路径**：仅跑了 confirmed 路径（H1/I3），未跑 decoy 否证（I1/I4）。
 
-## 4. 结论
+## 4. 遗留加固项（whole-branch review 记录，非阻塞，已合并）
 
-pilot 的**代码机器件已验证可用**；**归因能力的真实提升需上述全链路盲跑确认**，建议作为下一步在 lsf-mini + 真 agent loop 上执行。
+最终整分支评审（opus）确认 spec 覆盖完整、跨任务接口端到端对齐、213/213；已修两项后合并 main：
+- **已修** FINAL-1：conclusion_gate rule 4 曾对全部 7 个过闸 playbook 生效（破坏 6 个非 pilot 的 zero-break）→ 改为仅当 playbook frontmatter 声明 `produces_ablation_receipts: true` 时触发（仅 architecture-attribution），加回归测试。
+- **已修** FINAL-2：`validate_ledger` 对畸形顶层对象静默判合法 → 加顶层守卫 + 4 测试。
+
+以下低优先加固项**未做、留待后续**（不影响 pilot 机器件正确性）：
+1. **slice_zcheck z 口径**：C1 近端 z=13.8 高于 gold 述 ≈7-10（判定不受影响 ∵ 均≫3），但 z 聚合口径需与阶段 2 gold 构造脚本对齐——**lsf-mini 实跑前必解**，否则显示 z 数值漂移。
+2. `conclusion_gate` 的 `## 消融证据` 切片到 EOF 而非下一个 `## ` heading（permissive，可镜像 `sec` 的截断加固）。
+3. model-comparison §6 调色板 chart id 有效但无 CI 守卫（test_charts_decl 只校验 frontmatter）。
+4. `validate_ledger` 未强制 `intervention`/`discriminating_power` 字段（生成器 prose always 写，故当前不炸）。
+5. test_routing.py docstring 仍写 "10 个 playbook"（pre-existing stale）。
+6. `_playbook-spec §4`（固定 8 节/穷举图声明）与新生成器形态冲突——**推广到其余 6 个分析 playbook 前必 reconcile**。
+
+## 5. 结论
+
+pilot 的**代码机器件已验证可用**（12 commits 已合并 main，213/213）；**归因能力的真实提升需 §3 全链路盲跑确认**，建议作为下一步在 lsf-mini + 真 agent loop 上执行。
