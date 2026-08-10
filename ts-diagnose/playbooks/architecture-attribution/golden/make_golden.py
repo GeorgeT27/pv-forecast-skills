@@ -2,8 +2,9 @@
 """确定性生成 architecture-attribution 的金标准输入（零随机，解析式构造）。
 
 植入两个切片：
-- far  ：model_b 对 model_a 的配对差 [0.20, 0.15, 0.25]（3 种子）→ mean=0.20，z≈6.93 > 3 → real。
-- near ：配对差 [0.01, -0.02, 0.015] → 均值近 0、被方差主导 → |z|≈0.15 ≤ 3 → ~noise。
+- far  ：model_b 对 model_a 的配对差 [0.20, 0.15, 0.25]（3 种子）→ mean=0.20、sd=0.05，z=4.0 > 3 → real。
+- near ：配对差 [0.01, -0.02, 0.015] → 均值近 0、被方差主导 → |z|≈0.088 ≤ 3 → ~noise。
+z 口径为效应量 mean/sd（不除 √n），见 scripts/slice_zcheck.py 的 paired_z 文档串。
 
 只覆盖 Stage 0（现象定位/切片测量，slice_zcheck.py 的输入）——Stage 1-4（假设账本读取、
 干预设计、subagent 执行判定、结论落笔）依赖真实假设账本/真实可训练框架/真实 subagent

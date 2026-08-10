@@ -3,8 +3,10 @@
 
 输入：长表 CSV，每行 = 一个 (slice, seed) 观测，含两模型在该 (slice, seed) 上的口径指标值
 （同一 seed 同一 slice 下两模型才可配对相减，其余变量——数据/训练步数/超参——须固定）。
-z = mean(diff) / (std(diff, ddof=1) / sqrt(n))；|z| > 阈值（默认 3）记 `real`（真实差异），
-否则 `~noise`。见 docs/自进化计划/阶段1-architecture-attribution-playbook.md §3.1。"""
+z = mean(diff) / std(diff, ddof=1)——配对差值均值相当于其自身跨种子标准差的几倍（效应量，
+不是 t 统计量，分母不除 √n）。|z| > 阈值（默认 3）记 `real`（真实差异），否则 `~noise`；
+阈值 3 即"超过 3σ 噪声底"，与 ablation_verdict.py 的 `abs(delta) < noise_floor_3sigma`
+在同一条验证脊上口径一致。见 docs/自进化计划/阶段1-architecture-attribution-playbook.md §3.1。"""
 from __future__ import annotations
 
 import argparse
@@ -15,7 +17,15 @@ from collections import defaultdict
 
 
 def paired_z(diffs):
-    """→ (mean_diff, z)。diffs：同一切片跨种子的配对差值列表（model_b − model_a）。
+    """→ (mean_diff, z)，z = mean(diffs) / std(diffs, ddof=1)：配对差值均值是其自身
+    跨种子标准差的几倍。diffs：同一切片跨种子的配对差值列表（model_b − model_a）。
+
+    口径纪律：z 是**效应量**（σ 倍数），不是配对 t 统计量——分母不除 √n。阈值 3
+    因此读作"超过 3σ 噪声底"，与 ablation_verdict.verdict()（`abs(delta) <
+    noise_floor_3sigma` → undecided）在同一条验证脊上口径一致。若改用 t 统计量
+    mean/(std/√n)，同一物理差异会被 Stage 0 判 real、被 Stage 3 判 undecided，
+    且门槛随种子数变松（n 个种子 → 实际 3/√n σ）。
+
     n<2 时统计量不可算，z 记 0.0——呼叫方靠返回结果里的 n_seeds 字段判样本量是否够，
     不要把 z=0.0 误读成"确认无差异"。"""
     n = len(diffs)
@@ -26,7 +36,7 @@ def paired_z(diffs):
     std = math.sqrt(var)
     if std == 0:
         return mean, (math.inf if mean > 0 else (-math.inf if mean < 0 else 0.0))
-    return mean, mean / (std / math.sqrt(n))
+    return mean, mean / std
 
 
 def slice_zcheck(rows, z_threshold=3.0):
