@@ -337,6 +337,14 @@ def main():
 
 def _write_state_progress(fm, cur, args, ctx=None, actives=None, state=None, blocked=None,
                           force_skipped_prereqs=False):
+    # 评测埋点用:落盘前捕获旧状态(单写者纪律保证此读无竞态)
+    old_state = None
+    if os.path.exists(ec.STATE_PATH):
+        try:
+            with open(ec.STATE_PATH, encoding="utf-8") as f:
+                old_state = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            old_state = None
     if blocked is not None:
         new_state = {"playbook": fm["id"],
                      "updated": dt.datetime.now().isoformat(timespec="seconds"),
@@ -366,6 +374,12 @@ def _write_state_progress(fm, cur, args, ctx=None, actives=None, state=None, blo
             f.write("# PROGRESS —— ts-diagnose 进度叙事日志\n\n每行：时间 | 动作。"
                     "脚本验证记录也追加在此（crystallize 只快照有验证记录的脚本）。\n\n")
         f.write(f"- {stamp} | {line}\n")
+    # 评测模式轨迹事件(SKILL_EVOLVE_TRAJECTORY_AGENT 未设置时零行为);任何异常不许影响诊断
+    try:
+        import eval_trajectory
+        eval_trajectory.maybe_emit(old_state, new_state)
+    except Exception as e:  # noqa: BLE001 —— 埋点故障只降级轨迹完整性,不降级诊断
+        print(f"[orient] 评测埋点异常(已忽略):{e}", file=sys.stderr)
 
 
 if __name__ == "__main__":
