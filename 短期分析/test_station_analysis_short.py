@@ -6,16 +6,15 @@
            →GHI 跳过但 power 照出)；station3 预测表无列(power 跳过)但 GHI 齐(+5→RMSE5)。
 全场层（nRMSE/排名/离群/GHI）：
   fleet —— 4 站真值恒 10、峰值=10，预测偏移造 nRMSE 5/10/10/100%；s4 必被 MAD 标离群。
-反事实层（假 API，零真网络，真实契约 = 逐窗 predictions[].ensemble）：
+反事实层（假本地 inference 模块，零网络；契约 = multi_station_inference 逐窗返回 dtime×predict_power_<站>）：
   cf_data —— 假模型每窗 power = GHI_SOLARGIS_predict/10；真功率 = GHI_true/10、
   predict 表用同公式 → 基线复现闸 0%。c1 两窗 GHI 偏 +40 → nRMSE_base=8%、cf=0；
-  c2 三窗偏 +20 → 10/3 %。bad2 模式：对 2 窗的站少返回一窗 → 窗数对齐闸鲁棒性。
+  c2 三窗偏 +20 → 10/3 %。逐窗调用：3 个 timestamp_win × 2 趟（基线 + 换真值）= 6 次。
 """
-import http.server
+import json
 import os
 import subprocess
 import sys
-import threading
 
 import numpy as np
 import pandas as pd
@@ -37,8 +36,7 @@ def _run(wd, extra=()):
         p = wd / "out" / "20260715" / "D+1" / name
         return pd.read_csv(p) if os.path.exists(p) else None
     return {"power": load("station_power_rmse.csv"), "feat": load("station_feature_rmse.csv"),
-            "fleet": load("fleet_ranking.csv"), "cf": load("counterfactual_results.csv"),
-            "out": r.stdout}
+            "fleet": load("fleet_ranking.csv"), "out": r.stdout}
 
 
 # ============================================================ 逐站：power 基本盘
@@ -119,44 +117,77 @@ def fleet(tmp_path):
     return tmp_path
 
 
-# ============================================================ 反事实：假 API + 确定数据
-class _FakeAPI(http.server.BaseHTTPRequestHandler):
-    """真实契约：逐窗返回 predictions=[{timestamp_win, ensemble}]，模型 = 每窗 GHI/10。
-    mode="bad2" 时对 data 恰 2 行的请求少返回 1 窗（触发窗数对齐闸）。"""
+# ============================================================ 反事实：假本地 inference 模块 + 确定数据
+# 真实契约（inference.py:96-118）：断言 station 唯一 + timestamp_win 单一；返回
+# pred_length 行 × (dtime + 每站一列 predict_power_<站>) 的标量表。假模型 power = GHI/10。
+# FAKE_INFER_MODE=insensitive 时忽略 GHI 返回常数 → 基线与反事实全等（触发无效换闸）。
+FAKE_INFERENCE = '''
+import json, os
+import pandas as pd
 
-    def do_POST(self):
-        import json
-        self.server.hits += 1
-        payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
-        preds = [{"timestamp_win": r["timestamp_win"],
-                  "ensemble": [float(v) / 10.0 for v in r["GHI_SOLARGIS_predict"]]}
-                 for r in payload["data"]]
-        if self.server.mode == "bad2" and len(payload["data"]) == 2:
-            preds = preds[:-1]
-        body = json.dumps({"status": "success",
-                           "message": f"successfully processed {len(preds)} items",
-                           "predictions": preds}).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
 
-    def log_message(self, *a):
-        pass
+def multi_station_inference(ds_dataframe, df_plants_info, checkpoints_dir,
+                            forecasting_type="short", config="config_test.yaml"):
+    assert ds_dataframe["station"].is_unique, "输入错误：存在重复的station"
+    assert ds_dataframe["timestamp_win"].nunique() == 1, "输入错误：timestamp_win 未对齐"
+    base = pd.Timestamp(ds_dataframe["timestamp_win"].iloc[0])
+    with open(os.environ["FAKE_INFER_LOG"], "a") as f:
+        f.write(json.dumps({
+            "window": str(base),
+            "checkpoints_dir": str(checkpoints_dir),
+            "config": str(config),
+            "forecasting_type": forecasting_type,
+            "stations": [str(s) for s in ds_dataframe["station"]],
+            "ghi": {str(r["station"]): [float(v) for v in r["GHI_SOLARGIS_predict"]]
+                    for _, r in ds_dataframe.iterrows()},
+            "columns": list(ds_dataframe.columns)}) + "\\n")
+    n = len(ds_dataframe["GHI_SOLARGIS_predict"].iloc[0])
+    out = {"dtime": pd.date_range(base + pd.Timedelta(minutes=15), periods=n, freq="15min")}
+    insensitive = os.environ.get("FAKE_INFER_MODE") == "insensitive"
+    for _, r in ds_dataframe.iterrows():
+        out[f"predict_power_{r['station']}"] = (
+            [1.0] * n if insensitive else [float(v) / 10.0 for v in r["GHI_SOLARGIS_predict"]])
+    return pd.DataFrame(out)
+'''
+
+FAKE_UTILS = '''
+def get_past_future_cols(config):
+    """契约同 utils.get_past_future_cols：(past, future, extra, target)。"""
+    return ([], list(config.get("future_cols", [])), [], "observe_power_future")
+'''
+
+
+class _FakeInfer:
+    def __init__(self, d, log):
+        self.dir, self.log = str(d), str(log)
+
+    @property
+    def calls(self):
+        if not os.path.exists(self.log):
+            return []
+        with open(self.log) as f:
+            return [json.loads(ln) for ln in f if ln.strip()]
+
+    @property
+    def count(self):
+        return len(self.calls)
 
 
 @pytest.fixture
-def fake_api():
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _FakeAPI)
-    srv.hits, srv.mode = 0, "ok"
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    yield srv
-    srv.shutdown()
+def fake_infer(tmp_path, monkeypatch):
+    d = tmp_path / "fake_model"
+    d.mkdir()
+    (d / "inference.py").write_text(FAKE_INFERENCE)
+    log = tmp_path / "infer_calls.jsonl"
+    monkeypatch.setenv("FAKE_INFER_LOG", str(log))
+    return _FakeInfer(d, log)
 
 
-def _url(srv):
-    return f"http://127.0.0.1:{srv.server_address[1]}"
+def _cf_args(fi, wd, extra=()):
+    """反事实公共参数：假 inference 目录 + checkpoints/config 占位。"""
+    return ["--counterfactual", "--inference-dir", fi.dir,
+            "--checkpoints-dir", str(wd / "ckpt"),
+            "--config", str(wd / "config.yaml")] + list(extra)
 
 
 @pytest.fixture
@@ -264,121 +295,146 @@ def test_no_station_plots_keeps_csv(data, tmp_path):
     assert pngs == []
 
 
-# ---------------------------------------------------------------- 反事实测试
-def test_cf_decomposition(cf_data, fake_api):
-    """基线/反事实 nRMSE 解析可知：c1 8%→0（frac=100）、c2 10/3%→0；复现闸 0%；出总览图。"""
-    r = _run(cf_data, ["--no-station-plots", "--counterfactual", "--api-url", _url(fake_api)])
-    d = r["cf"].set_index("station")
-    assert d.loc["c1", "status"] == "ok" and d.loc["c2", "status"] == "ok"
-    assert d.loc["c1", "nrmse_base"] == pytest.approx(8.0)        # 4 / cap50 ×100
-    assert d.loc["c1", "nrmse_cf"] == pytest.approx(0.0, abs=1e-9)
+# ---------------------------------------------------------------- 反事实测试（本地 inference）
+def test_cf_decomposition(cf_data, fake_infer):
+    """解析可知：c1 基线 8%→反事实 0（frac=100）、c2 10/3%→0；复现闸 0%；出总览图。"""
+    r = _run(cf_data, _cf_args(fake_infer, cf_data, ["--no-station-plots"]))
+    d = r["fleet"].set_index("station")
+    assert d.loc["c1", "cf_status"] == "ok" and d.loc["c2", "cf_status"] == "ok"
+    assert d.loc["c1", "power_nrmse_localbase"] == pytest.approx(8.0)      # 4 / cap50 ×100
+    assert d.loc["c1", "power_nrmse_cf"] == pytest.approx(0.0, abs=1e-9)
     assert d.loc["c1", "frac_explained"] == pytest.approx(100.0)
-    assert d.loc["c2", "nrmse_base"] == pytest.approx(10.0 / 3, abs=1e-3)   # 2 / cap60 ×100
+    assert d.loc["c2", "power_nrmse_localbase"] == pytest.approx(10.0 / 3, abs=1e-3)  # 2 / cap60 ×100
     assert float(d.loc["c1", "base_vs_parquet_pct"]) == pytest.approx(0.0, abs=1e-9)
     assert int(d.loc["c1", "coadapt"]) == 0
-    assert fake_api.hits == 4                                     # 2 站 × 2 次
     assert os.path.exists(cf_data / "out" / "20260715" / "D+1" / "counterfactual_overview.png")
 
 
-def test_cf_dry_run_zero_calls(cf_data, fake_api):
-    """dry-run：零 HTTP、不写结果 CSV，只打印 payload 骨架（且骨架不含 label/station 字段）。"""
-    r = _run(cf_data, ["--no-plots", "--counterfactual", "--api-url", _url(fake_api),
-                       "--cf-dry-run"])
-    assert fake_api.hits == 0 and r["cf"] is None
-    assert "payload skeleton" in r["out"] and "GHI_SOLARGIS_predict" in r["out"]
-    assert "GHI_real_future:" not in r["out"] and "observe_power_future:" not in r["out"]
+def test_cf_one_call_per_window_two_passes(cf_data, fake_infer):
+    """逐窗调用：3 个 timestamp_win × 2 趟 = 6 次；每次 station 唯一且只含一个窗口。"""
+    _run(cf_data, _cf_args(fake_infer, cf_data, ["--no-plots"]))
+    calls = fake_infer.calls
+    assert fake_infer.count == 6
+    assert sorted({c["window"] for c in calls}) == [
+        "2026-07-16 10:00:00", "2026-07-16 10:15:00", "2026-07-16 10:30:00"]
+    for c in calls:
+        assert len(c["stations"]) == len(set(c["stations"]))       # 断言 station 唯一未被触发
+    per_win = {}
+    for c in calls:
+        per_win.setdefault(c["window"], []).append(c)
+    assert all(len(v) == 2 for v in per_win.values())              # 每窗恰好基线 + 换真值
 
 
-def test_cf_resume_skips_done(cf_data, fake_api):
-    """断点续跑：第二遍不再调 API（已完成站全部跳过）。"""
-    _run(cf_data, ["--no-plots", "--counterfactual", "--api-url", _url(fake_api)])
-    assert fake_api.hits == 4
-    r = _run(cf_data, ["--no-plots", "--counterfactual", "--api-url", _url(fake_api)])
-    assert fake_api.hits == 4
-    assert len(r["cf"]) == 2                                      # 无重复追加
+def test_cf_swap_reaches_model(cf_data, fake_infer):
+    """换真值那一趟，模型真的收到 GHI_real_future 的值（而非原预测值）。"""
+    _run(cf_data, _cf_args(fake_infer, cf_data, ["--no-plots"]))
+    w = [c for c in fake_infer.calls if c["window"] == "2026-07-16 10:00:00"]
+    ghis = sorted([c["ghi"]["c1"] for c in w])
+    assert ghis == [[100.0, 200.0, 300.0, 400.0],                  # 换真值趟 = GHI_real_future
+                    [140.0, 240.0, 340.0, 440.0]]                  # 基线趟 = GHI_SOLARGIS_predict
 
 
-def test_cf_align_mismatch_robust(cf_data, fake_api):
-    """对齐闸鲁棒：c1（2 窗）被假 API 少返回一窗 → align_mismatch；c2 照常 ok。"""
-    fake_api.mode = "bad2"
-    r = _run(cf_data, ["--no-plots", "--counterfactual", "--api-url", _url(fake_api)])
-    d = r["cf"].set_index("station")
-    assert d.loc["c1", "status"] == "align_mismatch"
-    assert d.loc["c2", "status"] == "ok"
-    assert d.loc["c2", "nrmse_base"] == pytest.approx(10.0 / 3, abs=1e-3)
+def test_cf_input_separate_parquet_is_what_model_sees(cf_data, fake_infer):
+    """--cf-input：模型吃的是这张推理专用表（带模型特征、无真值功率列），不是 --input。"""
+    inp = pd.read_parquet(cf_data / "input.parquet")
+    cfi = inp.drop(columns=["observe_power_future"]).copy()
+    cfi["ssrd_pos_1_predict"] = [[1.0, 2.0, 3.0, 4.0]] * len(cfi)   # 只有推理表才有的模型特征
+    cfi.to_parquet(cf_data / "cf_input.parquet")
+    r = _run(cf_data, _cf_args(fake_infer, cf_data,
+                               ["--no-plots", "--cf-input", str(cf_data / "cf_input.parquet")]))
+    cols = fake_infer.calls[0]["columns"]
+    assert "ssrd_pos_1_predict" in cols and "observe_power_future" not in cols
+    assert r["fleet"].set_index("station").loc["c1", "power_nrmse_cf"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_cf_columns_use_predict_power_template(cf_data, fake_infer):
+    """inference.py 固定产 predict_power_<站> 列；--pred-col-template 只管 --predict 表，不得混用。"""
+    r = _run(cf_data, _cf_args(fake_infer, cf_data, ["--no-plots"]))
+    d = r["fleet"].set_index("station")
+    assert np.isfinite(d.loc["c1", "power_nrmse_cf"])              # 裸站名模板下仍解析到 cf 列
+    assert np.isfinite(d.loc["c2", "power_nrmse_cf"])
+
+
+def test_cf_cache_skips_second_run(cf_data, fake_infer):
+    """推理结果落盘缓存：第二遍零调用；--cf-force 重算。"""
+    _run(cf_data, _cf_args(fake_infer, cf_data, ["--no-plots"]))
+    assert fake_infer.count == 6
+    _run(cf_data, _cf_args(fake_infer, cf_data, ["--no-plots"]))
+    assert fake_infer.count == 6                                   # 命中缓存，未再推理
+    _run(cf_data, _cf_args(fake_infer, cf_data, ["--no-plots", "--cf-force"]))
+    assert fake_infer.count == 12
+
+
+def test_cf_identical_output_warns(cf_data, fake_infer, monkeypatch):
+    """模型对 GHI 不敏感（基线与反事实全等）→ 必须告警，不得静默报 Δ=0。"""
+    monkeypatch.setenv("FAKE_INFER_MODE", "insensitive")
+    r = _run(cf_data, _cf_args(fake_infer, cf_data, ["--no-plots"]))
+    assert "identical" in r["out"].lower()
 
 
 def test_cf_off_unchanged(cf_data):
-    """不加 --counterfactual：无任何反事实产物，常规产物照常。"""
+    """不加 --counterfactual：无反事实列、零推理，常规产物照常。"""
     r = _run(cf_data, ["--no-plots"])
-    assert r["cf"] is None and r["power"] is not None
+    assert r["power"] is not None
+    assert "power_nrmse_cf" not in r["fleet"].columns
 
 
-def test_cf_worst_selects_worst(cf_data, fake_api):
-    """--cf-worst 1：复用 fleet_ranking，只跑功率 nRMSE 最差站 c1（8%>c2 3.33%）→ 仅 2 次 API。"""
-    r = _run(cf_data, ["--no-plots", "--counterfactual", "--api-url", _url(fake_api),
-                       "--cf-worst", "1"])
-    assert set(r["cf"]["station"]) == {"c1"}                  # c2 未跑
-    assert fake_api.hits == 2                                 # 1 站 × 2 次
-    assert "worst 1 of 2" in r["out"]
+def test_cf_requires_checkpoints_and_config(cf_data, fake_infer):
+    """--counterfactual 缺 --checkpoints-dir/--config → 明确报错退出，不静默跳过。"""
+    p = subprocess.run(
+        [sys.executable, SCRIPT, "--input", str(cf_data / "input.parquet"),
+         "--predict", str(cf_data / "predict.parquet"), "--out-dir", str(cf_data / "out"),
+         "--date", "2026-07-15", "--pred-col-template", "{station}", "--no-plots",
+         "--counterfactual", "--inference-dir", fake_infer.dir],
+        cwd=str(cf_data), capture_output=True, text=True)
+    assert p.returncode != 0
+    assert "--checkpoints-dir" in (p.stdout + p.stderr)
 
 
-def test_cf_worst_ignored_when_stations_given(cf_data, fake_api):
-    """--cf-stations 显式列表优先，--cf-worst 被忽略并告警。"""
-    r = _run(cf_data, ["--no-plots", "--counterfactual", "--api-url", _url(fake_api),
-                       "--cf-stations", "c2", "--cf-worst", "1"])
-    assert set(r["cf"]["station"]) == {"c2"}                  # 显式列表胜出，而非最差的 c1
-    assert "ignored because --cf-stations" in r["out"]
-    assert fake_api.hits == 2
+def test_cf_station_missing_from_cf_input_warns(cf_data, fake_infer):
+    """站在 --input 有、--cf-input 没有 → 告警 + 该站无反事实列，其它站照常。"""
+    inp = pd.read_parquet(cf_data / "input.parquet")
+    inp[inp.station != "c2"].to_parquet(cf_data / "cf_input.parquet")
+    r = _run(cf_data, _cf_args(fake_infer, cf_data,
+                               ["--no-plots", "--cf-input", str(cf_data / "cf_input.parquet")]))
+    d = r["fleet"].set_index("station")
+    assert d.loc["c1", "power_nrmse_cf"] == pytest.approx(0.0, abs=1e-9)
+    assert d.loc["c2", "cf_status"] == "missing"
+    assert "c2" in r["out"]
 
 
-def test_cf_worst_no_fleet_falls_back(cf_data, fake_api):
-    """--no-fleet 无 ranking 文件：告警回退跑全部站。"""
-    r = _run(cf_data, ["--no-plots", "--no-fleet", "--counterfactual", "--api-url", _url(fake_api),
-                       "--cf-worst", "1"])
-    assert set(r["cf"]["station"]) == {"c1", "c2"}            # 回退：两站都跑
-    assert "not found" in r["out"] and fake_api.hits == 4
-
-
-def test_cf_empty_truth_series_no_crash(tmp_path, fake_api):
-    """站的 observe_power_future 全 None（空真值序列）-> no_overlap 状态、0 API 调用、不崩溃。
-    Regression test: guard must tolerate fully-empty truth series (RangeIndex from series_from_lists).
-    """
+def test_cf_empty_truth_series_no_crash(tmp_path, fake_infer):
+    """站的 observe_power_future 全 None（空真值序列）-> cf_status=no_overlap、不崩溃。"""
     def ghi(v0):
         return [float(v0 + 100 * k) for k in range(4)]
 
     OFF = {"c1": 40.0, "c2": 20.0, "c3": 0.0}
     rows = []
+
     def add(st, T, gt):
         rows.append({"station": st, "timestamp_win": pd.Timestamp(T), "observe_power": 1.0,
                      "observe_power_future": [g / 10.0 for g in gt] if gt else None,
                      "GHI_SOLARGIS_predict": [g + OFF[st] for g in gt] if gt else None,
                      "GHI_real_future": gt if gt else None})
 
-    # c1, c2: normal data with truth
     add("c1", "2026-07-16 10:00:00", ghi(100)); add("c1", "2026-07-16 10:15:00", ghi(200))
     add("c2", "2026-07-16 10:00:00", ghi(100)); add("c2", "2026-07-16 10:15:00", ghi(200))
-    # c3: empty truth (observe_power_future=None)
-    add("c3", "2026-07-16 10:00:00", None)
+    add("c3", "2026-07-16 10:00:00", None)                    # 空真值
     pd.DataFrame(rows).to_parquet(tmp_path / "input.parquet")
 
     dt = pd.date_range("2026-07-16 10:15:00", "2026-07-16 11:30:00", freq="15min")
-    flat = {"c1": [100., 200, 300, 400, 500], "c2": [100., 200, 300, 400, 500, 600], "c3": [0., 100, 200, 300, 400, 500]}
+    flat = {"c1": [100., 200, 300, 400, 500], "c2": [100., 200, 300, 400, 500, 600],
+            "c3": [0., 100, 200, 300, 400, 500]}
     pred = pd.DataFrame({"dtime": dt})
     pred["c1"] = [(flat["c1"][i] + 40) / 10 if i < 5 else float('nan') for i in range(6)]
     pred["c2"] = [(flat["c2"][i] + 20) / 10 for i in range(6)]
     pred["c3"] = [(flat["c3"][i] + 0) / 10 for i in range(6)]
     pred.to_parquet(tmp_path / "predict.parquet")
 
-    r = _run(tmp_path, ["--no-station-plots", "--counterfactual", "--api-url", _url(fake_api)])
-    assert r["cf"] is not None
-    d = r["cf"].set_index("station")
-    # c1 and c2 should be ok (normal processing)
-    assert d.loc["c1", "status"] == "ok" and d.loc["c2", "status"] == "ok"
-    # c3 should be no_overlap due to empty truth (guard catches it before API calls)
-    assert d.loc["c3", "status"] == "no_overlap"
-    # Only 2 stations should have made API calls (c1 and c2, 2 calls each = 4 total)
-    assert fake_api.hits == 4
+    r = _run(tmp_path, _cf_args(fake_infer, tmp_path, ["--no-station-plots"]))
+    d = r["fleet"].set_index("station")
+    assert d.loc["c1", "cf_status"] == "ok" and d.loc["c2", "cf_status"] == "ok"
+    assert d.loc["c3", "cf_status"] == "no_overlap"
 
 
 # ---------------------------------------------------------------- 南网 nanwang_official 指标测试
@@ -403,15 +459,15 @@ def test_nanwang_fleet_ranking(cf_data):
         _nanwang([10, 20, 30, 40, 50, 60], [12, 22, 32, 42, 52, 62], 200.0), abs=1e-2)  # predict = 真值+2
 
 
-def test_nanwang_counterfactual(cf_data, fake_api):
-    """反事实：GCCAPCITY + nanwang_official_base/cf，换真值 GHI 后功率完美 → cf=100%。"""
+def test_nanwang_counterfactual(cf_data, fake_infer):
+    """反事实：fleet_ranking 增 nanwang_official_power_cf，换真值 GHI 后功率完美 → cf=100%。"""
     info = _write_info(cf_data, {"c1": 100.0, "c2": 200.0})
-    d = _run(cf_data, ["--no-plots", "--info-csv", info,
-                       "--counterfactual", "--api-url", _url(fake_api)])["cf"].set_index("station")
+    d = _run(cf_data, _cf_args(fake_infer, cf_data,
+                               ["--no-plots", "--info-csv", info]))["fleet"].set_index("station")
     assert d.loc["c1", "GCCAPCITY"] == 100.0
-    assert d.loc["c1", "nanwang_official_base"] == pytest.approx(
+    assert d.loc["c1", "nanwang_official_power"] == pytest.approx(
         _nanwang([10, 20, 30, 40, 50], [14, 24, 34, 44, 54], 100.0), abs=1e-2)
-    assert d.loc["c1", "nanwang_official_cf"] == pytest.approx(100.0, abs=1e-6)
+    assert d.loc["c1", "nanwang_official_power_cf"] == pytest.approx(100.0, abs=1e-6)
 
 
 def test_nanwang_missing_station_blank(cf_data):
@@ -424,10 +480,70 @@ def test_nanwang_missing_station_blank(cf_data):
     assert "no GCCAPCITY" in r["out"]
 
 
+def test_info_real_shape_autojoin_city(cf_data):
+    """真实 info.csv 形态：无 station 列（plantid join 自动探测）、拼写 GCCAPACITY、含 city；
+    fleet_ranking 增 city 列且 nanwang 指标照常；--info 为 --info-csv 别名。"""
+    pd.DataFrame([
+        {"plantid": "c1", "plantname": "光伏c1", "city": "阳江", "GCCAPACITY": 100.0},
+        {"plantid": "c2", "plantname": "光伏c2", "city": "南宁", "GCCAPACITY": 200.0},
+    ]).to_csv(cf_data / "info.csv", index=False)
+    r = _run(cf_data, ["--no-plots", "--info", str(cf_data / "info.csv")])
+    fr = r["fleet"].set_index("station")
+    assert fr.loc["c1", "city"] == "阳江" and fr.loc["c2", "city"] == "南宁"
+    assert fr.loc["c1", "GCCAPCITY"] == 100.0 and fr.loc["c2", "GCCAPCITY"] == 200.0
+    assert fr.loc["c1", "nanwang_official_power"] == pytest.approx(
+        _nanwang([10, 20, 30, 40, 50], [14, 24, 34, 44, 54], 100.0), abs=1e-2)
+    assert "join column auto-detected: 'plantid'" in r["out"]
+
+
 def test_nanwang_off_when_no_info(cf_data):
-    """不给 --info-csv：无 GCCAPCITY / nanwang 列，向后兼容。"""
+    """不给 --info-csv：无 GCCAPCITY / nanwang 列（含 factor 扫描列），向后兼容。"""
     fr = _run(cf_data, ["--no-plots"])["fleet"]
     assert "GCCAPCITY" not in fr.columns and "nanwang_official_power" not in fr.columns
+    assert not [c for c in fr.columns if c.startswith("nanwang_official_power_x")]
+
+
+# ---------------------------------------------------------------- 南网 factor 灵敏度扫描
+FACTOR_COLS = ["nanwang_official_power_x1.4", "nanwang_official_power_x1.2",
+               "nanwang_official_power", "nanwang_official_power_x0.8",
+               "nanwang_official_power_x0.6", "nanwang_official_power_x0.4"]
+
+
+def test_nanwang_factor_columns_values(cf_data):
+    """fleet_ranking 每站补 5 个 factor 列：预测的每个点乘以 factor 后按南网口径重算。"""
+    info = _write_info(cf_data, {"c1": 100.0, "c2": 200.0})
+    fr = _run(cf_data, ["--no-plots", "--info-csv", info])["fleet"].set_index("station")
+    c1_true, c1_pred = [10, 20, 30, 40, 50], [14, 24, 34, 44, 54]
+    for f in (1.4, 1.2, 0.8, 0.6, 0.4):
+        assert fr.loc["c1", f"nanwang_official_power_x{f:g}"] == pytest.approx(
+            _nanwang(c1_true, [p * f for p in c1_pred], 100.0), abs=1e-2)
+    assert fr.loc["c2", "nanwang_official_power_x0.4"] == pytest.approx(
+        _nanwang([10, 20, 30, 40, 50, 60], [p * 0.4 for p in [12, 22, 32, 42, 52, 62]], 200.0), abs=1e-2)
+
+
+def test_nanwang_factor_column_order(cf_data):
+    """factor 列顺序 x1.4 / x1.2 / 官方(=x1.0) / x0.8 / x0.6 / x0.4，官方口径居中。"""
+    info = _write_info(cf_data, {"c1": 100.0, "c2": 200.0})
+    cols = list(_run(cf_data, ["--no-plots", "--info-csv", info])["fleet"].columns)
+    assert [c for c in cols if c.startswith("nanwang_official_power")] == FACTOR_COLS
+
+
+def test_nanwang_factor_not_in_station_power_csv(cf_data):
+    """station_power_rmse.csv 只保留原 nanwang_official_power，不加 factor 列。"""
+    info = _write_info(cf_data, {"c1": 100.0, "c2": 200.0})
+    pw = _run(cf_data, ["--no-plots", "--info-csv", info])["power"]
+    assert "nanwang_official_power" in pw.columns
+    assert not [c for c in pw.columns if c.startswith("nanwang_official_power_x")]
+
+
+def test_nanwang_factor_missing_station_blank(cf_data):
+    """info-csv 缺某站：该站所有 factor 列一并留空，其余站照常。"""
+    info = _write_info(cf_data, {"c1": 100.0})               # c2 缺
+    fr = _run(cf_data, ["--no-plots", "--info-csv", info])["fleet"].set_index("station")
+    assert fr.loc["c1", "nanwang_official_power_x1.4"] == pytest.approx(
+        _nanwang([10, 20, 30, 40, 50], [p * 1.4 for p in [14, 24, 34, 44, 54]], 100.0), abs=1e-2)
+    for c in FACTOR_COLS:
+        assert pd.isna(fr.loc["c2", c])
 
 
 import importlib.util
@@ -471,6 +587,62 @@ def test_series_from_lists_history_skips_nan_and_empty():
     assert s.index[0] == t0                        # the surviving value is the endpoint
     assert sa.series_from_lists_history([t0], [None], step).empty
     assert sa.series_from_lists_history([t0], [[]], step).empty
+
+
+# ---------------------------------------------------------------- 三线共轴 + 三方交集
+def test_display_multi_puts_every_series_on_one_x_axis():
+    """真值/基线/反事实覆盖各不相同 -> 并集一根 x 轴，缺口填 0，三条线等长。"""
+    idx = pd.date_range("2026-07-27 00:00", periods=4, freq="15min")
+    truth = pd.Series([1., 2, 3, 4], index=idx)
+    base = pd.Series([1., 2], index=idx[:2])                   # 少后两点
+    cf = pd.Series([9., 9], index=idx[2:])                     # 少前两点
+    times, tv, others = sa._display_multi(truth, [base, cf], False, 5.0)
+    assert list(times) == list(idx)                            # 并集 = 4 点
+    assert [len(o) for o in others] == [4, 4] and len(tv) == 4
+    assert list(others[0]) == [1.0, 2.0, 0.0, 0.0]             # base 缺口填 0
+    assert list(others[1]) == [0.0, 0.0, 9.0, 9.0]             # cf 缺口填 0
+
+
+def test_display_multi_matches_display_for_two_series():
+    """两序列时与既有 _display 完全一致（包装器不得改变旧行为）。"""
+    idx = pd.date_range("2026-07-27 00:00", periods=4, freq="15min")
+    a = pd.Series([1., 2, 3, 4], index=idx)
+    b = pd.Series([5., 6], index=idx[:2])
+    t1, av1, bv1 = sa._display(a, b, False, 5.0)
+    t2, av2, others = sa._display_multi(a, [b], False, 5.0)
+    assert list(t1) == list(t2) and list(av1) == list(av2) and list(bv1) == list(others[0])
+
+
+def test_win_panel_draws_counterfactual_as_third_line():
+    """win_pw 面板带 extras 时，右下子图真的多画一条线且带反事实图例。"""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    idx = pd.date_range("2026-07-27 00:00", periods=4, freq="15min")
+    panel = ("Power", idx, np.array([1., 2, 3, 4]), np.array([2., 3, 4, 5]), 1.0, 4,
+             "observed power", "predicted power",
+             [(np.array([1., 2, 3, 4]), "counterfactual (GHI->truth)", "#2ca02c", "-",
+               "cf RMSE=0.000")])
+    fig, ax = plt.subplots()
+    sa._draw_win_panel(ax, panel, "Power", "D+1", 1)
+    labels = [ln.get_label() for ln in ax.get_lines()]
+    assert len(ax.get_lines()) == 3
+    assert "counterfactual (GHI->truth)" in labels
+    plt.close(fig)
+
+
+def test_cf_metrics_scores_on_three_way_intersection():
+    """基线与反事实覆盖不同 -> 只在 truth∩base∩cf 上打分，两侧点集必须一致。"""
+    idx = pd.date_range("2026-07-27 00:00", periods=4, freq="15min")
+    truth = pd.Series([10., 10, 10, 10], index=idx)
+    base = pd.Series([12., 12, 12], index=idx[:3])             # 缺最后一点
+    cf = pd.Series([10., 10, 10], index=idx[1:])               # 缺第一点
+    got = sa.cf_metrics(truth, base, cf, False, 5.0, cap=10.0)
+    assert got is not None
+    m, (times, t, b, c) = got
+    assert m["n_points"] == 2 and list(times) == list(idx[1:3])   # 交集只剩 2 点
+    assert m["nrmse_base"] == pytest.approx(20.0)                # |12-10|/10 ×100
+    assert m["nrmse_cf"] == pytest.approx(0.0, abs=1e-9)
 
 
 # ---------------------------------------------------------------- --short 双切片
@@ -537,13 +709,13 @@ def test_short_date_shifts_window(short_data):
 
 
 def test_short_worst_only(short_data):
-    # --worst-only 1：每个切片图只画最差 1 站，CSV 仍含全部站
+    # --worst-only 1：每个切片只画最差 1 站的组合图，CSV 仍含全部站
     r = _run_short(short_data, ["--pred-col-template", "{station}", "--worst-only", "1"])
     pw = pd.read_csv(_rep(short_data) / "D+1" / "station_power_rmse.csv")
     assert len(pw) == 2                                     # CSV 全量
-    pngs = os.listdir(_rep(short_data) / "D+1" / "stations")
-    powers = [f for f in pngs if f.endswith("_Power.png")]
-    assert len(powers) == 1                                 # 仅最差 1 站出图
+    pngs = [f for f in os.listdir(_rep(short_data) / "D+1")
+            if f.startswith("station_") and f.endswith(".png")]
+    assert len(pngs) == 1                                   # 仅最差 1 站出组合图
 
 
 @pytest.fixture
@@ -572,26 +744,30 @@ def test_short_end_to_end_with_plots(short_data):
         assert (d / "fleet_overview.png").exists()
         assert (d / "theil_decomposition.png").exists()
         assert (d / "fleet_ranking.csv").exists()
-        stn = os.listdir(d / "stations")
-        assert any(f.endswith("_Power.png") for f in stn)
-        assert any(f.endswith("_scatter.png") for f in stn)
+        assert (d / "station_s1.png").exists()              # 每站一张 2x2 组合图，直接落在切片目录
+        assert (d / "station_s2.png").exists()
+        assert not (d / "stations").exists()                # 旧版逐图目录已随 API 反事实一并删除
 
 
-def test_short_counterfactual_per_window(short_cf_data, fake_api):
+def test_short_counterfactual_per_window(short_cf_data, fake_infer):
+    """480 点单窗：推理只跑一次（1 窗 × 2 趟），两个切片各自复用同一份结果切片打分。"""
     r = subprocess.run(
         [sys.executable, SCRIPT, "--input", str(short_cf_data / "input.parquet"),
          "--predict", str(short_cf_data / "predict.parquet"),
          "--out-dir", str(short_cf_data / "out"), "--no-plots", "--pred-col-template", "{station}",
-         "--counterfactual", "--api-url", _url(fake_api)],
+         "--counterfactual", "--inference-dir", fake_infer.dir,
+         "--checkpoints-dir", str(short_cf_data / "ckpt"),
+         "--config", str(short_cf_data / "config.yaml")],
         cwd=str(short_cf_data), capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
     for sub in ("D+1", "D+4"):
-        p = _rep(short_cf_data) / sub / "counterfactual_results.csv"
-        assert p.exists(), f"missing CF csv in {sub}"
+        p = _rep(short_cf_data) / sub / "fleet_ranking.csv"
+        assert p.exists(), f"missing fleet_ranking in {sub}"
         d = pd.read_csv(p).set_index("station")
-        assert d.loc["c1", "status"] == "ok"
+        assert d.loc["c1", "cf_status"] == "ok"
         assert int(d.loc["c1", "n_points"]) == 96              # 每切片 96 点
-    assert fake_api.hits == 4                                   # 1 站 × 2 次 × 2 切片
+        assert d.loc["c1", "power_nrmse_cf"] == pytest.approx(0.0, abs=1e-9)
+    assert fake_infer.count == 2                                # 1 窗 × 2 趟，两切片共用
 
 
 @pytest.fixture
@@ -649,24 +825,25 @@ def hist_data(tmp_path):
     return tmp_path
 
 
-def test_history_plots_per_station(hist_data):
+def test_history_panels_in_combined_plot(hist_data):
+    # 历史列齐全 -> 每切片每站一张组合图（含 history 面板），不再有独立 history/ 目录
     r = _run_short(hist_data, ["--pred-col-template", "{station}", "--no-fleet"])
-    hd = _rep(hist_data) / "history" / "stations"
-    assert (hd / "station_s1_observe_power.png").exists()
-    assert (hd / "station_s1_GHI_SOLARGIS.png").exists()
-    assert (hd / "station_s2_observe_power.png").exists()
-    assert (hd / "station_s2_GHI_SOLARGIS.png").exists()
-    assert "[history] observe_power: 2 plotted, 0 skipped" in r.stdout
+    for sub in ("D+1", "D+4"):
+        assert (_rep(hist_data) / sub / "station_s1.png").exists()
+        assert (_rep(hist_data) / sub / "station_s2.png").exists()
+    assert not (_rep(hist_data) / "history").exists()
+    assert "history column" not in r.stdout                 # 无缺列告警
 
 
 def test_history_no_plots_flag_skips(hist_data):
     r = _run_short(hist_data, ["--no-plots", "--pred-col-template", "{station}"])
     assert not (_rep(hist_data) / "history").exists()
-    assert "[history] skipped" in r.stdout
+    assert not (_rep(hist_data) / "D+1" / "station_s1.png").exists()
 
 
 def test_history_missing_column_warns(short_data):
-    # short_data has no observe_power / GHI_SOLARGIS columns -> history warns per missing col, no crash
+    # short_data has no observe_power / GHI_SOLARGIS columns -> warn per missing col, combined plot still produced
     r = _run_short(short_data, ["--no-fleet", "--pred-col-template", "{station}"])
-    assert "[history] column 'observe_power' missing" in r.stdout
-    assert "[history] column 'GHI_SOLARGIS' missing" in r.stdout
+    assert "history column 'observe_power' missing" in r.stdout
+    assert "history column 'GHI_SOLARGIS' missing" in r.stdout
+    assert (_rep(short_data) / "D+1" / "station_s1.png").exists()

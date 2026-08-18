@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
 """PV 多站短期预测结果分析（数据格式锁定：起报时间恒为当日 10:00，输入 list 列长 480、首元素 10:15、步长 15min，预测表 dtime 从次日 00:00 起）。
-按 起报日 D 切 D+1、D+4 两个 24h 窗，各产一套每站曲线/散点/Theil + 舰队总览与排名，另出 history 两日历史曲线；可选 --counterfactual 经模型 API 做 GHI oracle 替换归因。"""
+按 起报日 D 切 D+1、D+4 两个 24h 窗，每窗每站产一张 2x2 组合图（左列 history GHI/功率全量点，右列本窗 GHI/功率预测对真值）
++ 舰队总览与排名；可选 --counterfactual 经本地 inference.py 做 GHI oracle 替换归因。"""
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import urllib.request
+import sys
 
 import numpy as np
 import pandas as pd
 
 DEFAULT_FEATURE_PAIRS = [("GHI_SOLARGIS_predict", "GHI_real_future", "GHI")]
-HISTORY_DAYS = 2                                  # history plots: how many days back from 起报时间 T
-HISTORY_COLS = ["observe_power", "GHI_SOLARGIS"]  # historical (past-observed) list columns to plot
+HISTORY_COLS = ["observe_power", "GHI_SOLARGIS"]  # historical (past-observed) list columns -> 2x2 left column
 
 
 # ================================================================ Common: flatten / night / align
@@ -94,16 +93,28 @@ def _aligned(a: pd.Series, b: pd.Series, drop_night, night_end_hour, win=None):
     return common, a.loc[common].to_numpy(), b.loc[common].to_numpy()
 
 
-def _display(a: pd.Series, b: pd.Series, drop_night, night_end_hour, win=None, fill=0.0):
-    """PLOT-ONLY: union of both series' timestamps (within win, minus night), reindex both, fill gaps with `fill`.
-    Metrics keep using _aligned (intersection); this only makes the two lines span the full window so gaps are
-    visible instead of silently dropped. Reindex is by timestamp, so the two lines always share one x-axis."""
-    idx = a.index.union(b.index).sort_values()
+def _display_multi(a: pd.Series, others, drop_night, night_end_hour, win=None, fill=0.0):
+    """PLOT-ONLY: union of ALL series' timestamps (within win, minus night), reindex every series onto that
+    one index, gaps filled with `fill`. Metrics keep using _aligned (intersection); this only makes the lines
+    span the full window so gaps are visible instead of silently dropped. One shared index is what lets the
+    truth / prediction / counterfactual lines sit on a single x-axis.
+    Returns (times, a_vals, [other_vals, ...]) or None."""
+    idx = a.index
+    for s in others:
+        idx = idx.union(s.index)
+    idx = idx.sort_values()
     keep = night_mask(idx, drop_night, night_end_hour) & window_mask(idx, win)
     idx = idx[keep]
     if len(idx) == 0:
         return None
-    return idx, a.reindex(idx).fillna(fill).to_numpy(), b.reindex(idx).fillna(fill).to_numpy()
+    return (idx, a.reindex(idx).fillna(fill).to_numpy(),
+            [s.reindex(idx).fillna(fill).to_numpy() for s in others])
+
+
+def _display(a: pd.Series, b: pd.Series, drop_night, night_end_hour, win=None, fill=0.0):
+    """Two-series form of _display_multi (kept so existing callers read unchanged)."""
+    got = _display_multi(a, [b], drop_night, night_end_hour, win, fill)
+    return None if got is None else (got[0], got[1], got[2][0])
 
 
 def rmse(a, b):
@@ -124,6 +135,24 @@ def nanwang_official(p_real, p_pred, gccap):
     denom = np.maximum(a, 0.2 * gccap)            # per-point floor; a is nonneg power, denom always > 0
     r = (a - p) / denom
     return (1.0 - float(np.sqrt(np.mean(r ** 2)))) * 100.0
+
+
+NANWANG_FACTORS = (1.4, 1.2, 1.0, 0.8, 0.6, 0.4)   # 1.0 = 原官方列，居中放置
+
+
+def nanwang_factor_row(p_real, p_pred, gccap, factors=NANWANG_FACTORS):
+    """南网口径的乘性灵敏度扫描：每个 factor 把预测的每一个点乘以 factor 后重算 nanwang_official。
+    不做任何截断，factor>1 的预测可以超过 GCCAPCITY。返回按 factors 顺序排列的 {列名: 值}，
+    factor 1.0 沿用原列名 nanwang_official_power，其余为 nanwang_official_power_x<factor>。
+    gccap 不可用（None/<=0）或无点时返回 {}。"""
+    p = np.asarray(p_pred, dtype=float)
+    out = {}
+    for f in factors:
+        v = nanwang_official(p_real, p * f, gccap)
+        if v is None:
+            return {}
+        out["nanwang_official_power" if f == 1.0 else f"nanwang_official_power_x{f:g}"] = round(v, 4)
+    return out
 
 
 def resolve_pred_col(st, pred, template):
@@ -188,122 +217,109 @@ def parse_capacity(spec):
     return out
 
 
-def load_gccap(path, station_col, cap_col="GCCAPCITY"):
-    """info_csv -> {str(station): GCCAPCITY float}. Joins on station_col; needs station_col + GCCAPCITY columns.
-    Rows with a missing/blank GCCAPCITY are skipped. Used only for the 南网 nanwang_official metric."""
+def load_station_info(path, station_col, stations):
+    """info_csv -> {str(station): {"gccap": float|None, "city": str|None}}.
+    Capacity column: GCCAPCITY or GCCAPACITY (case-insensitive). Join column: station_col when present,
+    otherwise auto-detected as the info_csv column whose values (str-compared) match the most stations;
+    zero matches anywhere -> SystemExit. city column (case-insensitive "city") is optional."""
     df = pd.read_csv(path)
-    miss = [c for c in (station_col, cap_col) if c not in df.columns]
-    if miss:
-        raise SystemExit(f"--info-csv missing columns {miss}; actual columns: {list(df.columns)[:30]}")
+    cap_col = next((c for c in df.columns if str(c).upper() in ("GCCAPCITY", "GCCAPACITY")), None)
+    if cap_col is None:
+        raise SystemExit(f"--info-csv has no GCCAPCITY/GCCAPACITY column; actual columns: {list(df.columns)[:30]}")
+    city_col = next((c for c in df.columns if str(c).lower() == "city"), None)
+    want = {str(s) for s in stations}
+    if station_col in df.columns:
+        join_col = station_col
+    else:
+        join_col, hits = None, 0
+        for c in df.columns:
+            n = int(df[c].astype(str).isin(want).sum())
+            if n > hits:
+                join_col, hits = c, n
+        if join_col is None:
+            raise SystemExit(f"--info-csv: no column matches any station value (stations look like "
+                             f"{sorted(want)[:3]}; columns: {list(df.columns)[:30]})")
+        print(f"  [info-csv] join column auto-detected: '{join_col}' (matches {hits}/{len(want)} stations); "
+              f"capacity column: '{cap_col}'")
     out = {}
     for _, r in df.iterrows():
         v = r[cap_col]
-        if pd.notna(v):
-            out[str(r[station_col])] = float(v)
+        out[str(r[join_col])] = {
+            "gccap": float(v) if pd.notna(v) else None,
+            "city": str(r[city_col]) if city_col is not None and pd.notna(r[city_col]) else None}
     return out
 
 
-# ================================================================ Per-station two-line comparison plot
-def plot_two_lines(st, name, times, true_v, pred_v, rmse_v, out_dir,
-                   tick_hours, true_label, pred_label, n_real=None):
-    import matplotlib
-    matplotlib.use("Agg")
+# ================================================================ Per-station combined 2x2 plot
+def _fmt_time_axis(ax, times, tick_hours):
     import matplotlib.dates as mdates
     import matplotlib.pyplot as plt
-    _cn_font()
-
-    times = pd.DatetimeIndex(times)
     n_hours = max(1.0, (times[-1] - times[0]).total_seconds() / 3600.0)
-    width = min(60.0, max(16.0, n_hours * 0.3))       # auto-adapt to time span, spreads out even 600+ points
-    fig, ax = plt.subplots(figsize=(width, 6))
-    ax.plot(times, true_v, label=true_label, color="#1f77b4", lw=1.3)
-    ax.plot(times, pred_v, label=pred_label, color="#d62728", lw=1.1, alpha=0.85)
-    ax.fill_between(times, true_v, pred_v, color="#d62728", alpha=0.12)
-    n_scored = len(times) if n_real is None else n_real
-    gap_note = f", {len(times) - n_scored} gaps filled 0" if n_scored < len(times) else ""
-    ax.set_title(f"Station {st}  -  {name}   RMSE={rmse_v:.3f}   "
-                 f"start {times[0]:%Y-%m-%d %H:%M}   (n={n_scored} scored{gap_note})",
-                 fontsize=13, fontweight="bold")
-    ax.xaxis.set_major_locator(mdates.HourLocator(interval=max(1, int(tick_hours))))
+    ax.xaxis.set_major_locator(mdates.HourLocator(
+        interval=max(1, int(tick_hours), int(np.ceil(n_hours / 36.0)))))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
-    plt.setp(ax.get_xticklabels(), rotation=90, fontsize=7)
-    ax.set_xlabel("time"); ax.set_ylabel(name); ax.legend(loc="upper right"); ax.grid(alpha=0.25)
-    fig.tight_layout()
-    path = os.path.join(_station_dir(out_dir), f"station_{sanitize(st)}_{sanitize(name)}.png")
-    fig.savefig(path, dpi=110); plt.close(fig)
-    return path
+    plt.setp(ax.get_xticklabels(), rotation=90, fontsize=8)
+    ax.set_xlabel("time", fontsize=10); ax.grid(alpha=0.25)
 
 
-def plot_history_line(st, name, times, vals, out_dir, tick_hours):
-    """Single-line history plot (no truth/pred pair, no RMSE). Saved to <out_dir>/stations/."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.dates as mdates
-    import matplotlib.pyplot as plt
-    _cn_font()
-
+def _draw_hist_panel(ax, panel, fallback_name, tick_hours):
+    """Left-column history panel: one line over ALL history points. panel = (name, times, vals) or None."""
+    if panel is None:
+        ax.text(0.5, 0.5, "no data", ha="center", va="center", fontsize=12)
+        ax.set_title(f"{fallback_name} (history)", fontsize=13, fontweight="bold")
+        return
+    name, times, vals = panel
     times = pd.DatetimeIndex(times)
-    n_hours = max(1.0, (times[-1] - times[0]).total_seconds() / 3600.0)
-    width = min(60.0, max(16.0, n_hours * 0.3))
-    fig, ax = plt.subplots(figsize=(width, 6))
     ax.plot(times, vals, color="#1f77b4", lw=1.3, label=name)
-    ax.set_title(f"Station {st}  -  {name} (history)   "
-                 f"{times[0]:%Y-%m-%d %H:%M} -> {times[-1]:%Y-%m-%d %H:%M}   (n={len(times)})",
-                 fontsize=13, fontweight="bold")
-    ax.xaxis.set_major_locator(mdates.HourLocator(interval=max(1, int(tick_hours))))
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
-    plt.setp(ax.get_xticklabels(), rotation=90, fontsize=7)
-    ax.set_xlabel("time"); ax.set_ylabel(name); ax.legend(loc="upper right"); ax.grid(alpha=0.25)
-    fig.tight_layout()
-    path = os.path.join(_station_dir(out_dir), f"station_{sanitize(st)}_{sanitize(name)}.png")
-    fig.savefig(path, dpi=110); plt.close(fig)
-    return path
+    ax.set_title(f"{name} (history)   {times[0]:%Y-%m-%d %H:%M} -> {times[-1]:%Y-%m-%d %H:%M}   "
+                 f"(n={len(times)})", fontsize=13, fontweight="bold")
+    ax.set_ylabel(name, fontsize=11); ax.legend(loc="upper right", fontsize=9)
+    _fmt_time_axis(ax, times, tick_hours)
 
 
-def _station_dir(out_dir):
-    """Per-station images live in <out_dir>/stations/ so the root stays browsable (overview pngs + CSVs only)."""
-    d = os.path.join(out_dir, "stations")
-    os.makedirs(d, exist_ok=True)
-    return d
+def _draw_win_panel(ax, panel, fallback_name, win_label, tick_hours):
+    """Right-column window panel: truth vs prediction, plus any extra lines (counterfactual, local baseline).
+    panel = (name, times, true_v, pred_v, rmse_v, n_scored, true_label, pred_label[, extras]) or None;
+    extras = [(vals, label, color, linestyle, title_note), ...] — all share the panel's single x-axis, and
+    title_note carries the already-scored RMSE (display arrays have gaps filled 0, so never re-score here)."""
+    if panel is None:
+        ax.text(0.5, 0.5, "no data", ha="center", va="center", fontsize=12)
+        ax.set_title(f"{fallback_name} ({win_label})", fontsize=13, fontweight="bold")
+        return
+    name, times, tv, pv, rv, n_scored, tlab, plab = panel[:8]
+    extras = panel[8] if len(panel) > 8 else []
+    times = pd.DatetimeIndex(times)
+    ax.plot(times, tv, label=tlab, color="#1f77b4", lw=1.3)
+    ax.plot(times, pv, label=plab, color="#d62728", lw=1.1, alpha=0.85)
+    ax.fill_between(times, tv, pv, color="#d62728", alpha=0.12)
+    notes = ""
+    for vals, lab, color, ls, note in extras:
+        ax.plot(times, vals, label=lab, color=color, lw=1.1, ls=ls, alpha=0.9)
+        notes += f"   {note}" if note else ""
+    gap_note = f", {len(times) - n_scored} gaps filled 0" if n_scored < len(times) else ""
+    ax.set_title(f"{name} ({win_label})   RMSE={rv:.3f}{notes}   start {times[0]:%Y-%m-%d %H:%M}   "
+                 f"(n={n_scored} scored{gap_note})", fontsize=13, fontweight="bold")
+    ax.set_ylabel(name, fontsize=11); ax.legend(loc="upper right", fontsize=9)
+    _fmt_time_axis(ax, times, tick_hours)
 
 
-def plot_scatter(st, t, p, sc, th, cap, out_dir):
-    """True-vs-pred power scatter: y=x + OLS fit + decile-bin means; textbox carries bias / top-20% bias / Theil shares.
-    slope<1 with negative top-bin bias = high-value compression candidate (candidate only, per recipe discipline)."""
+def plot_station_combined(st, win_label, hist_ghi, hist_pw, win_ghi, win_pw, out_dir, tick_hours):
+    """One 2x2 PNG per station per window, saved as <out_dir>/station_<站>.png.
+    Left column = history over ALL history points: GHI (top) / power (bottom), each (name, times, vals) or None.
+    Right column = this window's pred-vs-true with RMSE: GHI (top) / power (bottom); the power panel may carry
+    extra lines (counterfactual / local baseline) — see _draw_win_panel."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     _cn_font()
-    t, p = np.asarray(t, float), np.asarray(p, float)
-    fig, ax = plt.subplots(figsize=(7.5, 7))
-    ax.scatter(t, p, s=9, alpha=0.35, color="#4c78a8", edgecolors="none", label="15-min points")
-    lo = min(0.0, float(np.min(t)), float(np.min(p)))
-    hi = max(float(np.max(t)), float(np.max(p))) * 1.05 or 1.0
-    ax.plot([lo, hi], [lo, hi], ls="--", lw=1.2, color="#333", label="y = x (perfect)")
-    xs = np.array([lo, hi])
-    ax.plot(xs, sc["slope"] * xs + sc["intercept"], color="#d62728", lw=1.5,
-            label=f"fit: pred = {sc['slope']:.2f} x true {sc['intercept']:+.1f}")
-    edges = np.quantile(t, np.linspace(0, 1, 11))            # decile-bin means: a bend = that power band is off
-    idx = np.clip(np.searchsorted(edges, t, side="right") - 1, 0, 9)
-    bt = [float(np.mean(t[idx == i])) for i in range(10) if (idx == i).any()]
-    bp = [float(np.mean(p[idx == i])) for i in range(10) if (idx == i).any()]
-    ax.plot(bt, bp, "o-", color="#f28e2b", lw=1.8, ms=5, label="decile-bin mean")
-    bias = float(np.mean(p - t)) / cap * 100.0
-    hb = sc["high_bias"] / cap * 100.0
-    txt = (f"slope = {sc['slope']:.3f}   R$^2$ = {sc['r2']:.3f}\n"
-           f"overall bias = {bias:+.2f}% of cap\n"
-           f"top-20% truth bias = {hb:+.2f}% of cap")
-    if th:
-        txt += f"\nTheil: u_bias {th[0]:.0%} / u_var {th[1]:.0%} / u_cov {th[2]:.0%}"
-    ax.text(0.02, 0.98, txt, transform=ax.transAxes, va="top", fontsize=9,
-            bbox=dict(boxstyle="round", fc="white", ec="#999", alpha=0.85))
-    flag = "\ncandidate: high-value compression (slope<0.9, top-bin bias<0)" if sc["slope"] < 0.9 and hb < 0 else ""
-    ax.set_title(f"Station {st} - true vs pred power{flag}", fontsize=12, fontweight="bold")
-    ax.set_xlabel("observed power (true)"); ax.set_ylabel("predicted power")
-    ax.set_xlim(lo, hi); ax.set_ylim(lo, hi)
-    ax.legend(loc="lower right", fontsize=8); ax.grid(alpha=0.25)
-    fig.tight_layout()
-    path = os.path.join(_station_dir(out_dir), f"station_{sanitize(st)}_scatter.png")
+    fig, axes = plt.subplots(2, 2, figsize=(32, 12))
+    _draw_hist_panel(axes[0, 0], hist_ghi, "GHI", tick_hours)
+    _draw_hist_panel(axes[1, 0], hist_pw, "power", tick_hours)
+    _draw_win_panel(axes[0, 1], win_ghi, "GHI", win_label, tick_hours)
+    _draw_win_panel(axes[1, 1], win_pw, "Power", win_label, tick_hours)
+    fig.suptitle(f"Station {st}  -  {win_label}", fontsize=16, fontweight="bold")
+    fig.tight_layout(rect=(0, 0, 1, 0.965))
+    path = os.path.join(out_dir, f"station_{sanitize(st)}.png")
     fig.savefig(path, dpi=110); plt.close(fig)
     return path
 
@@ -478,10 +494,9 @@ def plot_dashboard(df, hourly, have_ghi, args, out_dir, focus_note=""):
     return path
 
 
-# ================================================================ Counterfactual (oracle GHI swap)
-CF_COLS = ["station", "status", "n_points", "capacity", "GCCAPCITY", "nrmse_base", "nrmse_cf",
-           "delta_nrmse", "frac_explained", "nanwang_official_base", "nanwang_official_cf",
-           "base_vs_parquet_pct", "coadapt"]
+# ================================================================ Counterfactual (oracle GHI swap, local inference)
+CF_PRED_COL_TEMPLATE = "predict_power_{station}"   # inference.py hardcodes this; --pred-col-template governs
+                                                   # only the --predict table and must not be applied here
 
 
 def parse_cf_swap(spec):
@@ -496,110 +511,146 @@ def parse_cf_swap(spec):
     return out
 
 
-def _jsonable(v):
-    """parquet cell -> JSON-able: Timestamp->ISO string, array/list->list, NaN->None."""
-    if isinstance(v, pd.Timestamp):
-        return v.isoformat()
-    if v is None:
-        return None
-    if np.ndim(v) > 0:
-        arr = np.asarray(v, dtype=float).ravel()
-        return [float(x) if np.isfinite(x) else None for x in arr]
-    if isinstance(v, (bool, np.bool_)):
-        return bool(v)
-    if isinstance(v, (int, np.integer)):
-        return int(v)
-    if isinstance(v, (float, np.floating)):
-        return float(v) if np.isfinite(v) else None
-    return str(v)
+def cf_load_inference(inference_dir):
+    """Import multi_station_inference lazily so the rest of the script still runs on machines without the
+    model stack. inference_dir goes to sys.path FRONT: this script's own directory is sys.path[0] and may
+    hold a same-named inference.py, which would otherwise shadow the one the user pointed at."""
+    if inference_dir:
+        sys.path.insert(0, os.path.abspath(inference_dir))
+    try:
+        from inference import multi_station_inference
+    except ImportError as e:
+        raise SystemExit(
+            f"--counterfactual needs inference.py importable (multi_station_inference): {e}\n"
+            f"  point --inference-dir at the directory holding inference.py + its Base/utils deps.")
+    return multi_station_inference
 
 
-def cf_build_payload(sub: pd.DataFrame, exclude: set, swap: dict | None):
-    """One station's window rows -> {"data": [row dict]}. Field names = parquet column names; when swap is given,
-    the swapped column's field name is unchanged, value taken from the same row's truth column (oracle replacement)."""
-    rows = []
-    for _, r in sub.iterrows():
-        d = {}
-        for col in sub.columns:
-            if col in exclude:
-                continue
-            src = swap.get(col, col) if swap else col
-            d[col] = _jsonable(r[src])
-        rows.append(d)
-    return {"data": rows}
+def cf_check_swap_consumed(config_path, swap):
+    """Best-effort pre-flight: if utils.get_past_future_cols is importable (i.e. we are on the model machine),
+    warn when a swapped column is not among the model's future inputs -- swapping it would then be a no-op.
+    Silent when utils or the config cannot be read: this is a warning, never a gate."""
+    try:
+        from utils import get_past_future_cols, load_config
+    except ImportError:
+        return
+    try:
+        cfg = load_config(config_path) if isinstance(config_path, str) else config_path
+        _, future_list, extra_list, _ = get_past_future_cols(cfg)
+    except Exception as e:                            # noqa: BLE001 -- config shapes vary; never block on it
+        print(f"  [warn] counterfactual: cannot read model feature list from config ({e}), swap check skipped")
+        return
+    known = set(future_list or []) | set(extra_list or [])
+    unused = [p for p in swap if p not in known]
+    if unused:
+        print(f"  [warn] counterfactual: {unused} not in the model's future/extra feature list -- "
+              f"swapping it will not change the prediction. Check --cf-swap against your config.")
 
 
-def _payload_skeleton(payload, n_preview=4):
-    lines = []
-    for k, v in payload["data"][0].items():
-        if isinstance(v, list):
-            prev = ", ".join("None" if x is None else f"{x:.4g}" for x in v[:n_preview])
-            lines.append(f"    {k}: list[{len(v)}]  [{prev}, ...]")
-        else:
-            lines.append(f"    {k}: {type(v).__name__}  {v!r}")
-    return "\n".join(lines)
+def _listlen(v):
+    """Length of a parquet list cell; 0 for None/NaN/scalar so unusable rows are easy to spot."""
+    if v is None or np.ndim(v) == 0:
+        return 0
+    return len(v)
 
 
-def _extract_response(obj):
-    """Parse the API response, return (kind, data):
-    (1) per-window (real contract): "predictions": [{"timestamp_win":..., "ensemble":[192 values]}, ...]
-       -> ("windows", [(Timestamp, list), ...]), take only ensemble, ignore other keys.
-    (2) flat list (compat fallback): bare list or {"prediction":[...]} -> ("flat", [...])."""
-    if isinstance(obj, dict):
-        preds = obj.get("predictions")
-        if isinstance(preds, list) and preds and isinstance(preds[0], dict):
-            out = []
-            for p in preds:
-                if "timestamp_win" not in p or "ensemble" not in p:
-                    raise RuntimeError(f"response predictions element missing timestamp_win/ensemble key"
-                                       f"(actual keys: {list(p)[:6]})")
-                out.append((pd.Timestamp(p["timestamp_win"]), p["ensemble"]))
-            return "windows", out
-    if isinstance(obj, list):
-        return "flat", obj
-    if isinstance(obj, dict):
-        for k in ("prediction", "predictions", "result", "power", "data", "output"):
-            if isinstance(obj.get(k), list):
-                return "flat", obj[k]
-        for v in obj.values():
-            if isinstance(v, list):
-                return "flat", v
-    raise RuntimeError(f"cannot extract predictions from API response (response keys: "
-                       f"{list(obj)[:5] if isinstance(obj, dict) else type(obj).__name__})")
+def cf_usable_rows(cf_inp, swap, station_col, win_col):
+    """Keep only rows the swap can actually be performed on: every (pred, truth) pair present, non-empty and
+    the same length. Feeding a None cell to the model crashes it, and a length-mismatched truth would silently
+    change the row's horizon -- both must be dropped before inference, not discovered inside it."""
+    ok = np.ones(len(cf_inp), dtype=bool)
+    reasons = {}
+    for pcol, tcol in swap.items():
+        for i, (pv, tv) in enumerate(zip(cf_inp[pcol].to_numpy(), cf_inp[tcol].to_numpy())):
+            lp, lt = _listlen(pv), _listlen(tv)
+            if lp == 0 or lt == 0:
+                ok[i] = False
+                reasons.setdefault("empty", set()).add(str(cf_inp[station_col].iloc[i]))
+            elif lp != lt:
+                ok[i] = False
+                reasons.setdefault("length", set()).add(str(cf_inp[station_col].iloc[i]))
+    if "empty" in reasons:
+        print(f"  [warn] counterfactual: dropping rows with empty {list(swap)} / truth cells "
+              f"(stations {sorted(reasons['empty'])[:10]}) -- they get cf_status=missing, 0 inference calls")
+    if "length" in reasons:
+        print(f"  [warn] counterfactual: dropping rows where the truth column length != forecast length "
+              f"(stations {sorted(reasons['length'])[:10]}) -- swapping would change the horizon")
+    return cf_inp[ok]
 
 
-def cf_call_api(url, payload, timeout, retries):
-    body = json.dumps(payload).encode()
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # intranet API direct connection, bypass system proxy
-    last = None
-    for _ in range(int(retries) + 1):
-        try:
-            req = urllib.request.Request(url, data=body,
-                                         headers={"Content-Type": "application/json"})
-            with opener.open(req, timeout=timeout) as resp:
-                return _extract_response(json.loads(resp.read().decode()))
-        except Exception as e:                        # noqa: BLE001 -- re-raise uniformly after retries
-            last = e
-    raise RuntimeError(f"API call failed (after {retries} retries): {last}")
+def cf_infer_windows(cf_inp, args, infer_fn, swap=None, label=""):
+    """Run local inference over every 起报 window of cf_inp -> dtime-indexed frame of predict_power_<站> columns.
+    One call per window with all that window's stations, which is exactly what multi_station_inference asserts
+    (station unique + single timestamp_win). swap={pred_col: truth_col} replaces the forecast with its truth
+    before predicting; swap=None reproduces the baseline from the same checkpoints.
+    Frames are copied because multi_station_inference mutates the caller's dataframe in place."""
+    outs = []
+    wins = list(cf_inp.groupby(args.win_col, sort=True))
+    print(f"[counterfactual] {label}: {len(wins)} window(s) x 1 call each")
+    for wt, g in wins:
+        sub = g.copy()
+        if sub[args.station_col].duplicated().any():
+            dup = sorted(set(sub[args.station_col][sub[args.station_col].duplicated()].astype(str)))
+            print(f"  [warn] window {wt}: duplicate stations {dup} in --cf-input, keeping the first row of each")
+            sub = sub.drop_duplicates(subset=[args.station_col], keep="first")
+        if swap:
+            for pcol, tcol in swap.items():
+                sub[pcol] = sub[tcol]
+        res = infer_fn(sub, None, args.checkpoints_dir, args.forecasting_type, args.config)
+        if res is None or len(res) == 0:
+            print(f"  [warn] window {wt}: inference returned nothing, skipped")
+            continue
+        outs.append(res)
+    if not outs:
+        return pd.DataFrame()
+    out = pd.concat(outs, axis=0, ignore_index=True)
+    out[args.dtime_col] = pd.to_datetime(out[args.dtime_col])
+    return out.groupby(args.dtime_col).mean(numeric_only=True).sort_index()
 
 
-def cf_series(kind, data, dtimes, n_sent, step):
-    """API response -> power series with absolute timestamps. Misaligned -> (None, reason).
-    windows: validate n_returned_windows = n_sent_rows, flatten and dedup by the response's own timestamp_win
-             (same rule as input table: T+step x (k+1), overlapping windows averaged).
-    flat   : validate length = that station's non-empty dtime count in predict table, matched pointwise."""
-    if kind == "windows":
-        if len(data) != n_sent:
-            return None, f"returned {len(data)} windows != sent {n_sent} windows"
-        wins = [t for t, _ in data]
-        lists = [[np.nan if v is None else float(v) for v in lst] for _, lst in data]
-        s = series_from_lists(wins, lists, step)
-        if s.empty:
-            return None, "all windows' ensemble empty"
-        return s, ""
-    if data is None or len(data) != len(dtimes):
-        return None, f"returned {0 if data is None else len(data)} points != predict table {len(dtimes)} points"
-    return pd.Series([np.nan if v is None else float(v) for v in data], index=dtimes), ""
+def cf_build_predictions(inp, args, swap):
+    """Two local passes (baseline + GHI swapped to truth) over --cf-input, cached to parquet beside the report.
+    Returns (base_df, cf_df); either may be empty. Cache hit means zero inference calls on a rerun."""
+    cache_base = os.path.join(args.report_root, "cf_base_pred.parquet")
+    cache_cf = os.path.join(args.report_root, "cf_swap_pred.parquet")
+    if not args.cf_force and os.path.exists(cache_base) and os.path.exists(cache_cf):
+        print(f"[counterfactual] cache hit -> {cache_base} / {cache_cf} (0 inference calls; --cf-force to redo)")
+        return (pd.read_parquet(cache_base).sort_index(), pd.read_parquet(cache_cf).sort_index())
+
+    cf_path = args.cf_input or args.input
+    cf_inp = pd.read_parquet(cf_path)
+    for c in (args.station_col, args.win_col):
+        if c not in cf_inp.columns:
+            raise SystemExit(f"--cf-input '{cf_path}' missing column '{c}'; "
+                             f"actual columns: {list(cf_inp.columns)[:30]}")
+    miss = sorted({c for pair in swap.items() for c in pair if c not in cf_inp.columns})
+    if miss:
+        raise SystemExit(f"--cf-input '{cf_path}' missing --cf-swap columns {miss}; "
+                         f"actual columns: {list(cf_inp.columns)[:30]}")
+    cf_inp[args.win_col] = pd.to_datetime(cf_inp[args.win_col])
+    cf_inp = cf_usable_rows(cf_inp, swap, args.station_col, args.win_col)   # same rows feed BOTH passes
+    if cf_inp.empty:
+        print("  [warn] counterfactual: no row in --cf-input can be swapped, skipping inference entirely")
+        return pd.DataFrame(), pd.DataFrame()
+    print(f"[counterfactual] cf-input {cf_path}: {len(cf_inp)} rows, "
+          f"{cf_inp[args.station_col].nunique()} stations, {cf_inp[args.win_col].nunique()} windows")
+
+    cf_check_swap_consumed(args.config, swap)
+    infer_fn = cf_load_inference(args.inference_dir)
+    base = cf_infer_windows(cf_inp, args, infer_fn, None, "baseline pass (original features)")
+    cf = cf_infer_windows(cf_inp, args, infer_fn, swap,
+                          "swap pass (" + ", ".join(f"{p}->{t}" for p, t in swap.items()) + ")")
+    if not base.empty and not cf.empty:
+        shared = [c for c in base.columns if c in cf.columns]
+        if shared and base[shared].reindex(cf.index).equals(cf[shared]):
+            print("  [warn] counterfactual: baseline and swapped predictions are IDENTICAL -- the model did not "
+                  "react to the swap. Either it does not consume the swapped column (check --cf-swap against "
+                  "your config's feature list) or it is insensitive to it. Any delta below is meaningless.")
+    if not base.empty:
+        base.to_parquet(cache_base)
+    if not cf.empty:
+        cf.to_parquet(cache_cf)
+    return base, cf
 
 
 def cf_metrics(p_true, p_base, p_cf, drop_night, night_end_hour, cap, win=None, gccap=None):
@@ -634,35 +685,6 @@ def cf_metrics(p_true, p_base, p_cf, drop_night, night_end_hour, cap, win=None, 
             if nwc is not None:
                 m["nanwang_official_cf"] = round(nwc, 4)
     return m, (common, t, b, c)
-
-
-def _cf_append(path, row):
-    pd.DataFrame([{c: row.get(c, "") for c in CF_COLS}]).to_csv(
-        path, mode="a", header=not os.path.exists(path), index=False)
-
-
-def plot_cf_curves(st, times, t, b, c, out_dir, tick_hours):
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.dates as mdates
-    import matplotlib.pyplot as plt
-    _cn_font()
-    times = pd.DatetimeIndex(times)
-    n_hours = max(1.0, (times[-1] - times[0]).total_seconds() / 3600.0)
-    fig, ax = plt.subplots(figsize=(min(60.0, max(16.0, n_hours * 0.3)), 6))
-    ax.plot(times, t, label="observed power", color="#1f77b4", lw=1.4)
-    ax.plot(times, b, label="baseline pred (API, original features)", color="#d62728", lw=1.1, alpha=0.85)
-    ax.plot(times, c, label="counterfactual pred (GHI->truth)", color="#2ca02c", lw=1.1, alpha=0.85)
-    ax.set_title(f"Station {st} - counterfactual   base RMSE={rmse(b, t):.3f} -> "
-                 f"cf RMSE={rmse(c, t):.3f}", fontsize=13, fontweight="bold")
-    ax.xaxis.set_major_locator(mdates.HourLocator(interval=max(1, int(tick_hours))))
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
-    plt.setp(ax.get_xticklabels(), rotation=90, fontsize=7)
-    ax.legend(loc="upper right"); ax.grid(alpha=0.25)
-    fig.tight_layout()
-    path = os.path.join(_station_dir(out_dir), f"station_{sanitize(st)}_counterfactual.png")
-    fig.savefig(path, dpi=110); plt.close(fig)
-    return path
 
 
 def plot_cf_overview(df, out_dir, swap_label):
@@ -743,184 +765,82 @@ def plot_cf_overview(df, out_dir, swap_label):
     return path
 
 
-def cf_select_worst(stations, out_dir, n):
-    """Restrict to the worst-n runnable stations by power nRMSE, read from THIS window's fleet_ranking.csv
-    (written by run_analysis into the same out_dir, so each D+1/D+4 window picks worst-n independently). Returned worst-first.
-    Missing file / column / --no-fleet -> warn and keep all stations."""
-    rank_path = os.path.join(out_dir, "fleet_ranking.csv")
-    if not os.path.exists(rank_path):
-        print(f"  [warn] --cf-worst: {rank_path} not found (run_analysis produces it; --no-fleet suppresses it) "
-              f"-> running all {len(stations)} stations")
-        return stations
-    rk = pd.read_csv(rank_path)
-    if "power_nrmse" not in rk.columns:
-        print(f"  [warn] --cf-worst: fleet_ranking.csv has no power_nrmse column -> running all {len(stations)} stations")
-        return stations
-    rk["power_nrmse"] = pd.to_numeric(rk["power_nrmse"], errors="coerce")
-    ranked = rk[np.isfinite(rk["power_nrmse"])].sort_values("power_nrmse", ascending=False)
-    if ranked.empty:
-        print(f"  [warn] --cf-worst: no station has a usable power nRMSE -> running all {len(stations)} stations")
-        return stations
-    runnable = {str(s): s for s in stations}                 # match CSV station dtype to input dtype via str()
-    picked = [runnable[str(s)] for s in ranked["station"] if str(s) in runnable][:n]
-    print(f"  [cf-worst] restricted to worst {len(picked)} of {len(stations)} stations by power nRMSE: "
-          f"{[str(s) for s in picked]}")
-    return picked
+def cf_station(st, truth, prod_pred, cf_base, cf_swap_pred, args, cap, win, gccap, swap_label):
+    """One station's counterfactual: pull its column out of the local-inference frames, score the decomposition
+    on truth∩base∩cf (three-way, so both sides are judged on identical points), and return the extra plot lines.
+    Returns (columns for the CSVs, [(series, label, color, linestyle, title_note), ...])."""
+    ccol = CF_PRED_COL_TEMPLATE.format(station=st)     # inference.py's naming, NOT --pred-col-template
+    if cf_base is None or ccol not in cf_base.columns or ccol not in cf_swap_pred.columns:
+        print(f"  [warn] station {st}: local inference produced no column '{ccol}' "
+              f"(station absent from --cf-input?), counterfactual skipped for it")
+        return {"cf_status": "missing"}, []
+    p_base, p_cf = cf_base[ccol].dropna(), cf_swap_pred[ccol].dropna()
+    got = cf_metrics(truth, p_base, p_cf, args.drop_night, args.night_end_hour, cap, win, gccap)
+    if got is None:
+        print(f"  [warn] station {st}: truth and counterfactual share no time points in this window, skipped")
+        return {"cf_status": "no_overlap"}, []
+    m, (_, ct, _, cc) = got
+    row = {"cf_status": "ok", "power_rmse_cf": round(rmse(cc, ct), 6),
+           "power_nrmse_cf": m["nrmse_cf"], "power_nrmse_localbase": m["nrmse_base"],
+           "delta_nrmse": m["delta_nrmse"], "frac_explained": m["frac_explained"],
+           "coadapt": m["coadapt"]}
+    if "nanwang_official_cf" in m:
+        row["nanwang_official_power_cf"] = m["nanwang_official_cf"]
+    # Reproduction gate: local baseline vs the production predict table, on this window's common points
+    al = _aligned(p_base, prod_pred, args.drop_night, args.night_end_hour, win)
+    if al is not None:
+        bvp = rmse(al[1], al[2]) / cap * 100.0
+        row["base_vs_parquet_pct"] = round(bvp, 4)
+        if bvp > args.cf_check_tol:
+            row["cf_status"] = "baseline_mismatch"
+            print(f"  [warn] station {st}: local baseline differs from the --predict table by {bvp:.2f}% "
+                  f"(>{args.cf_check_tol}%) -- different model version or config? The decomposition still uses "
+                  f"the local baseline, so it stays self-consistent, but --predict may not be this model.")
+    lines = [(p_cf, f"counterfactual ({swap_label}->truth)", "#2ca02c", "-", f"cf RMSE={rmse(cc, ct):.3f}")]
+    if args.cf_show_local_base:
+        lines.append((p_base, "local baseline (original features)", "#7f7f7f", "--", ""))
+    return row, lines
 
 
-def run_counterfactual(inp, pred, args, cap_map, step, out_dir=None, win=None, gccap_map=None):
-    """Orchestration: 2 API calls per station (baseline reproduction + swap to truth), written to disk per station, resumable.
-    out_dir defaults to args.out_dir; win=(start,end) restricts cf_metrics to that window (None = whole series).
-    gccap_map={station: GCCAPCITY} (from --info-csv) adds GCCAPCITY + nanwang_official_base/cf to each row."""
-    out_dir = out_dir if out_dir is not None else args.out_dir
-    gccap_map = gccap_map or {}
-    swap = parse_cf_swap(args.cf_swap)
-    miss = sorted({c for pair in swap.items() for c in pair if c not in inp.columns})
-    if miss:
-        print(f"  [warn] counterfactual skipped: --cf-swap columns missing {miss}")
+def cf_report_summary(okd, swap_label, pfx=""):
+    """Terminal conclusion: who is input-limited, who is model-limited, who got worse when handed the truth."""
+    if okd.empty:
         return
-    exclude = {c.strip() for c in args.cf_exclude_cols.split(",") if c.strip()}
-    exclude.add(args.station_col)
-    exclude |= set(swap.values())               # truth columns are labels, not sent as fields
-
-    stations = [s for s in pd.unique(inp[args.station_col])
-                if resolve_pred_col(s, pred, args.pred_col_template) is not None]
-    if args.cf_stations:
-        want = {s.strip() for s in args.cf_stations.split(",")}
-        stations = [s for s in stations if str(s) in want]
-        if args.cf_worst > 0:
-            print("  [warn] --cf-worst ignored because --cf-stations is set (explicit list wins)")
-    elif args.cf_worst > 0:
-        stations = cf_select_worst(stations, out_dir, args.cf_worst)
-    if not stations:
-        print("  [warn] counterfactual: no runnable stations (station name must be in both input and predict tables)")
-        return
-
-    csv_path = os.path.join(out_dir, "counterfactual_results.csv")
-    if args.cf_force and os.path.exists(csv_path):
-        os.remove(csv_path)
-    done = set()
-    if os.path.exists(csv_path):
-        prev = pd.read_csv(csv_path)
-        done = set(prev[prev["status"].isin(["ok", "baseline_mismatch"])]["station"].astype(str))
-    todo = [s for s in stations if str(s) not in done]
-    swap_label = "+".join(p[: -len("_predict")] if p.endswith("_predict") else p for p in swap)
-    print(f"[counterfactual] plan: stations x{len(stations)} (resume skips {len(stations) - len(todo)}), "
-          f"2 calls per station (baseline reproduction + {swap_label} swap to truth) = {len(todo) * 2} calls total")
-
-    if args.cf_dry_run:
-        st0 = todo[0] if todo else stations[0]
-        sub0 = inp[inp[args.station_col] == st0].sort_values(args.win_col)
-        pl = cf_build_payload(sub0, exclude, None)
-        print(f"  -- dry-run (zero HTTP): payload skeleton for station {st0} "
-              f"(data has {len(pl['data'])} rows, fields = parquet column names, first row shown only) --")
-        print(_payload_skeleton(pl))
-        print("  counterfactual call's only difference from baseline: " +
-              "; ".join(f"{p}'s value swapped to same-row {t}" for p, t in swap.items()))
-        print("  after confirming the format, remove --cf-dry-run to run for real.")
-        return
-    if not args.api_url:
-        raise SystemExit("--counterfactual real run requires --api-url (or --cf-dry-run first to check payload)")
-
-    for st in todo:
-        col = resolve_pred_col(st, pred, args.pred_col_template)   # non-None: the station list was filtered above
-        sub = inp[inp[args.station_col] == st].sort_values(args.win_col)
-        truth = series_from_lists(sub[args.win_col].to_numpy(),
-                                  sub[args.power_col].to_numpy(), step)
-        if win is not None and (truth.empty or not window_mask(truth.index, win).any()):
-            print(f"  [warn] station {st}: truth has no points in this window -> counterfactual skipped (0 API calls)")
-            _cf_append(csv_path, {"station": st, "status": "no_overlap"})
-            continue
-        pq = pred[col].dropna()
-        dtimes = pq.index.sort_values()
-        try:
-            kind, data = cf_call_api(args.api_url, cf_build_payload(sub, exclude, None),
-                                     args.cf_timeout, args.cf_retries)
-            p_base, why = cf_series(kind, data, dtimes, len(sub), step)
-            if p_base is None:
-                print(f"  [warn] station {st}: baseline API output misaligned ({why}), skipped")
-                _cf_append(csv_path, {"station": st, "status": "align_mismatch"})
-                continue
-            kind, data = cf_call_api(args.api_url, cf_build_payload(sub, exclude, swap),
-                                     args.cf_timeout, args.cf_retries)
-            p_cf, why = cf_series(kind, data, dtimes, len(sub), step)
-            if p_cf is None:
-                print(f"  [warn] station {st}: counterfactual API output misaligned ({why}), skipped")
-                _cf_append(csv_path, {"station": st, "status": "align_mismatch"})
-                continue
-        except RuntimeError as e:
-            print(f"  [warn] station {st}: {e}")
-            _cf_append(csv_path, {"station": st, "status": "api_error"})
-            continue
-        cap = cap_map.get(str(st)) or cap_map.get(st)
-        gccap = gccap_map.get(str(st))
-        if gccap_map and gccap is None:
-            print(f"  [warn] station {st}: not in --info-csv, GCCAPCITY/nanwang_official left blank")
-        got = cf_metrics(truth, p_base, p_cf, args.drop_night, args.night_end_hour, cap, win, gccap)
-        if got is None:
-            print(f"  [warn] station {st}: no common time points between truth and API output, skipped")
-            _cf_append(csv_path, {"station": st, "status": "no_overlap"})
-            continue
-        m, (times, t, b, c) = got
-        al_pq = _aligned(p_base, pq, args.drop_night, args.night_end_hour, win)   # reproduction gate: compare on common time points within this window
-        bvp = rmse(al_pq[1], al_pq[2]) / m["capacity"] * 100.0 if al_pq else float("inf")
-        m["base_vs_parquet_pct"] = round(bvp, 4) if np.isfinite(bvp) else ""
-        m["status"] = "ok" if bvp <= args.cf_check_tol else "baseline_mismatch"
-        if m["status"] == "baseline_mismatch":
-            print(f"  [warn] station {st}: API baseline differs from predict table by {bvp:.2f}% (>{args.cf_check_tol}%)"
-                  " -- contract/alignment may be off, decomposition still computed on API baseline")
-        m["station"] = st
-        _cf_append(csv_path, m)
-        if args.cf_curves and not args.no_plots:
-            plot_cf_curves(st, times, t, b, c, out_dir, args.tick_hours)
-        print(f"  station {st}: nRMSE baseline {m['nrmse_base']:.2f}% -> swap-to-truth {m['nrmse_cf']:.2f}%   "
-              f"delta={m['delta_nrmse']:+.2f}%"
-              + (f" ({m['frac_explained']:.0f}% explained by {swap_label})"
-                 if np.isfinite(m['frac_explained']) else ""))
-
-    # ---- Summary: plot + conclusion overview (including stations completed in earlier resume runs) ----
-    if not os.path.exists(csv_path):
-        return
-    res = pd.read_csv(csv_path).drop_duplicates("station", keep="last")
-    okd = res[res["status"].isin(["ok", "baseline_mismatch"])].copy()
-    for c in ("nrmse_base", "nrmse_cf", "delta_nrmse", "frac_explained", "coadapt"):
-        if c in okd:
-            okd[c] = pd.to_numeric(okd[c], errors="coerce")
-    img = None
-    if not okd.empty and not args.no_plots:
-        img = plot_cf_overview(okd, out_dir, swap_label)
-    n_bad = len(res) - len(okd)
-    print(f"[counterfactual] done: ok/reproduction-warning x{len(okd)}"
-          + (f", failed/misaligned x{n_bad}" if n_bad else "")
-          + f" -> counterfactual_results.csv" + (" + counterfactual_overview.png" if img else ""))
-    if not okd.empty:
-        good = okd[np.isfinite(okd["frac_explained"])]
-        if not good.empty:
-            top_in = good.sort_values("frac_explained", ascending=False).head(2)
-            print("  biggest input problem (swap-to-truth improves most): " +
-                  ", ".join(f"{r.station}({r.frac_explained:.0f}%)" for _, r in top_in.iterrows()))
-        top_md = okd[np.isfinite(okd["nrmse_cf"])].sort_values("nrmse_cf", ascending=False).head(2)
-        if not top_md.empty:
-            print("  biggest model problem (high residual error even after swap-to-truth): " +
-                  ", ".join(f"{r.station}({r.nrmse_cf:.2f}%)" for _, r in top_md.iterrows()))
-        co = okd[okd["coadapt"].fillna(0) > 0]
-        if not co.empty:
-            print(f"  co-adaptation warning (swap-to-truth is worse): {co.station.tolist()}")
+    good = okd[np.isfinite(okd["frac_explained"])]
+    if not good.empty:
+        top_in = good.sort_values("frac_explained", ascending=False).head(2)
+        print(f"  {pfx}biggest input problem (swap-to-truth improves most): " +
+              ", ".join(f"{r.station}({r.frac_explained:.0f}%)" for _, r in top_in.iterrows()))
+    top_md = okd[np.isfinite(okd["nrmse_cf"])].sort_values("nrmse_cf", ascending=False).head(2)
+    if not top_md.empty:
+        print(f"  {pfx}biggest model problem (high residual error even after swap-to-truth): " +
+              ", ".join(f"{r.station}({r.nrmse_cf:.2f}%)" for _, r in top_md.iterrows()))
+    co = okd[okd["coadapt"].fillna(0) > 0]
+    if not co.empty:
+        print(f"  {pfx}co-adaptation warning (swap-to-truth is worse): {co.station.tolist()}")
 
 
 # ================================================================ One window's full analysis (per-station + fleet)
-def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, gccap_map, out_dir, win, label):
+def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, gccap_map, city_map,
+                 out_dir, win, label, cf_base=None, cf_swap_pred=None, swap_label="GHI"):
     """对单个窗口 [start,end)（label='D+1'/'D+4'，用于日志前缀）跑完整的每站 + 舰队分析，产物写入 out_dir。
-    gccap_map={station: GCCAPCITY}（来自 --info-csv）时补 GCCAPCITY + nanwang_official_power 列。"""
+    gccap_map={station: GCCAPCITY}（来自 --info-csv）时补 GCCAPCITY + nanwang_official_power 列，
+    fleet_ranking.csv 另加 NANWANG_FACTORS 的 factor 扫描列；city_map={station: city} 时 fleet_ranking.csv 补 city 列。
+    cf_base/cf_swap_pred（本地推理的基线与换真值预测，dtime×predict_power_<站>）给出时，右下功率面板加画反事实线，
+    fleet_ranking.csv/station_power_rmse.csv 补 power_*_cf、delta_nrmse、frac_explained、nanwang_official_power_cf。"""
     pfx = f"[{label}] " if label else ""
     plot_station = not (args.no_plots or args.no_station_plots)
     stations = list(pd.unique(inp[args.station_col]))
     gccap_map = gccap_map or {}
+    city_map = city_map or {}
     missing_gccap = set()
     power_rows, feat_rows, imgs = [], [], []
     fleet_recs, hourly = [], {}
-    plot_jobs = []              # per-station plots deferred: --worst-only must rank the full fleet before drawing
-    scatter_jobs = []           # (st, t, p, sc, th, cap) -- true-vs-pred scatter, same deferred treatment
+    plot_jobs = []              # (st, panels) combined 2x2 plots deferred: --worst-only must rank the fleet first
+    if plot_station:
+        for c in HISTORY_COLS:
+            if c not in inp.columns:
+                print(f"  {pfx}[warn] history column '{c}' missing from input table -> that panel shows 'no data'")
 
     for st in stations:
         sub = inp[inp[args.station_col] == st]
@@ -933,11 +853,15 @@ def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, gccap_m
             return cache[col]
 
         rec = {"station": st}
+        ct = city_map.get(str(st))
+        if ct is not None:
+            rec["city"] = ct
         gc = gccap_map.get(str(st)) if gccap_map else None    # GCCAPCITY for 南网 nanwang_official metric
         if gccap_map and gc is None:
             missing_gccap.add(str(st))
         if gc is not None and gc > 0:
             rec["GCCAPCITY"] = round(float(gc), 4)
+        panels = {"hist_ghi": None, "hist_pw": None, "win_ghi": None, "win_pw": None}
 
         # ---- Power (prediction from predict table) ----
         truth = ser(args.power_col)
@@ -949,33 +873,53 @@ def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, gccap_m
             al = _aligned(truth, pred[col].dropna(), args.drop_night, args.night_end_hour, win)
             if al is None:
                 print(f"  [warn] station {st}: Power truth/pred have no common time points (or all removed as night), skipped")
+                if cf_swap_pred is not None:
+                    rec["cf_status"] = "no_overlap"   # no truth to score against -> say so rather than leave blank
             else:
                 times, t, p = al
                 rv = rmse(p, t)
-                nw = None                                     # 南网 official accuracy: ALL window points (night incl.), floored by 0.2*GCCAPCITY
+                nwrow = {}                                    # 南网 official accuracy + factor 扫描: ALL window points (night incl.), floored by 0.2*GCCAPCITY
                 if gc is not None and gc > 0:
                     al_all = _aligned(truth, pred[col].dropna(), False, args.night_end_hour, win)
                     if al_all is not None:
-                        nw = nanwang_official(al_all[1], al_all[2], gc)
+                        nwrow = nanwang_factor_row(al_all[1], al_all[2], gc)
+                nw = nwrow.get("nanwang_official_power")
                 prow = {"station": st, "power_rmse": round(rv, 6),
                         "n_points": int(len(times)),
                         "t_start": str(times.min()), "t_end": str(times.max())}
                 if nw is not None:
-                    prow["nanwang_official_power"] = round(nw, 4)
-                power_rows.append(prow)
-                if plot_station:
-                    disp = _display(truth, pred[col].dropna(), args.drop_night, args.night_end_hour, win) \
-                           or (times, t, p)
-                    plot_jobs.append((st, "Power", disp[0], disp[1], disp[2], rv,
-                                      "observed power", "predicted power", int(len(times))))
-                # Overview: power nRMSE / bias / hourly
+                    prow["nanwang_official_power"] = nw     # station_power_rmse.csv 只留官方口径，不带 factor 列
+                # Capacity first: both the counterfactual decomposition and the nRMSE columns below need it
                 cap = cap_map.get(str(st)) or cap_map.get(st) or float(np.max(t))
                 cap = cap if cap and cap > 0 else 1.0
+
+                # ---- Counterfactual (local inference): extra panel line + decomposition vs the LOCAL baseline ----
+                extra_lines = []
+                if cf_swap_pred is not None:
+                    cfrow, extra_lines = cf_station(st, truth, pred[col].dropna(), cf_base, cf_swap_pred,
+                                                    args, cap, win, gc, swap_label)
+                    rec.update(cfrow)
+                    prow.update({k: v for k, v in cfrow.items()
+                                 if k in ("cf_status", "power_rmse_cf", "power_nrmse_cf",
+                                          "nanwang_official_power_cf")})
+                power_rows.append(prow)
+
+                if plot_station:
+                    got = _display_multi(truth, [pred[col].dropna()] + [e[0] for e in extra_lines],
+                                         args.drop_night, args.night_end_hour, win)
+                    if got is None:                       # no displayable union: fall back to the scored points
+                        dt_, dtruth, dothers = times, t, [p] + [np.zeros(len(times))] * len(extra_lines)
+                    else:
+                        dt_, dtruth, dothers = got
+                    panels["win_pw"] = ("Power", dt_, dtruth, dothers[0], rv, int(len(times)),
+                                        "observed power", "predicted power",
+                                        [(vals, lab, color, ls, note) for vals, (_, lab, color, ls, note)
+                                         in zip(dothers[1:], extra_lines)])
+                # Overview: power nRMSE / bias / hourly
                 rec.update(power_rmse=round(rv, 4), power_nrmse=round(rv / cap * 100, 4),
                            power_bias_pct=round(float(np.mean(p - t)) / cap * 100, 4),
                            capacity=round(cap, 4), n_points=int(len(times)))
-                if nw is not None:
-                    rec["nanwang_official_power"] = round(nw, 4)
+                rec.update(nwrow)                          # 插入顺序 = fleet_ranking.csv 列顺序：x1.4 / x1.2 / 官方 / x0.8 / x0.6 / x0.4
                 hourly[st] = hourly_nrmse(times, p - t, cap)
                 # Theil three-way split + scatter calibration (systematic offset / high-value compression)
                 th = theil_shares(t, p)
@@ -986,28 +930,36 @@ def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, gccap_m
                 if sc:
                     rec.update(slope=round(sc["slope"], 3), r2=round(sc["r2"], 3),
                                high_bias_pct=round(sc["high_bias"] / cap * 100, 4))
-                if plot_station and sc:
-                    scatter_jobs.append((st, t, p, sc, th, cap))
 
-        # ---- Per-station feature plots (prediction and truth both in input) ----
-        for pcol, tcol, label in active_pairs:
+        # ---- Per-station feature metrics (prediction and truth both in input); first pair feeds the GHI panel ----
+        for pcol, tcol, flabel in active_pairs:
             pser, tser = ser(pcol), ser(tcol)
             if pser.empty or tser.empty:
-                print(f"  [warn] station {st}: feature '{label}' data missing/empty for this station, skipped (does not affect other plots)")
+                print(f"  [warn] station {st}: feature '{flabel}' data missing/empty for this station, skipped (does not affect other plots)")
                 continue
             al = _aligned(tser, pser, args.drop_night, args.night_end_hour, win)
             if al is None:
-                print(f"  [warn] station {st}: feature '{label}' has no common time points, skipped")
+                print(f"  [warn] station {st}: feature '{flabel}' has no common time points, skipped")
                 continue
             times, tv, pv = al
             rv = rmse(pv, tv)
-            feat_rows.append({"station": st, "feature": label, "rmse": round(rv, 6),
+            feat_rows.append({"station": st, "feature": flabel, "rmse": round(rv, 6),
                               "n_points": int(len(times))})
-            if plot_station:
+            if plot_station and panels["win_ghi"] is None:
                 disp = _display(tser, pser, args.drop_night, args.night_end_hour, win) \
                        or (times, tv, pv)
-                plot_jobs.append((st, label, disp[0], disp[1], disp[2], rv,
-                                  f"{tcol} (true)", f"{pcol} (pred)", int(len(times))))
+                panels["win_ghi"] = (flabel, disp[0], disp[1], disp[2], rv, int(len(times)),
+                                     f"{tcol} (true)", f"{pcol} (pred)")
+
+        # ---- History panels: ALL history points (backward lists; no window / night restriction) ----
+        if plot_station:
+            for key, hcol in (("hist_ghi", "GHI_SOLARGIS"), ("hist_pw", "observe_power")):
+                if hcol in inp.columns:
+                    hs = series_from_lists_history(wins, sub[hcol].to_numpy(), step)
+                    if not hs.empty:
+                        panels[key] = (hcol, hs.index, hs.to_numpy())
+            if any(v is not None for v in panels.values()):
+                plot_jobs.append((st, panels))
 
         # ---- Overview: GHI nRMSE (scatter/GHI ranking; use specified columns, reuse cache to avoid re-flatten) ----
         if have_ghi and not args.no_fleet:
@@ -1037,15 +989,11 @@ def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, gccap_m
                   f"{[str(s) for s in ranked.head(args.worst_only)['station']]}  (CSVs still cover all)")
         else:
             print("  [warn] --worst-only: no station has power nRMSE (cannot rank) -> drawing all stations")
-    for st, name, times, tv, pv, rv, tlab, plab, n_real in plot_jobs:
+    for st, panels in plot_jobs:
         if sel is not None and st not in sel:
             continue
-        imgs.append(plot_two_lines(st, name, times, tv, pv, rv, out_dir,
-                                   args.tick_hours, tlab, plab, n_real))
-    for st, tv, pv, sc, th, cap in scatter_jobs:
-        if sel is not None and st not in sel:
-            continue
-        imgs.append(plot_scatter(st, tv, pv, sc, th, cap, out_dir))
+        imgs.append(plot_station_combined(st, label or "window", panels["hist_ghi"], panels["hist_pw"],
+                                          panels["win_ghi"], panels["win_pw"], out_dir, args.tick_hours))
 
     # ---------------- Station-level CSV ----------------
     if power_rows:
@@ -1071,6 +1019,16 @@ def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, gccap_m
             fleet_img = plot_dashboard(ddf, dh, have_ghi, args, out_dir, note)
             if "theil_u_bias" in ddf.columns:
                 theil_img = plot_theil_overview(ddf, out_dir, note)
+
+    # ---------------- Counterfactual fleet decomposition (same records, decomposition vocabulary) ----------------
+    if cf_swap_pred is not None and "cf_status" in fdf.columns:
+        okd = fdf[fdf["cf_status"].isin(["ok", "baseline_mismatch"])].rename(
+            columns={"power_nrmse_localbase": "nrmse_base", "power_nrmse_cf": "nrmse_cf",
+                     "cf_status": "status"})
+        if not okd.empty:
+            if not args.no_plots:
+                plot_cf_overview(okd, out_dir, swap_label)
+            cf_report_summary(okd, swap_label, pfx)
 
     if not power_rows and not feat_rows and fleet_img is None:
         print(f"  {pfx}[warn] nothing could be produced for this window "
@@ -1116,7 +1074,7 @@ def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, gccap_m
                   f"  (bias {r.get('power_bias_pct', float('nan')):+.2f}%){comp}")
     prod = []
     if imgs:
-        prod.append(f"stations/ per-station plots x{len(imgs)}")
+        prod.append(f"station_<站>.png combined 2x2 plots x{len(imgs)}")
     if power_rows:
         prod.append("station_power_rmse.csv")
     if feat_rows:
@@ -1128,43 +1086,6 @@ def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, gccap_m
     if theil_img:
         prod.append("theil_decomposition.png")
     print(f"  {pfx}Products: " + ("  + ".join(prod) if prod else "none"))
-
-
-def run_history(inp, args, step, out_dir):
-    """每站单线历史曲线：HISTORY_COLS 过去 HISTORY_DAYS 天，终点为起报时间 T = max(timestamp_win)。
-    仅出图，无指标/CSV；每站每列独立成败（窗内为空 -> warn + 跳过该 PNG）。"""
-    if args.no_plots or args.no_station_plots:
-        print("  [history] skipped (--no-plots/--no-station-plots)")
-        return
-    cols = []
-    for c in HISTORY_COLS:
-        if c in inp.columns:
-            cols.append(c)
-        else:
-            print(f"  [history] column '{c}' missing from input table -> skipped")
-    if not cols:
-        return
-    os.makedirs(out_dir, exist_ok=True)
-    T_end = pd.Timestamp(inp[args.win_col].max())
-    win = (T_end - pd.Timedelta(days=HISTORY_DAYS), T_end + step)   # end-exclusive -> keeps up to and incl. T_end
-    stations = sorted(inp[args.station_col].unique(), key=str)
-    if args.worst_only:
-        print(f"  [history] --worst-only ignored (history has no nRMSE ranking); drawing all {len(stations)} stations")
-    summary = {c: [0, 0] for c in cols}                            # col -> [plotted, skipped]
-    for st in stations:
-        sub = inp[inp[args.station_col] == st].sort_values(args.win_col)
-        for c in cols:
-            s = series_from_lists_history(sub[args.win_col].to_numpy(), sub[c].to_numpy(), step)
-            if not s.empty:
-                keep = window_mask(s.index, win) & night_mask(s.index, args.drop_night, args.night_end_hour)
-                s = s[keep]
-            if s.empty:
-                print(f"  [warn] station {st}: history '{c}' empty in window, skipped")
-                summary[c][1] += 1
-                continue
-            plot_history_line(st, c, s.index, s.to_numpy(), out_dir, args.tick_hours)
-            summary[c][0] += 1
-    print("  [history] " + "; ".join(f"{c}: {p} plotted, {k} skipped" for c, (p, k) in summary.items()))
 
 
 def compute_windows(inp, win_col, date_arg):
@@ -1193,9 +1114,11 @@ def main():
     ap.add_argument("--top-n", type=int, default=30, help="max stations shown in ranking (0=all)")
     ap.add_argument("--mad-k", type=float, default=3.0, help="outlier threshold: median + k x MAD")
     ap.add_argument("--capacity", default=None, help='per-station capacity "st1:500,st2:5", default uses peak as proxy')
-    ap.add_argument("--info-csv", default=None,
-                    help="CSV with per-station GCCAPCITY (join on --station-col). Adds GCCAPCITY + 南网 "
-                         "nanwang_official_power to fleet_ranking.csv and nanwang_official_base/cf to counterfactual_results.csv")
+    ap.add_argument("--info-csv", "--info", dest="info_csv", default=None,
+                    help="CSV with per-station GCCAPCITY/GCCAPACITY (join on --station-col when present, else "
+                         "auto-detected by value match, e.g. plantid/plantname/plant_pointname). Adds GCCAPCITY + 南网 "
+                         "nanwang_official_power (+ x1.4/x1.2/x0.8/x0.6/x0.4 factor-scan columns) + city to "
+                         "fleet_ranking.csv, and nanwang_official_power_cf when --counterfactual is on")
     ap.add_argument("--ghi-pred", default="GHI_SOLARGIS_predict", help="predicted column for overview scatter/GHI ranking")
     ap.add_argument("--ghi-true", default="GHI_real_future", help="truth column for overview scatter/GHI ranking")
     ap.add_argument("--station-col", default="station")
@@ -1210,31 +1133,31 @@ def main():
     ap.add_argument("--no-fleet", action="store_true", help="no overview and no fleet_ranking.csv")
     ap.add_argument("--worst-only", type=int, default=0,
                     help="draw images only for the worst N stations by power nRMSE (0=all; ranking uses the full "
-                         "fleet, CSVs unchanged; counterfactual not affected -- use --cf-stations or --cf-worst for that)")
+                         "fleet, CSVs unchanged; counterfactual is unaffected -- inference always covers every "
+                         "station in --cf-input)")
     ap.add_argument("--counterfactual", action="store_true",
-                    help="counterfactual: swap GHI prediction to truth and re-predict via API, decompose input's fault vs model's fault")
-    ap.add_argument("--api-url", default=None, help="FastAPI prediction service URL (POST JSON)")
-    ap.add_argument("--cf-dry-run", action="store_true",
-                    help="zero HTTP: print call plan + first station's payload skeleton only, confirm contract before real run")
-    ap.add_argument("--cf-stations", default=None, help='only run these stations "st1,st2" (default all)')
-    ap.add_argument("--cf-worst", type=int, default=0,
-                    help="only run the worst N stations by power nRMSE (0=all; reuses this window's fleet_ranking.csv, "
-                         "so each D+1/D+4 window picks worst-N independently; ignored when --cf-stations is given)")
-    ap.add_argument("--cf-force", action="store_true", help="ignore completed records, recompute all")
+                    help="counterfactual: swap GHI prediction to truth and re-predict via LOCAL inference.py, "
+                         "decompose input's fault vs model's fault (needs the machine with Base/utils/checkpoints)")
+    ap.add_argument("--cf-input", default=None,
+                    help="inference-ready parquet fed to multi_station_inference (station/timestamp_win + all "
+                         "model features + the --cf-swap pair). Default: reuse --input")
+    ap.add_argument("--checkpoints-dir", default=None, help="模型 checkpoints 目录，传给 multi_station_inference")
+    ap.add_argument("--config", default=None, help="模型 config（yaml 路径），传给 multi_station_inference")
+    ap.add_argument("--inference-dir", default=None,
+                    help="inference.py 所在目录（连同 Base/utils 依赖）；置于 sys.path 最前，避免被同名文件遮蔽")
+    ap.add_argument("--forecasting-type", default="short", help="传给 multi_station_inference 的预测类型")
+    ap.add_argument("--cf-show-local-base", action="store_true",
+                    help="右下面板再加一条本地基线虚线（默认只入指标与复现闸，不画）")
+    ap.add_argument("--cf-force", action="store_true",
+                    help="ignore the cached inference results and re-run both passes")
     ap.add_argument("--cf-swap", default="GHI_SOLARGIS_predict:GHI_real_future",
                     help="pred:true comma-separated, multiple pairs allowed (multiple = joint replacement)")
-    ap.add_argument("--cf-exclude-cols", default="observe_power_future,GHI_real_future",
-                    help="columns not sent to API (truth labels; station column auto-removed)")
-    ap.add_argument("--cf-timeout", type=float, default=120.0)
-    ap.add_argument("--cf-retries", type=int, default=1)
     ap.add_argument("--cf-check-tol", type=float, default=1.0,
-                    help="baseline reproduction gate: warn if API baseline vs predict table nRMSE%% exceeds this")
-    ap.add_argument("--cf-curves", action="store_true", help="per-station three-line plot (truth/baseline/counterfactual)")
+                    help="baseline reproduction gate: warn if the local baseline vs predict table nRMSE%% exceeds this")
     args = ap.parse_args()
     step = pd.Timedelta(minutes=15)
     feature_pairs = parse_feature_pairs(args.feature_pairs)
     cap_map = parse_capacity(args.capacity)
-    gccap_map = load_gccap(args.info_csv, args.station_col) if args.info_csv else {}
 
     inp = pd.read_parquet(args.input)
     pred = pd.read_parquet(args.predict)
@@ -1246,6 +1169,11 @@ def main():
     inp[args.win_col] = pd.to_datetime(inp[args.win_col])
     pred[args.dtime_col] = pd.to_datetime(pred[args.dtime_col])
     pred = pred.groupby(args.dtime_col).mean(numeric_only=True).sort_index()
+
+    info_map = (load_station_info(args.info_csv, args.station_col, pd.unique(inp[args.station_col]))
+                if args.info_csv else {})
+    gccap_map = {k: v["gccap"] for k, v in info_map.items() if v["gccap"] is not None}
+    city_map = {k: v["city"] for k, v in info_map.items() if v["city"] is not None}
 
     # Drop whole feature pairs that are globally missing (warn once)
     active_pairs = []
@@ -1264,20 +1192,30 @@ def main():
     report_name, windows = compute_windows(inp, args.win_col, args.date)
     report_root = os.path.join(args.out_dir, report_name)
     os.makedirs(report_root, exist_ok=True)
+    args.report_root = report_root
+
+    # Counterfactual runs ONCE over every 起报 window before the slice loop: one window's 480-point output spans
+    # 5 days, so D+1 and D+4 both draw from the same predictions and must not trigger inference twice.
+    cf_base = cf_swap_pred = None
+    swap_label = "GHI"
+    if args.counterfactual:
+        missing = [f for f, v in (("--checkpoints-dir", args.checkpoints_dir),
+                                  ("--config", args.config)) if not v]
+        if missing:
+            raise SystemExit(f"--counterfactual needs {', '.join(missing)} "
+                             f"(passed straight to multi_station_inference)")
+        swap = parse_cf_swap(args.cf_swap)
+        swap_label = "+".join(p[: -len("_predict")] if p.endswith("_predict") else p for p in swap)
+        cf_base, cf_swap_pred = cf_build_predictions(inp, args, swap)
+        if cf_swap_pred is None or cf_swap_pred.empty:
+            print("  [warn] counterfactual produced no predictions -> continuing without it")
+            cf_base = cf_swap_pred = None
+
     for label, start, end in windows:
         sub_out = os.path.join(report_root, label)
         os.makedirs(sub_out, exist_ok=True)
-        run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, gccap_map,
-                     sub_out, (start, end), label)
-
-    if args.counterfactual:
-        # sub_out dirs already created by the run_analysis loop above (same windows)
-        for label, start, end in windows:
-            sub_out = os.path.join(report_root, label)
-            run_counterfactual(inp, pred, args, cap_map, step,
-                               out_dir=sub_out, win=(start, end), gccap_map=gccap_map)
-
-    run_history(inp, args, step, os.path.join(report_root, "history"))
+        run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, gccap_map, city_map,
+                     sub_out, (start, end), label, cf_base, cf_swap_pred, swap_label)
 
 
 if __name__ == "__main__":
