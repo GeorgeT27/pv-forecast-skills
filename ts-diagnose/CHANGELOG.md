@@ -117,3 +117,4 @@
   提炼出的规则）、设计动机旁白、超一行的文件用途介绍；句子仍是自然语言，不回退缩略。
   全库字数回落到 HEAD ±2%；frontmatter 与跨 playbook id 引用逐文件核对无变化。
 - 验证：`python3 -m pytest ts-diagnose -q` 全绿（见本次会话）。
+- 2026-08-17 | tier2-c1 实跑回顾（未改菜谱/脚本，仅记录）：①orient --playbook 对已绑定 config 不改绑——转验证主脊需手改 config.playbook，建议 orient 加 --rebind 显式动作；②QUESTION 侧噪声底为 ddof=0 口径、菜谱写 ddof=1，本次以双版噪声底皆过为判定条件化解，建议 noise-floor 问题追问 ddof 口径；③干预已预跑（零新训练）场景下 Brief B 的"重训"字样需按"评估既有产物"适配，本次已在派发时改写；④收敛型（null-pred）假设与 ablation_verdict 三态的语义映射靠 plan 的 confirm/kill_criterion 预注册兜住，建议 verdict 增加 converge 方向枚举。触发反馈：盲跑 runner tier2-c1（QUESTION.md 驱动、无交互提问通道）。

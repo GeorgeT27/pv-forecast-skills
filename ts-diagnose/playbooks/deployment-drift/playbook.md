@@ -140,8 +140,10 @@ done：error_series_summary.json 落盘。
   --playbook deployment-drift --stage 1`。
 done：changepoint_summary.json 落盘。
 
+**Stage 1 之后分流（硬规则）**：changepoint_summary 置换判定非 significant 且无 onset → 结论性事实就是「无显著退化」：FINDINGS.md 记现象 + p 值 + 稳健性量，汇报后本 playbook 止步，Stage 2+ 不进入。禁止对不显著序列做结构分解再挑切片编退化叙事。
+
 ### Stage 2 结构分解（事实）
-**不写图代码。** frontmatter charts 声明的图全部用 chartbook 预写脚本（engine-core 对 chartbook 有专门豁免），orient 已经按材料把每张图标好可画/跳过。命令模板：
+**不写图代码。** frontmatter charts 是预检池——orient 按材料把每张图标好可画/跳过，**不是必画清单**。rolling-stability 必画（时间形态与 Stage 1 双点的吻合检查是结论前置）；其余按疑问选画并在 INDEX.md 登记「服务哪个疑问」：intraday-profile——查退化在物理时刻上的集中度时；error-breakdown——准备过季节构成门时（不画则该门只能标「未排除」）；train-test-drift——核查「世界变了」候选时。全部用 chartbook 预写脚本（engine-core 对 chartbook 有专门豁免）。命令模板：
 
     python3 <ENGINE>/chartbook/scripts/chart_<蛇形id>.py \
       --pred <setup>/predictions.csv --out-dir charts/ [各图特有参数]
@@ -207,7 +209,7 @@ CONCLUSION.md 模板（按此顺序写）：口径与对齐声明 → 退化判�
 
 ## 8. chartbook 覆盖声明
 
-声明进 Stage 2 charts（时序稳定组）的四张图与用途：rolling-stability——时间形态主图；intraday-profile——退化在物理时刻上的集中度；error-breakdown——前后段构成对照，喂反驳门③（季节构成门）；train-test-drift——核查"世界变了"这类候选解释。
+Stage 2 charts 预检池（时序稳定组）四张图与用途（rolling-stability 必画，其余按疑问选，见 Stage 2 选图规则）：rolling-stability——时间形态主图；intraday-profile——退化在物理时刻上的集中度；error-breakdown——前后段构成对照，喂反驳门③（季节构成门）；train-test-drift——核查"世界变了"这类候选解释。
 
 跳过的图（需要时可经可加画池加画，或复用 chart_sweep 产物），逐组理由：
 - horizon-degradation / true-vs-pred-scatter / worst-points：广谱体检切面，由体检类 playbook 覆盖；

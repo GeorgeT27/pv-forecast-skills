@@ -127,7 +127,7 @@ done：`*.xlsx`（或用户口径约定的等价指标表）落盘。
 
 输入：Stage 1 产出的指标表；对齐后的 predict/truth（若有 features/train_y 也一并用上）。
 
-菜谱：**不写图代码**。frontmatter `charts:` 声明的图全部用 chartbook 预写脚本画（engine-core chartbook 对该规则天然豁免）。orient 已按材料盘点结果标好每张图可画还是跳过。命令模板：
+菜谱：**不写图代码**。frontmatter `charts:` 是预检池——orient 已按材料盘点结果标好每张图可画还是跳过，**不是必画清单**。选图规则：题目已点名维度（某月/某单元/某时段）→ 直接画对应图，不铺全集；题目未点名（开放体检）→ 起步画 error-breakdown + intraday-profile 定位，按定位结果加画；要把归因升级为稳定声明时必画 cross-dim-stability。每张画的图在 INDEX.md 登记「服务哪个疑问」。图全部用 chartbook 预写脚本画（engine-core chartbook 对该规则天然豁免）。命令模板：
 
 ```bash
 python3 <ENGINE>/chartbook/scripts/chart_<蛇形id>.py \
@@ -212,7 +212,7 @@ Stage 3 完成是唯一强制停顿点：向用户汇报现象清单（按图/�
 
 ## 8. chartbook 覆盖声明
 
-声明进 Stage 2 charts 的五张图（月度/时段归因组）：error-breakdown、intraday-profile、worst-points、rolling-stability、cross-dim-stability。
+Stage 2 charts 预检池五张图（月度/时段归因组，按 Stage 2 选图规则取用，非必画）：error-breakdown、intraday-profile、worst-points、rolling-stability、cross-dim-stability。
 
 以下图默认不画，需要时经图表选择门加画，或复用 chart_sweep 产物：
 

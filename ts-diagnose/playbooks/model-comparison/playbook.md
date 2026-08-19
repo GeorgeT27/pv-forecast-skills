@@ -1,7 +1,7 @@
 ---
 id: model-comparison
 name: 多模型对比归因
-goal: 量化「模型 A 为什么比 B 好/差」——切片分解差距事实，产出指向模型组件的可否证假设账本；不产结论，交验证主脊做干预判定
+goal: 量化「模型 A 为什么比 B 好/差」——按题型分解差距事实，产出指向模型组件的可否证假设账本；不产结论，交验证主脊做干预判定
 upstream:
   - product: setup
     required: true
@@ -115,8 +115,14 @@ upgrade_rule: "总差距方向与主导切片方向一致（slice-gap 仅在 wor
 验证步：gen_gate 的金标准数据（golden/ 植入已知差距结构）全部 expect 通过。
 done：gap_summary.json 落盘。
 
+**Stage 0 之后按题型分流（硬规则）**：
+
+1. 题目问「谁好 / 有无差异」且 |sign_z|<2、|mean_diff| 落在噪声底内 → 结论性事实就是「无显著差距」：FINDINGS.md 记现象 + 配对 z + 噪声底对照，汇报后本 playbook 止步，Stage 1/2 不进入。禁止对 null 差距做切片再从中挑显著片编机制叙事——切得够细总有噪声片显著，这是负分行为。
+2. 题目问「差异在哪 / 为什么 / 归因」（含池化平局但要求归因真实差异的题）→ 进 Stage 1。
+3. Stage 0 显著、且 model_profile 的 diff_list ≤2 个差异组件 → 允许跳过 Stage 1 直接进 Stage 2 登记消融假设；验证主脊要求签名级 falsifiable_pred 时，回头补画对应的单张图，不补全套。
+
 ### Stage 1 差距分解（事实）
-**不写图代码。** frontmatter charts 声明的 5 张对比核心图全部用 chartbook 预写脚本（engine-core 对 chartbook 有专门豁免），orient 已经按材料把每张图标好可画/跳过。命令模板：
+**不写图代码。** frontmatter charts 是预检池——orient 按材料把每张图标好可画/跳过，**不是必画清单**。按当前疑问从 §6 调色板选图，每张图在 INDEX.md 登记「服务哪个疑问」；没有疑问支撑的图不画。两条例外是硬前置：要点名最差片必须画 worst-slice-compare（带置换基线）；要把总差距升级登记进假设账本必须画 cross-dim-stability（`upgrade_rule` 的输入）。全部用 chartbook 预写脚本（engine-core 对 chartbook 有专门豁免）。命令模板：
 
     python3 <ENGINE>/chartbook/scripts/chart_<蛇形id>.py \
       --pred <setup>/predictions.csv --out-dir charts/ [各图特有参数]
@@ -152,7 +158,9 @@ done：`hypothesis_ledger.json` 落盘、`hypotheses` 数组非空（`validate_l
 
 ## 3. 停顿点与汇报
 
-Stage 1 完成即停，向用户汇报五件事：①gap_summary 的排名与 z；②已画/跳过图清单；③Top-3 现象，引用图 JSON 里的数字；④worst-slice 的置换基线判定——significant → 点名最差片，否则明说「集中未超随机基线，不点名」；⑤cross-dim 两个维度是否稳定。然后请用户点名：补画哪张图、调什么参数（top-N、切片粒度）、下一步关注哪个配对或片段。用户不点名，则按 orient 推荐推进。
+Stage 0 止步（分流规则 1 命中）时，向用户汇报：配对 z、噪声底对照、「无显著差距」的现象记录，并说明据此不做分解。
+
+Stage 1 完成即停，向用户汇报五件事：①gap_summary 的排名与 z；②已画图各自服务的疑问 + 跳过/未选图清单；③Top-3 现象，引用图 JSON 里的数字；④若画了 worst-slice：置换基线判定——significant → 点名最差片，否则明说「集中未超随机基线，不点名」；⑤若画了 cross-dim：两个维度是否稳定。然后请用户点名：补画哪张图、调什么参数（top-N、切片粒度）、下一步关注哪个配对或片段。用户不点名，则按 orient 推荐推进。
 
 Stage 2（若解锁）完成即停，止步于交接——不产结论。向用户汇报：①`hypothesis_ledger.json` 里每条假设的 id/claim/component/falsifiable_pred/discriminating_power；②按 discriminating_power 排好的验证优先序；③因组件不可干预（`ablation_switches` 标 `not-intervenable`）或缺 model_profile 而未能登记的候选，逐条注明原因。产出：假设账本 → 移交验证主脊做干预验证，本 playbook 到此为止。
 
@@ -172,7 +180,7 @@ Stage 1 各图相互独立，可以并发：每张图一个子代理。brief 只
 
 规则：每一轮只画"生成或区分当前假设所必需"的图；不画固定清单，从下面调色板按需选——没有假设不画，post-hoc 需要新证据时"再挑一张"是正常动作。
 
-model-comparison 主题调色板（recipe id 均为 chartbook 已注册的合法 id；标 * 的已在 Stage 1 默认画过，直接复用其 JSON，不重画）：
+model-comparison 主题调色板（recipe id 均为 chartbook 已注册的合法 id；标 * 的在 frontmatter 预检池内，orient 已标好可画/缺材料；Stage 1 已画过的图直接复用其 JSON，不重画）：
 
 | 主题 | recipe id | 何时用 |
 |---|---|---|
