@@ -11,7 +11,7 @@
 | 表 | 内容 | 关键列 |
 |----|------|--------|
 | `input`（宽表） | 每行一个 (站, 起报窗口)，列为 list | `station`、`timestamp_win`、`observe_power_future`（功率真值 list）、`GHI_SOLARGIS_predict`/`GHI_real_future`（GHI 预测/真值 list）等 |
-| `predict` | 各站功率预测 | `dtime` 列 + 每站一列（`predict_power_<站>`，回退裸站名），单元格为标量 |
+| `predict` | 各站功率预测 | `dtime` 列 + 每站一列（`predict_power_<站>`，回退裸站名），单元格为标量。**开 `--counterfactual` 时可省略**，由本地基线推理顶上 |
 
 - 列名可改：`--station-col` / `--win-col` / `--power-col` / `--dtime-col` / `--pred-col-template`。
 - **特征对** = `预测列:真值列[:label]`，默认 `GHI_SOLARGIS_predict:GHI_real_future:GHI`；`--feature-pairs` 可加更多（`GHI_real_future` 是这些预测量的公共真值 label）。
@@ -43,6 +43,8 @@ oracle GHI swap：把 GHI 预测列换成 GHI 真值，经**本地 `multi_statio
 **这一档只能在有模型栈的机器上跑**（`inference.py` + 其 `Base`/`utils` 依赖 + checkpoints）；脚本其余功能在任何机器照常。
 
 必给参数：`--checkpoints-dir`、`--config`（yaml 路径），二者原样透传给 `multi_station_inference`；`--inference-dir` 指向 `inference.py` 所在目录（**插在 `sys.path` 最前**，否则会被脚本自己目录下的同名文件遮蔽）；`--forecasting-type` 默认 `short`。
+
+**只跑反事实、没有生产预测表**：`--predict` 可省略（其余情况仍必填）。此时**本地基线推理顶上「预测」这一路**——右下面板的红线即本地基线（图例随之改名），`power_nrmse` 与 `power_nrmse_localbase` 必然相等，**复现闸整列不出**（拿基线跟自己比毫无意义，不能填 0 假装通过），`--cf-show-local-base` 也自动失效（红线已经就是它）。`--input` 仍必填：功率真值 `observe_power_future` 与 D+1/D+4 切窗都来自它。
 
 **`--cf-input`（推理专用输入表）**：喂给模型的那张 parquet，需含 `station` / `timestamp_win` + 模型全部特征 + `--cf-swap` 的预测与真值两列；**缺省回退用 `--input`**（分析输入本身即推理就绪时，如 `mock_input.parquet` 那 46 列）。分析表有、推理表没有的站 → 告警 + 该站 `cf_status=missing`，其它站照常。
 
@@ -82,7 +84,8 @@ python3 station_analysis_short.py --input input.parquet --predict predict.parque
 ## 用法
 
 ```bash
-python3 station_analysis_short.py --input input.parquet --predict predict.parquet --out-dir out \
+python3 station_analysis_short.py --input input.parquet [--predict predict.parquet] --out-dir out \
+                                       # --predict 仅在开 --counterfactual 时可省略
   [--drop-night --night-end-hour 5]    # 去掉每天 00:00–05:00（RMSE 也按去掉后算）
   [--tick-hours 1] [--step-min 15]     # x 轴刻度间隔 / list 步长
   [--feature-pairs "GHI_SOLARGIS_predict:GHI_real_future:GHI,ssrd_pos_1_predict:GHI_real_future:ssrd1"]

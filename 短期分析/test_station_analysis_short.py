@@ -138,6 +138,8 @@ def multi_station_inference(ds_dataframe, df_plants_info, checkpoints_dir,
             "config": str(config),
             "forecasting_type": forecasting_type,
             "stations": [str(s) for s in ds_dataframe["station"]],
+            "index": [int(i) for i in ds_dataframe.index],
+            "win_dtype": str(ds_dataframe["timestamp_win"].dtype),
             "ghi": {str(r["station"]): [float(v) for v in r["GHI_SOLARGIS_predict"]]
                     for _, r in ds_dataframe.iterrows()},
             "columns": list(ds_dataframe.columns)}) + "\\n")
@@ -325,6 +327,16 @@ def test_cf_one_call_per_window_two_passes(cf_data, fake_infer):
     assert all(len(v) == 2 for v in per_win.values())              # 每窗恰好基线 + 换真值
 
 
+def test_cf_passes_contiguous_index(cf_data, fake_infer):
+    """inference.py 内部用 pd.concat(..., axis=1) 合并模型输出 —— axis=1 按 index 对齐。
+    groupby 切出的子帧带原表的稀疏 index（如 [0,2,4]），会与模型的 RangeIndex 错位成 NaN。
+    交给模型的每个子帧必须是 0..n-1 连续 index，和 read_parquet 的结果无从区分。"""
+    _run(cf_data, _cf_args(fake_infer, cf_data, ["--no-plots"]))
+    for c in fake_infer.calls:
+        assert c["index"] == list(range(len(c["stations"]))), \
+            f"window {c['window']} got non-contiguous index {c['index']}"
+
+
 def test_cf_swap_reaches_model(cf_data, fake_infer):
     """换真值那一趟，模型真的收到 GHI_real_future 的值（而非原预测值）。"""
     _run(cf_data, _cf_args(fake_infer, cf_data, ["--no-plots"]))
@@ -370,6 +382,33 @@ def test_cf_identical_output_warns(cf_data, fake_infer, monkeypatch):
     monkeypatch.setenv("FAKE_INFER_MODE", "insensitive")
     r = _run(cf_data, _cf_args(fake_infer, cf_data, ["--no-plots"]))
     assert "identical" in r["out"].lower()
+
+
+def test_cf_without_predict_table(cf_data, fake_infer):
+    """无 --predict：本地基线顶上「预测」这一路，反事实照常分解；复现闸无对照物故不出。"""
+    r = subprocess.run(
+        [sys.executable, SCRIPT, "--input", str(cf_data / "input.parquet"),
+         "--out-dir", str(cf_data / "out"), "--date", "2026-07-15", "--no-plots"]
+        + _cf_args(fake_infer, cf_data),
+        cwd=str(cf_data), capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    d = pd.read_csv(cf_data / "out" / "20260715" / "D+1" / "fleet_ranking.csv").set_index("station")
+    assert d.loc["c1", "cf_status"] == "ok"
+    assert d.loc["c1", "power_nrmse_cf"] == pytest.approx(0.0, abs=1e-9)
+    # 「预测」这一路就是本地基线本身，两列必然相等
+    assert d.loc["c1", "power_nrmse"] == pytest.approx(d.loc["c1", "power_nrmse_localbase"])
+    # 拿基线跟自己比毫无意义 -> 复现闸必须整列不出，而不是填 0 假装通过
+    assert "base_vs_parquet_pct" not in d.columns
+
+
+def test_no_predict_without_counterfactual_errors(cf_data):
+    """既无 --predict 又无 --counterfactual：没有任何预测来源，必须明确报错而不是空跑。"""
+    r = subprocess.run(
+        [sys.executable, SCRIPT, "--input", str(cf_data / "input.parquet"),
+         "--out-dir", str(cf_data / "out"), "--date", "2026-07-15", "--no-plots"],
+        cwd=str(cf_data), capture_output=True, text=True)
+    assert r.returncode != 0
+    assert "--predict" in (r.stdout + r.stderr)
 
 
 def test_cf_off_unchanged(cf_data):

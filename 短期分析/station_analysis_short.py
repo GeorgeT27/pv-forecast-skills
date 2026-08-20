@@ -588,7 +588,11 @@ def cf_infer_windows(cf_inp, args, infer_fn, swap=None, label=""):
     wins = list(cf_inp.groupby(args.win_col, sort=True))
     print(f"[counterfactual] {label}: {len(wins)} window(s) x 1 call each")
     for wt, g in wins:
-        sub = g.copy()
+        # reset_index is NOT cosmetic: inference.py merges model outputs with pd.concat(..., axis=1),
+        # which aligns on index. A groupby subset carries the source table's sparse index ([0,10,20,...]),
+        # which would misalign against the model's fresh RangeIndex and silently produce NaN rows.
+        # read_parquet always yields 0..N-1, so hand the model exactly that.
+        sub = g.copy().reset_index(drop=True)
         if sub[args.station_col].duplicated().any():
             dup = sorted(set(sub[args.station_col][sub[args.station_col].duplicated()].astype(str)))
             print(f"  [warn] window {wt}: duplicate stations {dup} in --cf-input, keeping the first row of each")
@@ -786,8 +790,11 @@ def cf_station(st, truth, prod_pred, cf_base, cf_swap_pred, args, cap, win, gcca
            "coadapt": m["coadapt"]}
     if "nanwang_official_cf" in m:
         row["nanwang_official_power_cf"] = m["nanwang_official_cf"]
-    # Reproduction gate: local baseline vs the production predict table, on this window's common points
-    al = _aligned(p_base, prod_pred, args.drop_night, args.night_end_hour, win)
+    # Reproduction gate: local baseline vs the production predict table, on this window's common points.
+    # cf_check_tol is None when there IS no production table (the baseline is standing in for it), and
+    # comparing the baseline against itself would report a meaningless 0% -- omit the column entirely.
+    al = None if args.cf_check_tol is None else _aligned(p_base, prod_pred, args.drop_night,
+                                                        args.night_end_hour, win)
     if al is not None:
         bvp = rmse(al[1], al[2]) / cap * 100.0
         row["base_vs_parquet_pct"] = round(bvp, 4)
@@ -797,8 +804,9 @@ def cf_station(st, truth, prod_pred, cf_base, cf_swap_pred, args, cap, win, gcca
                   f"(>{args.cf_check_tol}%) -- different model version or config? The decomposition still uses "
                   f"the local baseline, so it stays self-consistent, but --predict may not be this model.")
     lines = [(p_cf, f"counterfactual ({swap_label}->truth)", "#2ca02c", "-", f"cf RMSE={rmse(cc, ct):.3f}")]
-    if args.cf_show_local_base:
-        lines.append((p_base, "local baseline (original features)", "#7f7f7f", "--", ""))
+    if args.cf_show_local_base and args.cf_check_tol is not None:   # without --predict the red line
+        lines.append((p_base, "local baseline (original features)",  # already IS the local baseline
+                      "#7f7f7f", "--", ""))
     return row, lines
 
 
@@ -912,7 +920,9 @@ def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, gccap_m
                     else:
                         dt_, dtruth, dothers = got
                     panels["win_pw"] = ("Power", dt_, dtruth, dothers[0], rv, int(len(times)),
-                                        "observed power", "predicted power",
+                                        "observed power",
+                                        "local baseline (original features)" if args.cf_check_tol is None
+                                        else "predicted power",
                                         [(vals, lab, color, ls, note) for vals, (_, lab, color, ls, note)
                                          in zip(dothers[1:], extra_lines)])
                 # Overview: power nRMSE / bias / hourly
@@ -1104,7 +1114,9 @@ def compute_windows(inp, win_col, date_arg):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
-    ap.add_argument("--predict", required=True)
+    ap.add_argument("--predict", default=None,
+                    help="生产预测表（dtime + 每站一列）。省略时必须开 --counterfactual，"
+                         "由本地基线推理顶上「预测」这一路（此时无对照物，不出复现闸列）")
     ap.add_argument("--out-dir", default="station_analysis_out")
     ap.add_argument("--drop-night", action="store_true", help="remove each day's 00:00-night_end_hour points")
     ap.add_argument("--night-end-hour", type=float, default=5.0)
@@ -1159,16 +1171,24 @@ def main():
     feature_pairs = parse_feature_pairs(args.feature_pairs)
     cap_map = parse_capacity(args.capacity)
 
+    if not args.predict and not args.counterfactual:
+        raise SystemExit("--predict is required unless --counterfactual is given "
+                         "(with it, the local baseline inference supplies the predictions instead)")
+
     inp = pd.read_parquet(args.input)
-    pred = pd.read_parquet(args.predict)
     for c in (args.station_col, args.win_col, args.power_col):
         if c not in inp.columns:
             raise SystemExit(f"input table missing column '{c}'; actual columns: {list(inp.columns)[:30]}")
-    if args.dtime_col not in pred.columns:
-        raise SystemExit(f"predict table missing column '{args.dtime_col}'; actual columns: {list(pred.columns)[:30]}")
     inp[args.win_col] = pd.to_datetime(inp[args.win_col])
-    pred[args.dtime_col] = pd.to_datetime(pred[args.dtime_col])
-    pred = pred.groupby(args.dtime_col).mean(numeric_only=True).sort_index()
+
+    pred = None                                    # None until read, or until the local baseline stands in
+    if args.predict:
+        pred = pd.read_parquet(args.predict)
+        if args.dtime_col not in pred.columns:
+            raise SystemExit(f"predict table missing column '{args.dtime_col}'; "
+                             f"actual columns: {list(pred.columns)[:30]}")
+        pred[args.dtime_col] = pd.to_datetime(pred[args.dtime_col])
+        pred = pred.groupby(args.dtime_col).mean(numeric_only=True).sort_index()
 
     info_map = (load_station_info(args.info_csv, args.station_col, pd.unique(inp[args.station_col]))
                 if args.info_csv else {})
@@ -1210,6 +1230,20 @@ def main():
         if cf_swap_pred is None or cf_swap_pred.empty:
             print("  [warn] counterfactual produced no predictions -> continuing without it")
             cf_base = cf_swap_pred = None
+
+    # No --predict: the local baseline stands in as the prediction source. It is already a
+    # dtime x predict_power_<station> frame, so run_analysis consumes it unchanged -- only the
+    # column template and the panel label change, and the reproduction gate is dropped (comparing
+    # the baseline against itself would report a meaningless 0%).
+    if pred is None:
+        if cf_base is None or cf_base.empty:
+            raise SystemExit("no --predict given and the local baseline inference produced nothing "
+                             "-- cannot score anything; check --cf-input / --checkpoints-dir / --config")
+        print("[counterfactual] no --predict given -> local baseline inference supplies the predictions "
+              "(reproduction gate skipped: nothing independent to reproduce)")
+        pred = cf_base
+        args.pred_col_template = CF_PRED_COL_TEMPLATE
+        args.cf_check_tol = None                   # None = gate disabled, distinct from a 0.0 threshold
 
     for label, start, end in windows:
         sub_out = os.path.join(report_root, label)
