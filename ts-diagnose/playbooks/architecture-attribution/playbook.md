@@ -114,7 +114,7 @@ questions:
 
 **第二步，池化对照，不许因平局停手**。若已有其他分析产出的池化差距数值，与噪声底对照：差距 < 噪声底**不是**"无差异"的证据，只说明要往下切片才能看见真实版图（§1 首要陷阱）。
 
-**第三步，切片测量**。写 `analysis_scripts/build_slice_metrics.py`：从各种子的预测/真值长表按标准维度分桶算口径指标，产出 slice_zcheck.py 的输入长表（列：`slice,seed,model_a,model_b`）。标准维度——lead time 分桶、预测时刻（hour-of-day）、变量/通道、目标窗口波动性分位；领域可扩展（光伏：辐照度分档、晴雨天）。**脚本验证步**（本脚本是运行时现场生成的数据整形脚本，不是共享引擎脚本，不接入 gen_gate——按 spec §4.2 用对账代替）：核对产出行数 = 切片数 × 种子数，每个 (slice, seed) 恰出现一次；抽 2 行手算核对与源文件一致，记 PROGRESS.md。
+**第三步，切片测量**。写 `analysis_scripts/build_slice_metrics.py`：从各种子的预测/真值长表按标准维度分桶算口径指标，产出 slice_zcheck.py 的输入长表（列：`slice,seed,model_a,model_b`）。标准维度——lead time 分桶、预测时刻（hour-of-day）、变量/通道、目标窗口波动性分位；领域可扩展（光伏：辐照度分档、晴雨天）。周期性维度（hour-of-day 等）按自然最小粒度分桶测量（逐小时）；汇报时只许合并相邻且同号的桶，合并桶不得跨越符号翻转点。非周期维度用等宽分桶时逐桶做细分核查：把桶对半细分重测，两个子桶符号相反、或任一子桶单独过阈而母桶未过 → 该维度改用子桶粒度进入切片版图。母桶判 `~noise` 不代表其子区间无真实差异，未过细分核查的粗桶不得写成该区间的最终判定。**脚本验证步**（本脚本是运行时现场生成的数据整形脚本，不是共享引擎脚本，不接入 gen_gate——按 spec §4.2 用对账代替）：核对产出行数 = 切片数 × 种子数，每个 (slice, seed) 恰出现一次；抽 2 行手算核对与源文件一致，记 PROGRESS.md。
 
 跑：
 ```bash
@@ -138,7 +138,9 @@ python3 <ENGINE>/scripts/hypothesis_ledger.py <ledger-path>
 ```
 `validate_ledger` 对"顶层对象没有 `hypotheses` 键"这种畸形账本返回空错误列表（视为合法）——**这是已知的校验盲区，不是"账本没问题"的证明**。校验通过之后必须另外显式核对 `len(ledger.get("hypotheses", [])) > 0`；账本里一条假设都没有，视同没有账本，走"现场起草"分支。
 
-`ledger-path` 问题答"现场起草"（或账本为空）→ 在切片版图基础上生成 2–3 条候选假设，每条必须：①指向 `model_profile` 里的具体组件；②给出可否证预测（"若干预组件 X，某切片的优势方向应当怎样变化"）；③标 `provenance: "pre-registered"`（本步骤发生在任何干预执行之前）。指纹库只是生成器、不是结论器——下表是常见误差签名到候选组件的启发式映射，用来提速生成，不能替代干预验证：
+第三步，切片认领核对（硬规则）：把账本 `slice_map` 与 Stage 0 `slice_zcheck.json` 里 `verdict=="real"` 的切片逐条对照。每个 real 切片必须处于三种状态之一：①被某条假设的 `falsifiable_pred` 认领；②在账本里标注为某条已认领机制在另一维度的同源表现并写出对应关系；③登记进账本 `uncovered` 列表。方向与池化总差距相反的 real 切片，不认领就必须进 `uncovered`，不得留在隐性状态。`uncovered` 非空 → 回生成器补登记（干预执行前补的标 `provenance: "pre-registered"`），或把该切片写进结论的已知缺口。
+
+`ledger-path` 问题答"现场起草"（或账本为空）→ 在切片版图基础上生成 2–3 条候选假设，每条必须：①指向 `model_profile` 里的具体组件；②给出可否证预测（"若干预组件 X，某切片的优势方向应当怎样变化"）；③标 `provenance: "pre-registered"`（本步骤发生在任何干预执行之前）；④claim 中的每一个断言都必须被本条的 confirm_criterion 或 kill_criterion 覆盖——没有判据覆盖的断言不得写进 claim：拆成独立假设（各自的 falsifiable_pred 与判据），或留在 FINDINGS.md 现象清单；假设判定为 confirmed 时，只有判据覆盖到的断言升级，未覆盖的断言不随行升级。指纹库只是生成器、不是结论器——下表是常见误差签名到候选组件的启发式映射，用来提速生成，不能替代干预验证：
 
 | 误差签名 | 候选组件方向 |
 |---|---|
@@ -185,12 +187,16 @@ python3 <ENGINE>/scripts/ablation_verdict.py \
 ```
 把打印的 receipt 行原样保留——它已经是 `## 消融证据` 节要贴的格式。
 
+**切片重算（硬规则，不占训练预算）**：每条干预的预测产物落盘后，在 Stage 0 `slice_zcheck.json` 全部 `verdict=="real"` 的切片上重算该干预的 delta——同一口径、同一批种子、直读已落盘的干预产物，不新增训练。每个 real 切片各跑一次 `ablation_verdict.py` 产 slice receipt；该干预推动了哪些 real 切片、没推动哪些，连同 receipt 行写进 `verdict_summary.json`。全部干预跑完后仍未被任何干预推动的 real 切片，其机制解释停留「假设」层级，结论里逐条显式标注。
+
 三态判定与后续动作：
 - **confirmed**（超噪声底且方向对）→ 更新 `hypothesis_ledger.json` 该假设 `status="confirmed"`；可以支撑因果结论。
-- **refuted**（超噪声底但方向反）→ `status="refuted"`，**必须**同时填 `kill_receipt`（配置 diff + delta + 噪声底对照 + 种子数，等同刚才的 receipt）——`validate_ledger` 强制这条，不许省略。允许提出新假设，但新假设 `provenance` 必须标 `"post-hoc"`，且要新的干预才能升级为 confirmed。
-- **undecided**（delta 落噪声底内或种子间不稳定）→ `status="undecided"`，如实报告，**不得**当轮硬编一个未经干预的替代故事顶上——这是合法且必须报告的结果，不是失败。
+- **refuted**（两条判据，命中任一即判）：①超噪声底但方向反；②预测落空——`falsifiable_pred` 预登记了"|delta| 应超噪声底"，实测 |delta| ≤ 噪声底的一半，且保守口径复核同判。两条同样 `status="refuted"`，**必须**同时填 `kill_receipt`（判据①：配置 diff + delta + 噪声底对照 + 种子数，等同刚才的 receipt；判据②：逐项登记预登记预测原文、实测 delta、两种口径噪声底、逐种子符号）——`validate_ledger` 强制这条，不许省略。判据②的升级由主 agent 在账本层执行，`## 消融证据` 节仍照抄脚本 receipt 原行不改。允许提出新假设，但新假设 `provenance` 必须标 `"post-hoc"`，且要新的干预才能升级为 confirmed。
+- **undecided**（噪声底的一半 < |delta| < 噪声底，或两种口径判定不一致，或种子间不稳定且不满足判据②）→ `status="undecided"`，如实报告，**不得**当轮硬编一个未经干预的替代故事顶上——这是合法且必须报告的结果，不是失败。
 
-汇总 `verdict_summary.json`（自足：`{"interventions":[{"hypothesis_id":str,"verdict":str,"receipt_line":str}],"n_confirmed":int,"n_refuted":int,"n_undecided":int,"budget_used":int}`）。FINDINGS.md 按结果更新状态：confirmed → 「已证实」；refuted → 「被推翻」（保留行，不删）；undecided → 状态仍写「假设」，结论文字里显式加注"（未决）"。
+汇总 `verdict_summary.json`（自足：`{"interventions":[{"hypothesis_id":str,"verdict":str,"receipt_line":str}],"n_confirmed":int,"n_refuted":int,"n_undecided":int,"budget_used":int}`）。FINDINGS.md 按结果更新状态：confirmed → 「已证实」；refuted → 「被推翻」（保留行，不删）；undecided → 状态仍写「假设」，结论文字里显式加注"（未决）"。FINDINGS 与 CONCLUSION 的判定措辞必须与账本 `status` 逐条同源：「被否掉」「被推翻」「被排除」只许用于 `status="refuted"` 的假设；`status="undecided"` 的只许写「未决」「无证据支持」。
+
+宣告循环收敛引用「confirmed 且能解释切片版图」这一终止条件前，先核对切片重算结果与 Stage 1 的认领清单：存在未认领、或未被任何干预推动的 real 切片 → 该终止条件不成立，收敛只能引用预算耗尽或生成器提不出新假设，且未解释切片逐条写进结论的已知缺口。
 
 **降级路径**（两个独立触发条件，任一命中即走同一条路径）：①`checkpoint`/`experiment_config` 材料 absent-confirmed——没有可重训框架，干预无法执行；②`model_profile` 产物 `declined`（`upstream` 里声明 `required: false`，用户在三分支问题里选了放弃，见 §7）——没有 `ablation_switches`，Stage 2 连"该干预哪个 switch"都定不出来，Stage 3 同样无从执行。两者任一命中 → Stage 2/3 判定为不可执行；主 agent 人工写一份 `verdict_summary.json`，把 Stage 1 全部 pending 假设标 `skipped_reason`（对应写 `"no_trainable_framework"` 或 `"no_model_profile"`，两者都缺则都写），`n_confirmed=n_refuted=0`，`n_undecided=`全部待验假设数——满足本阶段 done_when 的产物存在性，进入 Stage 4 出具"未验证假设"结论（design doc §8 的既定回退，对无可重训框架/无模型档案的老用法零破坏）。
 
@@ -206,7 +212,7 @@ done：`verdict_summary.json` 落盘（正常路径含 ≥1 条 receipt；降级
    python3 <ENGINE>/scripts/provenance.py \
      --code analysis_scripts/*.py --data slice_metrics.csv hypothesis_ledger.json --out provenance.json
    ```
-3. 写 `CONCLUSION.md`（§6 模板，含 `## 模型结构依据` 与有因果表述时必带的 `## 消融证据`）。
+3. 写 `CONCLUSION.md`（§6 模板，含 `## 模型结构依据` 与有因果表述时必带的 `## 消融证据`）。写完先过数字复算：正文里每个计数断言（「N 个切片」「N/M 种子同号」）对照其所引 JSON 字段或同段枚举清单重新数一遍；每个派生数字（百分比、占比、倍数、份额）用落盘产物里的原始数复算一遍，写明分子、分母与来源产物；占比类数字必须声明分母口径（净和 / 同向和 / 绝对值和，取其一并写明）。复算对不上的数字，改到对上或删除；复算记录记 PROGRESS.md。
 4. 跑结论闸：
    ```bash
    python3 <ENGINE>/scripts/conclusion_gate.py
@@ -273,6 +279,9 @@ Stage 3 走了降级路径（§2 Stage 3「降级路径」段）时，`## 模型
 - **事后编故事门**：refuted 之后是不是当轮补了一个没经过新干预的替代解释？有 → 结论必须标"post-hoc，未经干预验证"，不许当确认结论写。
 - **家族外推门**：结论里出现"这一类模型都……"时，家族内独立干预证据是否 ≥2 个成员？不足 → 只能写单模型结论。
 - **不可干预门**：假设的 `component` 在 `ablation_switches` 里标了 `not-intervenable`？→ 该假设结论上限"未验证假设"，不许强行设计不对等替代干预冒充验证。
+- **背景陈述门**：结论正文（含大白话原因句）里每一句关于数据性质的陈述——水平漂移、分布变化、噪声特征、季节形态——必须对应一个已落盘量测，引用产物文件与数字。量测口径必须与陈述口径一致：陈述跨段变化（如训练段→测试段）必须有跨段量测，段内替代量测不充当跨段证据。给不出对应量测 → 现补一次量测，或删句。
+- **状态口径门**：结论里每个假设的判定动词与账本 `status` 字段逐条比对，措辞强于状态（undecided 写成"被否掉/被排除"）或弱于状态 → 改账本或改措辞，二者取其一后重过本门。
+- **数字复算门**：正文每个计数、百分比、倍数、占比都能从落盘产物的原始数按声明口径复算（或重数）出来吗？复算不出的数字不得保留。
 
 ## 7. 材料降级说明
 

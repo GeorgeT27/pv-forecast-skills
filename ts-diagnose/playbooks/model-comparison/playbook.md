@@ -140,7 +140,7 @@ done：charts/*.json 至少一个 + INDEX.md + FINDINGS.md 含「现象」→ **
 菜谱：逐条桥接假设 → 找出它预言的图形态（bridge_hooks）→ 与 Stage 1 实际描述符对照，挑出图证据支持的候选（只筛选可否证候选，不判定真假）。每条候选写成一条假设，落 `hypothesis_ledger.json`（顶层 `{"slice_map":[...], "hypotheses":[...]}`，schema 见 `scripts/hypothesis_ledger.py` 的 `REQUIRED` 字段），每条假设必须含：
 
 - `id`：H1/H2...
-- `claim`：一句话机制主张
+- `claim`：一句话机制主张；claim 中每一个断言都必须落在 `falsifiable_pred` 的判定范围内，判定范围外的断言拆成独立假设或留在 FINDINGS.md 现象清单
 - `component`：必须是 `models.md` 里登记的具体组件（写到子模块，如 `itransformer.attention (cross-variable)`，不许只写模型名）；`diff_list` 里出现的差异行优先选，判别力更高
 - `falsifiable_pred`：可否证预测——"若干预该 component，某切片/机制的优势方向应如何变化"
 - `discriminating_power`：一次干预能区分几条候选假设的整数打分，验证主脊按此排序优先
@@ -148,6 +148,8 @@ done：charts/*.json 至少一个 + INDEX.md + FINDINGS.md 含「现象」→ **
 - `status`：固定 `"pending"`（本阶段只登记，不判定）
 - `provenance`：固定 `"pre-registered"`（干预执行前登记）
 - `kill_receipt`：固定 `null`（本阶段不产生，键必须保留）
+
+**切片认领规则（硬规则）**：`slice_map` 必须收录 Stage 1 全部超噪声底的显著切片，覆盖每个已切维度（时段、波动分位、lead、单元/通道、时间段），不得只保留单一维度。其中方向与总差距相反（对照模型显著占优）的每个切片，必须被至少一条假设的 `falsifiable_pred` 显式认领——写明干预后该切片 delta 的预期方向；无假设可认领的，逐条写进 `not_registered` 并注明「无假设认领」。
 
 declined 时：本阶段解锁但产不出合规账本——`component` 必须锚定 model_profile 的具体组件，无档案锚不了。FINDINGS.md 记「机制归因缺模型档案，账本未产出」，流程止于 Stage 1 现象清单，移交时如实说明缺档案。
 
