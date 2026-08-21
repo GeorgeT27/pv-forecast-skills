@@ -165,7 +165,7 @@ done：`hypothesis_ledger.json` 落盘且非空、过 `validate_ledger`，FINDIN
 3. **双向可判**：写清"什么结果算确认、什么结果算否证"——即预登记 `pred_direction`（`increase`/`decrease`，对应 `ablation_verdict.verdict()` 的方向参数）。设计阶段写不出否证判据的干预不合格，退回重设计。
 4. **预算阶梯**：先设计判别力最高的一个干预；单轮训练上限 ~10 次（如 4 个 switch × 3 种子内的裁剪组合）。是否追加取决于 Stage 3 的结果，不在本阶段一次性铺开。
 
-落 `intervention_plan.json`（自足：`[{"hypothesis_id":str,"component":str,"switch":str,"kind":str,"seeds":[...],"pred_direction":"increase"|"decrease","kill_criterion":str,"confirm_criterion":str}]`）。
+落 `intervention_plan.json`（自足：`[{"hypothesis_id":str,"component":str,"switch":str,"kind":str,"seeds":[...],"pred_direction":"increase"|"decrease","kill_criterion":str,"confirm_criterion":str,"script":null}]`）。`script` 设计时置 `null`，Stage 3 收到 receipt 后由主 agent 回填为执行该干预的 eval 脚本路径（如 `analysis_scripts/eval_H1.py`）——每条干预必须能从计划直接找到它的脚本。
 
 产出：向用户展示计划（含预计训练次数），**不写 FINDINGS 状态**（这是设计产物，不是现象/假设判定）。
 
@@ -177,7 +177,7 @@ done：`intervention_plan.json` 落盘 → **pause_after 停顿**（§4，等 `i
 
 **强制外包契约（硬规则，见 references/subagent-brief.md）**：`intervention_plan.json` 里的每一条干预，必须派一个 subagent 执行——改 switch、≥3 种子重训、评估、算 delta、跑判定。主 agent **不得亲自跑训练**。subagent 只回一条紧凑 receipt（配置 diff + delta + 噪声底对照 + 种子数 + 判定），不回训练日志、不回中间产物、不回 checkpoint 路径以外的任何中间文件。
 
-主 agent 收到每条 receipt 后，用 `ablation_verdict.py` 复核（subagent 应该已经用同一脚本算过，这里是主 agent 侧的独立复核，不是重新计算）：
+主 agent 收到每条 receipt 后：①把 `intervention_plan.json` 该条的 `script` 字段回填为 receipt 里的 `produced_by`（eval 脚本路径）；②用 `ablation_verdict.py` 复核（subagent 应该已经用同一脚本算过，这里是主 agent 侧的独立复核，不是重新计算）：
 ```bash
 python3 <ENGINE>/scripts/ablation_verdict.py \
   --hypothesis-id H<n> --switch=<switch值> \
@@ -210,8 +210,10 @@ done：`verdict_summary.json` 落盘（正常路径含 ≥1 条 receipt；降级
 2. 跑归因闸：
    ```bash
    python3 <ENGINE>/scripts/provenance.py \
-     --code analysis_scripts/*.py --data slice_metrics.csv hypothesis_ledger.json --out provenance.json
+     --code analysis_scripts/*.py --data slice_metrics.csv hypothesis_ledger.json \
+     --serves eval_H1.py=H1 eval_H2.py=H2 ... --out provenance.json
    ```
+   `--serves` 把每个 eval 脚本挂回它服务的假设（有段号时写 `eval_H1.py=H1@<segment_id>`）；只服务事实层的脚本（如 `build_slice_metrics.py`）不用挂。写完核对：每条经过干预的假设，其 eval 脚本都在 serves 里，一个孤儿脚本都不许剩。
 3. 写 `CONCLUSION.md`（§6 模板，含 `## 模型结构依据` 与有因果表述时必带的 `## 消融证据`）。写完先过数字复算：正文里每个计数断言（「N 个切片」「N/M 种子同号」）对照其所引 JSON 字段或同段枚举清单重新数一遍；每个派生数字（百分比、占比、倍数、份额）用落盘产物里的原始数复算一遍，写明分子、分母与来源产物；占比类数字必须声明分母口径（净和 / 同向和 / 绝对值和，取其一并写明）。复算对不上的数字，改到对上或删除；复算记录记 PROGRESS.md。
 4. 跑结论闸：
    ```bash

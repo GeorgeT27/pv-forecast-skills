@@ -117,8 +117,8 @@ def test_goto_force_allows_and_logs(tmp_path):
     assert "进入 Stage 1 的前置" in out
     # --force 放行后不得在同一输出里又打印"不能直达"，自相矛盾
     assert "不能直达" not in out
-    prog = (wd / "PROGRESS.md").read_text(encoding="utf-8")
-    assert "--force" in prog and "跳过前置" in prog
+    audit = (wd / ".orient_audit.jsonl").read_text(encoding="utf-8")
+    assert "--force" in audit and "跳过前置" in audit
 
 
 def test_goto_force_with_met_prereqs_no_skip_suffix(tmp_path):
@@ -129,6 +129,6 @@ def test_goto_force_with_met_prereqs_no_skip_suffix(tmp_path):
     out = run_orient(wd, "--goto", "1", "--force")
     assert "⛔" not in out
     assert "进入 Stage 1 的前置" in out
-    prog = (wd / "PROGRESS.md").read_text(encoding="utf-8")
-    assert "（--goto 1）" in prog
-    assert "跳过前置" not in prog
+    audit = (wd / ".orient_audit.jsonl").read_text(encoding="utf-8")
+    assert "（--goto 1）" in audit
+    assert "跳过前置" not in audit

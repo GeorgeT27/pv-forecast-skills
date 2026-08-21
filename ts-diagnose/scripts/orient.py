@@ -367,13 +367,18 @@ def _write_state_progress(fm, cur, args, ctx=None, actives=None, state=None, blo
                 f"{f'（--goto {args.goto}）' if args.goto is not None else ''}"
                 f"{'（--force：用户要求跳过前置，Stage 前置未齐）' if force_skipped_prereqs else ''}")
     ec.dump_json(new_state, ec.STATE_PATH)
-    stamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
-    is_new = not os.path.exists(ec.PROGRESS_PATH)
-    with open(ec.PROGRESS_PATH, "a", encoding="utf-8") as f:
-        if is_new:
+    # PROGRESS.md 只建头，是 agent 的叙事文档；机器审计线单独进 .orient_audit.jsonl
+    # ——此前审计行写进 PROGRESS.md，agent 整篇重写叙事时会把它清掉（C1 实测 5→1 行）
+    if not os.path.exists(ec.PROGRESS_PATH):
+        with open(ec.PROGRESS_PATH, "w", encoding="utf-8") as f:
             f.write("# PROGRESS —— ts-diagnose 进度叙事日志\n\n每行：时间 | 动作。"
                     "脚本验证记录也追加在此（crystallize 只快照有验证记录的脚本）。\n\n")
-        f.write(f"- {stamp} | {line}\n")
+    audit = {"timestamp": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+             "line": line, "playbook": fm["id"],
+             "current_stage": new_state["current_stage"],
+             "goto": args.goto, "force_skipped_prereqs": bool(force_skipped_prereqs)}
+    with open(ec.ORIENT_AUDIT_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(audit, ensure_ascii=False) + "\n")
     # 评测模式轨迹事件(SKILL_EVOLVE_TRAJECTORY_AGENT 未设置时零行为);任何异常不许影响诊断
     try:
         import eval_trajectory

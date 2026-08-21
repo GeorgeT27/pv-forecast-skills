@@ -58,6 +58,10 @@ def main():
     ap = argparse.ArgumentParser(description="ts-diagnose 归因闸")
     ap.add_argument("--code", nargs="+", required=True, help="生成的分析脚本（可 glob）")
     ap.add_argument("--data", nargs="+", required=True, help="本次消费的输入数据文件")
+    ap.add_argument("--serves", nargs="*", default=[],
+                    help="脚本挂回假设/段：<脚本名>=<episode_id>[@<segment_id>]，"
+                         "如 eval_H1.py=H1@07-architecture-attribution-stage-3；"
+                         "脚本名须在 --code 展开结果里，写错当场报错")
     ap.add_argument("--out", default="provenance.json")
     args = ap.parse_args()
 
@@ -67,8 +71,19 @@ def main():
     if missing:
         raise SystemExit(f"文件不存在：{missing}")
 
+    code_names = {os.path.basename(p) for p in code_files}
+    serves = {}
+    for item in args.serves:
+        name, _, target = item.partition("=")
+        if not target or name not in code_names:
+            raise SystemExit(f"--serves 无效或脚本不在 --code 里：{item!r}")
+        episode, _, segment = target.partition("@")
+        serves[name] = {"episode_id": episode, "segment_id": segment or None}
+
     prov = {"code": hash_group(code_files), "data": hash_group(data_files),
             "golden_selfcheck": gate_summary(code_files)}
+    if serves:
+        prov["code"]["serves"] = serves  # 逐脚本挂回 episode/segment，孤儿脚本清零
     gates = prov["golden_selfcheck"]
     prov["all_gates_passed"] = bool(gates) and all(
         g["passed"] and not g["stale"] for g in gates.values())

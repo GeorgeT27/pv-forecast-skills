@@ -76,13 +76,20 @@ subagent——两者都是"改配置 + 重训 + 评估"的同类耗时操作。
 2. 每个种子跑训练+评估，得到口径指标；delta = mean(干预后指标) − mean(基线指标)
    （基线 = noise_floor.json 里同口径的 mean，或另跑同批种子的基线均值——用哪个在
    派发时写清楚，两条干预不要混用不同基线）。
-3. 跑判定并生成 receipt 行：
+3. delta 的计算逻辑写成脚本落盘到 analysis_scripts/eval_<hypothesis_id>.py（不许
+   在临时命令里散算——脚本是回执的判断依据，必须留档可查）。脚本里带一个自检
+   （如切片选取逻辑的已知答案对照、植入回收），跑通后把结果压成一句话。
+4. 记下干预执行的起止时刻（开跑第一个种子前、最后一次评估后，ISO8601），跑判定
+   并生成 receipt 行：
    python3 "<ENGINE>/scripts/ablation_verdict.py" \
      --hypothesis-id <hypothesis_id> --switch=<switch> \
      --delta <delta> --noise-floor <noise_floor_3sigma> \
      --direction <pred_direction> --seeds <N> \
+     --script analysis_scripts/eval_<hypothesis_id>.py \
+     --t-start <起始时刻> --t-end <结束时刻> \
+     --selftest "<自检结果一句话>" \
      --out receipts/<hypothesis_id>.json
-4. 绝不把 checkpoint 权重、逐 iteration loss、训练日志读进上下文。
+5. 绝不把 checkpoint 权重、逐 iteration loss、训练日志读进上下文。
 
 只回传（≤6 行，就是 receipt 本身，不要额外解释）：
 - ablation_verdict.py 打印的那一行 receipt（原样，不要改措辞）
@@ -93,6 +100,7 @@ subagent——两者都是"改配置 + 重训 + 评估"的同类耗时操作。
 ```
 
 **主 agent 收到后**：把 receipt 行原样存进 `receipts/receipts.json`（追加，不覆盖）；
+把 `intervention_plan.json` 该条的 `script` 回填为 receipt 的 `produced_by`；
 按 §2 Stage 3 三态规则更新 `hypothesis_ledger.json` 该假设的 `status`
 （`refuted` 必须同时填 `kill_receipt`）；汇总 `verdict_summary.json`；更新 FINDINGS/PROGRESS。
 

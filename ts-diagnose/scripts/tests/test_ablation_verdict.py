@@ -39,6 +39,47 @@ def test_cli_receipt_line_matches_gate_regex():
     assert "seeds=3" in line
 
 
+def test_cli_provenance_block_written_to_receipt(tmp_path):
+    """--script/--t-start/--t-end/--selftest 四件套进 receipt：脚本指纹可复算、
+    时间是传入的真实时刻（不是 mtime）、自检一句话原样保留。"""
+    import hashlib
+    import json
+    script = tmp_path / "eval_H1.py"
+    script.write_text("print('eval')\n", encoding="utf-8")
+    out = tmp_path / "H1.json"
+    proc = subprocess.run(
+        [sys.executable, os.path.join(SCRIPTS_DIR, "ablation_verdict.py"),
+         "--hypothesis-id", "H1", "--switch=--patch_len=96",
+         "--delta", "0.031", "--noise-floor", "0.0102",
+         "--direction", "increase", "--seeds", "3",
+         "--script", str(script),
+         "--t-start", "2026-08-21T01:00:00+00:00",
+         "--t-end", "2026-08-21T01:05:00+00:00",
+         "--selftest", "植入回收 3/3 通过",
+         "--out", str(out)],
+        capture_output=True, text=True, timeout=30)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    rec = json.loads(out.read_text(encoding="utf-8"))[0]
+    assert rec["produced_by"] == str(script)
+    assert rec["script_sha256"] == hashlib.sha256(
+        script.read_bytes()).hexdigest()
+    assert rec["t_start"] == "2026-08-21T01:00:00+00:00"
+    assert rec["t_end"] == "2026-08-21T01:05:00+00:00"
+    assert rec["script_selftest"] == "植入回收 3/3 通过"
+
+
+def test_cli_missing_script_file_fails_loudly(tmp_path):
+    """--script 指向不存在的文件必须当场报错——不许静默记空指纹。"""
+    proc = subprocess.run(
+        [sys.executable, os.path.join(SCRIPTS_DIR, "ablation_verdict.py"),
+         "--hypothesis-id", "H1", "--switch=--x",
+         "--delta", "0.03", "--noise-floor", "0.01",
+         "--direction", "increase", "--seeds", "3",
+         "--script", str(tmp_path / "no_such.py")],
+        capture_output=True, text=True, timeout=30)
+    assert proc.returncode != 0
+
+
 def test_cli_undecided_and_refuted_lines_also_match_gate_regex():
     for delta, direction, want in (("0.004", "increase", "undecided"),
                                     ("-0.031", "increase", "refuted")):

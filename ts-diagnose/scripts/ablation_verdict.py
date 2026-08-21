@@ -7,6 +7,7 @@ CLI 额外把判定结果格式化成一行 receipt——格式须匹配 conclus
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 
 
@@ -41,7 +42,25 @@ def main():
     ap.add_argument("--seeds", type=int, required=True, help="本次干预实跑的种子数")
     ap.add_argument("--out", default=None,
                      help="可选：把 receipt 追加写入的 JSON 文件（数组，重复调用安全）")
+    ap.add_argument("--script", default=None,
+                     help="算出本 delta 的 eval 脚本路径（receipt 记 produced_by + "
+                          "script_sha256，让回执与脚本版本对得上）")
+    ap.add_argument("--t-start", default=None, dest="t_start",
+                     help="干预执行起始时刻（ISO8601），受访日志用真实时间，不用 mtime")
+    ap.add_argument("--t-end", default=None, dest="t_end",
+                     help="干预执行结束时刻（ISO8601）")
+    ap.add_argument("--selftest", default=None,
+                     help="eval 脚本自检结果一句话（如「植入回收 3/3 通过」）——"
+                          "把“认真验证过”变成机器可读信号")
     args = ap.parse_args()
+
+    script_sha256 = None
+    if args.script:
+        h = hashlib.sha256()
+        with open(args.script, "rb") as f:  # 路径写错必须当场炸，不许静默记空指纹
+            for blk in iter(lambda: f.read(65536), b""):
+                h.update(blk)
+        script_sha256 = h.hexdigest()
 
     v, line = receipt_line(args.hypothesis_id, args.switch, args.delta,
                             args.noise_floor, args.seeds, args.direction)
@@ -58,6 +77,11 @@ def main():
             "delta": args.delta, "noise_floor_3sigma": args.noise_floor,
             "seeds": args.seeds, "pred_direction": args.direction,
             "verdict": v, "line": line,
+            # 溯源块：脚本指纹让回执与代码版本对得上；t_start/t_end 让 journal
+            # 摆脱 mtime；selftest 让「验证过」可观测。缺省 None = 未提供，显式可见
+            "produced_by": args.script, "script_sha256": script_sha256,
+            "t_start": args.t_start, "t_end": args.t_end,
+            "script_selftest": args.selftest,
         })
         with open(args.out, "w", encoding="utf-8") as f:
             json.dump(receipts, f, ensure_ascii=False, indent=2)

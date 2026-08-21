@@ -139,8 +139,8 @@ def test_blocked_hides_all_menus_and_logs_progress(tmp_path):
     for banned in ("Stage 0", "图表选择门", "问题清单", "可开工", "前置"):
         assert banned not in out
     assert "AskUserQuestion" in out and "materials" in out
-    prog = (wd / "PROGRESS.md").read_text(encoding="utf-8")
-    assert "BLOCKED" in prog
+    audit = (wd / ".orient_audit.jsonl").read_text(encoding="utf-8")
+    assert "BLOCKED" in audit
 
 
 def test_present_without_schema_blocks(tmp_path):

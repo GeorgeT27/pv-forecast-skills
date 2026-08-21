@@ -28,6 +28,7 @@ PLAYBOOKS_DIR = os.environ.get("TSD_PLAYBOOKS_DIR") \
 CONFIG_PATH = "diagnose_config.json"
 STATE_PATH = "diagnose_state.json"
 PROGRESS_PATH = "PROGRESS.md"
+ORIENT_AUDIT_PATH = ".orient_audit.jsonl"  # orient 机器审计线;agent 不碰,不会被叙事重写清掉
 FINDINGS_PATH = "FINDINGS.md"
 
 PROFILE_VERSION = 1

@@ -32,15 +32,17 @@ def test_phase_exit_todo_to_done():
     old = _state(cur=0)
     new = _state(cur=1, stages={"0": "done", "1": "todo", "2": "todo"})
     evs = et.transitions(old, new)
-    assert ("phase_exit", "stage-0") in [(e["type"], e["phase"]) for e in evs]
-    assert ("phase_enter", "stage-1") in [(e["type"], e["phase"]) for e in evs]
+    got = [(e["type"], e.get("stage")) for e in evs]
+    assert ("phase_exit", "0") in got
+    assert ("phase_enter", "1") in got
+    assert all("phase" not in e for e in evs)  # phase 字段已删,只留裸 stage 号
 
 
 def test_phase_skip_todo_to_skipped():
     old = _state(cur=1, stages={"0": "done", "1": "todo", "2": "todo"})
     new = _state(cur=1, stages={"0": "done", "1": "todo", "2": "skipped"})
     evs = et.transitions(old, new)
-    assert ("phase_skip", "stage-2") in [(e["type"], e["phase"]) for e in evs]
+    assert ("phase_skip", "2") in [(e["type"], e.get("stage")) for e in evs]
 
 
 def test_blocked_intake():

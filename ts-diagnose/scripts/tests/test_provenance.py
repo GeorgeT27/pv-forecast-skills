@@ -38,6 +38,42 @@ def test_reproducible_and_attributable(tmp_path):
     assert p3["code"]["combined"] == p1["code"]["combined"]      # 代码没动 → code hash 不变
 
 
+def test_serves_links_script_to_episode_and_segment(tmp_path):
+    setup(tmp_path)
+    (tmp_path / "analysis_scripts" / "eval_H1.py").write_text(
+        "print('h1')\n", encoding="utf-8")
+    r = subprocess.run(
+        [sys.executable, PROV, "--code", "analysis_scripts/*.py",
+         "--data", "input.csv",
+         "--serves", "eval_H1.py=H1@07-architecture-attribution-stage-3",
+         "--out", "p.json"],
+        cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    prov = json.load(open(tmp_path / "p.json", encoding="utf-8"))
+    assert prov["code"]["serves"]["eval_H1.py"] == {
+        "episode_id": "H1",
+        "segment_id": "07-architecture-attribution-stage-3"}
+    # 段号可省：eval_H1.py=H1 → segment_id 为 None
+    r2 = subprocess.run(
+        [sys.executable, PROV, "--code", "analysis_scripts/*.py",
+         "--data", "input.csv", "--serves", "eval_H1.py=H1",
+         "--out", "p2.json"],
+        cwd=tmp_path, capture_output=True, text=True)
+    assert r2.returncode == 0
+    p2 = json.load(open(tmp_path / "p2.json", encoding="utf-8"))
+    assert p2["code"]["serves"]["eval_H1.py"]["segment_id"] is None
+
+
+def test_serves_rejects_unknown_script(tmp_path):
+    setup(tmp_path)
+    r = subprocess.run(
+        [sys.executable, PROV, "--code", "analysis_scripts/*.py",
+         "--data", "input.csv", "--serves", "typo_H9.py=H9",
+         "--out", "p.json"],
+        cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode != 0  # 脚本名写错当场炸，不许静默挂到不存在的文件
+
+
 def test_stale_gate_report_blocks(tmp_path):
     setup(tmp_path)
     (tmp_path / "gate_reports").mkdir()

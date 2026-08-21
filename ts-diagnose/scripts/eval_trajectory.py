@@ -17,10 +17,12 @@ SCHEMA_VERSION = 2
 
 
 def _event(type_, playbook, **kw):
+    # 不再发 phase 字段:同一条链里 stage-0 会出现多次,phase 天然分不清是哪一次。
+    # 段主键(segment_id)由 stage_probe 带命名空间发;本处只留裸 stage 号。
     ev = {"schema_version": SCHEMA_VERSION,
           "timestamp": _dt.datetime.now().astimezone().isoformat(timespec="seconds"),
           "source": "orient", "type": type_, "playbook": playbook,
-          "phase": kw.pop("phase", ""), "summary": kw.pop("summary", ""),
+          "summary": kw.pop("summary", ""),
           "artifact_refs": kw.pop("artifact_refs", [])}
     ev.update(kw)
     return ev
@@ -41,15 +43,15 @@ def transitions(old_state, new_state) -> list[dict]:
     for sid, st in (new_state.get("stages") or {}).items():
         old = old_stages.get(sid, "todo")
         if old != "done" and st == "done":
-            events.append(_event("phase_exit", pb, phase=f"stage-{sid}"))
+            events.append(_event("phase_exit", pb, stage=str(sid)))
         elif old != "skipped" and st == "skipped":
-            events.append(_event("phase_skip", pb, phase=f"stage-{sid}"))
+            events.append(_event("phase_skip", pb, stage=str(sid)))
     old_cur = (old_state or {}).get("current_stage")
     if new_cur == "done":
         if old_cur != "done":
             events.append(_event("workflow_complete", pb, summary="全部阶段完成"))
     elif new_cur is not None and new_cur != old_cur:
-        events.append(_event("phase_enter", pb, phase=f"stage-{new_cur}"))
+        events.append(_event("phase_enter", pb, stage=str(new_cur)))
     return events
 
 
