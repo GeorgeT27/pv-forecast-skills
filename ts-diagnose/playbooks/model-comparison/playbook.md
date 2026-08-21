@@ -149,7 +149,7 @@ done：charts/*.json 至少一个 + INDEX.md + FINDINGS.md 含「现象」→ **
 - `provenance`：固定 `"pre-registered"`（干预执行前登记）
 - `kill_receipt`：固定 `null`（本阶段不产生，键必须保留）
 
-**切片认领规则（硬规则）**：`slice_map` 必须收录 Stage 1 全部超噪声底的显著切片，覆盖每个已切维度（时段、波动分位、lead、单元/通道、时间段），不得只保留单一维度。其中方向与总差距相反（对照模型显著占优）的每个切片，必须被至少一条假设的 `falsifiable_pred` 显式认领——写明干预后该切片 delta 的预期方向；无假设可认领的，逐条写进 `not_registered` 并注明「无假设认领」。
+**切片认领规则（硬规则）**：`slice_map` 必须收录 Stage 1 全部超噪声底的显著切片，覆盖每个已切维度（时段、波动分位、lead、单元/通道、时间段），不得只保留单一维度。其中方向与总差距相反（对照模型显著占优）的每个切片，必须被至少一条假设的 `falsifiable_pred` 显式认领——写明干预后该切片 delta 的预期方向；无假设可认领的，逐条写进顶层 `uncovered` 列表并注明「无假设认领」——未认领切片只用 `uncovered` 这一个字段名表达，不得另造同义字段（如 `not_registered`），下游验证按此字段核对。每条押注方向的假设，登记时同步登记互补假设（编号 `H<n>b`）：同 component、同干预，`falsifiable_pred` 为原方向取反——组件移除使对手模型的劣势切片追平或反超，即确认「该组件损害这些切片」。互补假设的 confirm/kill 判据各自独立成文，`provenance` 同标 `"pre-registered"`，判定共用同一次干预的 receipt，不占新预算。
 
 declined 时：本阶段解锁但产不出合规账本——`component` 必须锚定 model_profile 的具体组件，无档案锚不了。FINDINGS.md 记「机制归因缺模型档案，账本未产出」，流程止于 Stage 1 现象清单，移交时如实说明缺档案。
 
