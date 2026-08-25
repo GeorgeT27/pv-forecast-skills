@@ -1293,9 +1293,13 @@ def main():
                   "lists -> nothing to align the raw line against, skipped")
         else:
             import history_avail_power
+            # 线长 = 所有起报窗 672 点摊平去重后的并集，起报日越多线越长；单起报日才恰好 7 天。
+            # 文件夹数是「要开几个 txt」，跨度落在自然日边界内侧时比天数多 1，别把两者看成一回事。
             ndays = len(pd.date_range(span[0].normalize(), span[1].normalize(), freq="D"))
-            print(f"  [hist-raw] span {span[0]:%Y-%m-%d %H:%M} -> {span[1]:%Y-%m-%d %H:%M} "
-                  f"({ndays} date folder(s)), Tjlx={args.hist_tjlx}")
+            nwin = int(pd.Series(inp[args.win_col].to_numpy()).nunique())
+            print(f"  [hist-raw] span {span[0]:%Y-%m-%d %H:%M} -> {span[1]:%Y-%m-%d %H:%M} = "
+                  f"{(span[1] - span[0]) / pd.Timedelta('1D') + 1 / 96:.1f} days "
+                  f"(union of {nwin} 起报日; opening {ndays} date folder(s)), Tjlx={args.hist_tjlx}")
             raw_hist = history_avail_power.load_raw_history(
                 args.hist_root, pd.unique(inp[args.station_col]), span[0], span[1], args.hist_tjlx)
 

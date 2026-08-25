@@ -989,3 +989,13 @@ def test_no_plots_skips_reading_raw_history(hist_raw_data):
     r = _run_short(hist_raw_data, ["--pred-col-template", "{station}", "--no-fleet", "--no-plots",
                                    "--hist-root", str(hist_raw_data / "jt")])
     assert "[hist-raw]" not in r.stdout
+
+
+def test_hist_span_log_explains_why_it_is_longer_than_7_days(hist_raw_data):
+    """历史线长度 = 所有起报窗 672 点摊平去重后的并集，起报日越多线越长（单起报日才恰好 7 天）。
+    日志必须把「几天 / 几个起报日 / 开几个文件夹」分开说，否则用户会把文件夹数当成线长。"""
+    r = _run_short(hist_raw_data, ["--pred-col-template", "{station}", "--no-fleet",
+                                   "--hist-root", str(hist_raw_data / "jt")])
+    assert "7.0 days" in r.stdout                      # hist_data 只有 1 个起报日 -> 恰好 7 天
+    assert "1 起报日" in r.stdout
+    assert "8 date folder(s)" in r.stdout              # 7 天跨 8 个自然日
