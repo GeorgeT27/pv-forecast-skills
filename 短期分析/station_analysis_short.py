@@ -65,6 +65,20 @@ def series_from_lists_history(wins, lists, step) -> pd.Series:
     return s.groupby(s.index).mean().sort_index()
 
 
+def hist_span(inp, win_col, hist_col, step):
+    """(t_start, t_end) covered by series_from_lists_history over the whole table, without flattening it:
+    the last element of each list sits at its timestamp_win, so the union runs from
+    min(win) - step*(Lmax-1) to max(win). Used to decide which date folders --hist-root must read."""
+    if hist_col not in inp.columns or inp.empty:
+        return None
+    lens = inp[hist_col].map(_listlen)
+    L = int(lens.max()) if len(lens) else 0
+    if L == 0:
+        return None
+    wins = pd.to_datetime(pd.Series(inp[win_col].to_numpy()))
+    return wins.min() - step * (L - 1), wins.max()
+
+
 def night_mask(idx: pd.DatetimeIndex, drop_night: bool, night_end_hour: float) -> np.ndarray:
     """True = keep. When drop_night, remove points in [00:00, night_end_hour)."""
     if not drop_night:
@@ -263,16 +277,24 @@ def _fmt_time_axis(ax, times, tick_hours):
 
 
 def _draw_hist_panel(ax, panel, fallback_name, tick_hours):
-    """Left-column history panel: one line over ALL history points. panel = (name, times, vals) or None."""
+    """Left-column history panel: one line over ALL history points, plus any extra lines (raw avail power).
+    panel = (name, times, vals[, extras]) or None; extras = [(times, vals, label, color, linestyle), ...].
+    Extras carry their OWN x — unlike the window panel there is no fill_between or RMSE here, so a raw
+    series with different coverage may simply be shorter instead of being force-aligned."""
     if panel is None:
         ax.text(0.5, 0.5, "no data", ha="center", va="center", fontsize=12)
         ax.set_title(f"{fallback_name} (history)", fontsize=13, fontweight="bold")
         return
-    name, times, vals = panel
+    name, times, vals = panel[:3]
+    extras = panel[3] if len(panel) > 3 else []
     times = pd.DatetimeIndex(times)
     ax.plot(times, vals, color="#1f77b4", lw=1.3, label=name)
+    notes = ""
+    for xt, yv, lab, color, ls in extras:
+        ax.plot(pd.DatetimeIndex(xt), yv, color=color, lw=1.1, ls=ls, alpha=0.9, label=lab)
+        notes += f"   {lab} n={len(yv)}"
     ax.set_title(f"{name} (history)   {times[0]:%Y-%m-%d %H:%M} -> {times[-1]:%Y-%m-%d %H:%M}   "
-                 f"(n={len(times)})", fontsize=13, fontweight="bold")
+                 f"(n={len(times)}){notes}", fontsize=13, fontweight="bold")
     ax.set_ylabel(name, fontsize=11); ax.legend(loc="upper right", fontsize=9)
     _fmt_time_axis(ax, times, tick_hours)
 
@@ -830,12 +852,13 @@ def cf_report_summary(okd, swap_label, pfx=""):
 
 # ================================================================ One window's full analysis (per-station + fleet)
 def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, gccap_map, city_map,
-                 out_dir, win, label, cf_base=None, cf_swap_pred=None, swap_label="GHI"):
+                 out_dir, win, label, cf_base=None, cf_swap_pred=None, swap_label="GHI", raw_hist=None):
     """对单个窗口 [start,end)（label='D+1'/'D+4'，用于日志前缀）跑完整的每站 + 舰队分析，产物写入 out_dir。
     gccap_map={station: GCCAPCITY}（来自 --info-csv）时补 GCCAPCITY + nanwang_official_power 列，
     fleet_ranking.csv 另加 NANWANG_FACTORS 的 factor 扫描列；city_map={station: city} 时 fleet_ranking.csv 补 city 列。
     cf_base/cf_swap_pred（本地推理的基线与换真值预测，dtime×predict_power_<站>）给出时，右下功率面板加画反事实线，
-    fleet_ranking.csv/station_power_rmse.csv 补 power_*_cf、delta_nrmse、frac_explained、nanwang_official_power_cf。"""
+    fleet_ranking.csv/station_power_rmse.csv 补 power_*_cf、delta_nrmse、frac_explained、nanwang_official_power_cf。
+    raw_hist={station: Series}（来自 --hist-root 的南网原始可用功率宽表）给出时，左下历史功率面板加画原始线。"""
     pfx = f"[{label}] " if label else ""
     plot_station = not (args.no_plots or args.no_station_plots)
     stations = list(pd.unique(inp[args.station_col]))
@@ -968,6 +991,14 @@ def run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, gccap_m
                     hs = series_from_lists_history(wins, sub[hcol].to_numpy(), step)
                     if not hs.empty:
                         panels[key] = (hcol, hs.index, hs.to_numpy())
+                        # 原始可用功率（--hist-root）叠成第二条线；裁到和调整后那条一样的起止 = 时间对齐
+                        raw = (raw_hist or {}).get(str(st)) if key == "hist_pw" else None
+                        if raw is not None and not raw.empty:
+                            raw = raw[(raw.index >= hs.index.min()) & (raw.index <= hs.index.max())]
+                            if not raw.empty:
+                                panels[key] += ([(raw.index, raw.to_numpy(),
+                                                  f"raw avail power (Tjlx={args.hist_tjlx})",
+                                                  "#ff7f0e", "--")],)
             if any(v is not None for v in panels.values()):
                 plot_jobs.append((st, panels))
 
@@ -1131,6 +1162,14 @@ def main():
                          "auto-detected by value match, e.g. plantid/plantname/plant_pointname). Adds GCCAPCITY + 南网 "
                          "nanwang_official_power (+ x1.4/x1.2/x0.8/x0.6/x0.4 factor-scan columns) + city to "
                          "fleet_ranking.csv, and nanwang_official_power_cf when --counterfactual is on")
+    ap.add_argument("--hist-root", default=None,
+                    help="南网 IN 侧原始可用功率宽表的根目录，指到「含日期文件夹」那一层，例 "
+                         ".../products/data/qy/63/1002；每站按 "
+                         "{root}/{YYYY-MM-DD}/IN/{plantid}/DQYC_IN_HISTORY_AVAIL_POWER_WIDE.txt 读，"
+                         "plantid 取站名末尾连续数字（plant_guangfu1358 -> 1358）。给了就在左下历史功率面板上"
+                         "叠一条原始线（主表 observe_power 是调整后的），两条线裁到同一起止")
+    ap.add_argument("--hist-tjlx", type=int, default=1,
+                    help="原始宽表取哪种统计类型：0-调度端 1-场站端 2-agc限电标志位（默认 1）")
     ap.add_argument("--ghi-pred", default="GHI_SOLARGIS_predict", help="predicted column for overview scatter/GHI ranking")
     ap.add_argument("--ghi-true", default="GHI_real_future", help="truth column for overview scatter/GHI ranking")
     ap.add_argument("--station-col", default="station")
@@ -1245,11 +1284,26 @@ def main():
         args.pred_col_template = CF_PRED_COL_TEMPLATE
         args.cf_check_tol = None                   # None = gate disabled, distinct from a 0.0 threshold
 
+    # Raw 可用功率 also loads ONCE: history is window-independent, so D+1 and D+4 share one pass over the txt.
+    raw_hist = None
+    if args.hist_root and not (args.no_plots or args.no_station_plots):   # 面板不画就别读 txt
+        span = hist_span(inp, args.win_col, "observe_power", step)
+        if span is None:
+            print("  [warn] --hist-root given but the input table has no usable 'observe_power' history "
+                  "lists -> nothing to align the raw line against, skipped")
+        else:
+            import history_avail_power
+            ndays = len(pd.date_range(span[0].normalize(), span[1].normalize(), freq="D"))
+            print(f"  [hist-raw] span {span[0]:%Y-%m-%d %H:%M} -> {span[1]:%Y-%m-%d %H:%M} "
+                  f"({ndays} date folder(s)), Tjlx={args.hist_tjlx}")
+            raw_hist = history_avail_power.load_raw_history(
+                args.hist_root, pd.unique(inp[args.station_col]), span[0], span[1], args.hist_tjlx)
+
     for label, start, end in windows:
         sub_out = os.path.join(report_root, label)
         os.makedirs(sub_out, exist_ok=True)
         run_analysis(inp, pred, args, step, active_pairs, have_ghi, cap_map, gccap_map, city_map,
-                     sub_out, (start, end), label, cf_base, cf_swap_pred, swap_label)
+                     sub_out, (start, end), label, cf_base, cf_swap_pred, swap_label, raw_hist)
 
 
 if __name__ == "__main__":

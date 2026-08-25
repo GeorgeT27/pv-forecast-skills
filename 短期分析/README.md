@@ -22,7 +22,7 @@
 ### ① 逐站细看（`<切片目录>/station_<站>.png`，每站一张 2×2 组合图）
 四个子图（尺寸 32×12，每个子图约等于旧版单图大小）：
 - **左上** —— 历史 `GHI_SOLARGIS` 单线曲线（全部历史点，不截窗、不去夜间）。
-- **左下** —— 历史 `observe_power` 单线曲线（同上）。
+- **左下** —— 历史 `observe_power` 曲线（同上）。给了 `--hist-root` 时再叠一条橙色虚线 = 南网 IN 侧**原始**可用功率（主表 `observe_power` 是调整后的），两条线裁到同一起止。
 - **右上** —— 本切片（D+1 或 D+4）GHI 预测 vs 真值两线对比，标 RMSE。
 - **右下** —— 本切片功率预测（predict 表 `dtime×站列`）vs 真实功率（`observe_power_future`）两线对比，标 RMSE。
 
@@ -72,6 +72,24 @@ python3 station_analysis_short.py --input input.parquet --predict predict.parque
 ### ⑤ 历史面板（组合图左列）
 历史（过去实测）列 `observe_power` 与 `GHI_SOLARGIS` 是预测列 `observe_power_future` / `GHI_SOLARGIS_predict` 的历史对照，其 list **反向**排列——最后一个元素落在起报时间 `T`（`list[-1] → T`），逐元素往前退 15min。组合图左列画**全部**历史点（不截天数窗、不去夜间）；某站某列缺失/为空 → 该面板 `no data` 并告警。
 
+### ⑥ 原始可用功率叠加线（`--hist-root`，模块 `history_avail_power.py`）
+
+主表 `observe_power` 是**调整后**的历史功率；`--hist-root` 让左下面板再叠一条**原始**线，取自南网 IN 侧宽表：
+
+```
+{--hist-root}/{YYYY-MM-DD}/IN/{plantid}/DQYC_IN_HISTORY_AVAIL_POWER_WIDE.txt
+```
+
+`--hist-root` 指到「含日期文件夹」那一层（例 `.../products/data/qy/63/1002`）。**场站号**取站名末尾连续数字（`plant_guangfu1358 → 1358`），无数字则用站名原样。
+
+- **宽表格式**：utf-8、回车隔行、空格隔列、大小写不敏感；列 = `PlantID PDate Tjlx V0000 V0015 … V2345`，`V0000` 即当日 00:00 的取值。有无表头行都能读（无表头时按上述文档列序）。
+- **补零**：`null`/不可解析 → `0`；文件里**缺哪个 `V` 列**（如没有 `V1045`）也补上并置 `0`。每天恒定 96 个点，一个不少。
+- **`--hist-tjlx`**：`0-调度端 / 1-场站端 / 2-agc限电标志位`，**默认 1**。同一 `plant+date` 多行时只取这一行。
+- **时间对齐**：按主表历史线的实际跨度算出要读哪些日期文件夹（672 点 = 往前 7 天），拼完后裁到 `[t_start, t_end]` —— 两条线**同起同止**，终点就是起报时刻当日 **10:00**。
+- **读一趟**：历史与切片无关，`D+1`/`D+4` 共用同一份，txt 只读一次。
+- **缺失**：整天文件缺失或该天没有请求的 `Tjlx` → **留空洞并告警**（不拿一整天的 0 冒充，否则图上等于假装全天停机）；场站文件夹找不到 → 告警并列出该日期下实际有哪些文件夹；`--hist-root` 路径不存在 → 直接报错退出。
+- **单位**：不做换算，日志里打印两条线各自的量级（`range [...]`）供核对。
+
 ## 时间对齐
 
 - **预测/未来 list**：input 某行 `timestamp_win=T`，任意 list 列（`observe_power_future` / `*_predict` / `GHI_real_future`）第 k 个元素时间 = `T+15min×(k+1)`（首元素 = T+15min）。同站各窗摊平、按绝对时间 groupby 去重成连续序列；power 的预测再与 predict 表 `dtime` 对齐。
@@ -95,6 +113,7 @@ python3 station_analysis_short.py --input input.parquet [--predict predict.parqu
   [--ghi-pred GHI_SOLARGIS_predict --ghi-true GHI_real_future] # 总览 GHI 排名/散点用列
   [--station-col station --win-col timestamp_win --power-col observe_power_future --dtime-col dtime]
   [--pred-col-template "predict_power_{station}"]
+  [--hist-root .../qy/63/1002] [--hist-tjlx 1]                  # 左下历史面板叠原始可用功率线（宽表根目录 + 统计类型）
   [--no-plots] [--no-station-plots] [--no-fleet] [--worst-only 5]
   [--counterfactual --checkpoints-dir DIR --config cfg.yaml]    # 反事实：本地 inference.py，二者必给
   [--inference-dir DIR] [--forecasting-type short]              # inference.py 所在目录（插 sys.path 最前）
@@ -107,7 +126,7 @@ python3 station_analysis_short.py --input input.parquet [--predict predict.parqu
 ## 产物
 
 **常规产物**（`<out>/<YYYYMMDD>/D+1/` 与 `D+4/` 下各一份）：
-- 逐站 `station_<站>.png` —— 2×2 组合图（左列历史 GHI/功率全量点，右列本切片 GHI/功率预测对真值，标 RMSE）。
+- 逐站 `station_<站>.png` —— 2×2 组合图（左列历史 GHI/功率全量点，右列本切片 GHI/功率预测对真值，标 RMSE）；给 `--hist-root` 时左下多一条原始可用功率橙色虚线。
 - `station_power_rmse.csv` + `station_feature_rmse.csv`。
 - 全场 `fleet_overview.png` + `theil_decomposition.png` + `fleet_ranking.csv`（每站 nRMSE / bias / Theil 份额 / 斜率 / r² / 离群标记 / 排名；给 `--info-csv` 时再加 `city` + `GCCAPCITY` + `nanwang_official_power` 及其 factor 扫描列，见下）。
 - 反事实（`--counterfactual`）：`counterfactual_overview.png`，加上右下功率面板的第三条绿线；指标并入 `fleet_ranking.csv` / `station_power_rmse.csv`（`cf_status` / `power_rmse_cf` / `power_nrmse_cf` / `power_nrmse_localbase` / `delta_nrmse` / `frac_explained` / `coadapt` / `base_vs_parquet_pct`；给 `--info-csv` 时再加 `nanwang_official_power_cf`）。推理结果缓存在 `<out>/<YYYYMMDD>/cf_base_pred.parquet` 与 `cf_swap_pred.parquet`。

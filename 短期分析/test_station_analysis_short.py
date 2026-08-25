@@ -886,3 +886,106 @@ def test_history_missing_column_warns(short_data):
     assert "history column 'observe_power' missing" in r.stdout
     assert "history column 'GHI_SOLARGIS' missing" in r.stdout
     assert (_rep(short_data) / "D+1" / "station_s1.png").exists()
+
+
+# ============================================================ 原始可用功率叠加线（--hist-root）
+def test_hist_panel_draws_raw_power_as_second_line():
+    """左下历史面板带 extras 时真的多画一条线（调整后 vs 原始），且带自己的图例。"""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    idx = pd.date_range("2026-07-26 00:00", periods=4, freq="15min")
+    panel = ("observe_power", idx, np.array([1., 2, 3, 4]),
+             [(idx, np.array([9., 9, 9, 9]), "raw avail power (Tjlx=1)", "#ff7f0e", "--")])
+    fig, ax = plt.subplots()
+    sa._draw_hist_panel(ax, panel, "power", 1)
+    labels = [ln.get_label() for ln in ax.get_lines()]
+    assert len(ax.get_lines()) == 2
+    assert "raw avail power (Tjlx=1)" in labels
+    plt.close(fig)
+
+
+def test_hist_panel_without_extras_still_draws_one_line():
+    """不给 --hist-root 时面板还是三元组、还是一条线 —— 老行为不许变。"""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    idx = pd.date_range("2026-07-26 00:00", periods=4, freq="15min")
+    fig, ax = plt.subplots()
+    sa._draw_hist_panel(ax, ("observe_power", idx, np.array([1., 2, 3, 4])), "power", 1)
+    assert len(ax.get_lines()) == 1
+    plt.close(fig)
+
+
+def test_hist_span_spans_the_whole_flattened_history_line(hist_data):
+    """算给 load_raw_history 的 [t_start, t_end] 必须和 series_from_lists_history 摊平后的跨度一致，
+    否则原始线会比调整后那条短一截或多一截。"""
+    inp = pd.read_parquet(hist_data / "input.parquet")
+    step = pd.Timedelta("15min")
+    t0, t1 = sa.hist_span(inp, "timestamp_win", "observe_power", step)
+    s = sa.series_from_lists_history(inp["timestamp_win"].to_numpy(),
+                                     inp["observe_power"].to_numpy(), step)
+    assert t0 == s.index.min() and t1 == s.index.max()
+
+
+def _write_raw_history(root, day, plant, value):
+    import history_avail_power as hap
+    d = root / day / "IN" / plant
+    d.mkdir(parents=True, exist_ok=True)
+    vcols = [f"V{h:02d}{m:02d}" for h in range(24) for m in (0, 15, 30, 45)]
+    (d / hap.WIDE_FILENAME).write_text(
+        " ".join(["PlantID", "PDate", "Tjlx"] + vcols) + "\n"
+        + " ".join([plant, day, "1"] + [str(value)] * 96) + "\n", encoding="utf-8")
+
+
+@pytest.fixture
+def hist_raw_data(hist_data):
+    """hist_data 的历史线跨 2026-07-19 10:15 -> 2026-07-26 10:00；额外多写一天跨度外的 07-18。
+    站名 s1/s2 按末尾数字映射到文件夹 1/2。"""
+    root = hist_data / "jt"
+    for day in ["2026-07-18"] + [f"2026-07-{d}" for d in range(19, 27)]:
+        _write_raw_history(root, day, "1", 11.0)
+        _write_raw_history(root, day, "2", 22.0)
+    return hist_data
+
+
+def test_hist_root_loads_raw_line_clipped_to_the_history_span(hist_raw_data):
+    """--hist-root 给了就读原始宽表，且裁到和调整后历史线一模一样的起止（终点=起报时刻 10:00）。"""
+    r = _run_short(hist_raw_data, ["--pred-col-template", "{station}", "--no-fleet",
+                                   "--hist-root", str(hist_raw_data / "jt")])
+    assert "[hist-raw] s1:" in r.stdout
+    assert "2026-07-19 10:15 -> 2026-07-26 10:00" in r.stdout
+    assert (_rep(hist_raw_data) / "D+1" / "station_s1.png").exists()
+
+
+def test_hist_root_reads_the_files_once_not_once_per_slice(hist_raw_data):
+    """D+1/D+4 两切片共用同一份历史，txt 只该读一趟。"""
+    r = _run_short(hist_raw_data, ["--pred-col-template", "{station}", "--no-fleet",
+                                   "--hist-root", str(hist_raw_data / "jt")])
+    assert r.stdout.count("[hist-raw] s1:") == 1
+
+
+def test_hist_tjlx_selects_the_statistic_type(hist_data):
+    """--hist-tjlx 默认 1（场站端）；改成 0 而文件里只有 1 -> 告警且不画原始线。"""
+    root = hist_data / "jt"
+    for day in [f"2026-07-{d}" for d in range(19, 27)]:
+        _write_raw_history(root, day, "1", 11.0)
+        _write_raw_history(root, day, "2", 22.0)
+    r = _run_short(hist_data, ["--pred-col-template", "{station}", "--no-fleet",
+                               "--hist-root", str(root), "--hist-tjlx", "0"])
+    assert "Tjlx=0 absent" in r.stdout
+    assert "[hist-raw] s1:" not in r.stdout
+
+
+def test_no_hist_root_keeps_old_behaviour(hist_data):
+    """不给 --hist-root -> 一句 hist-raw 都不该出现，产物不变。"""
+    r = _run_short(hist_data, ["--pred-col-template", "{station}", "--no-fleet"])
+    assert "[hist-raw]" not in r.stdout
+    assert (_rep(hist_data) / "D+1" / "station_s1.png").exists()
+
+
+def test_no_plots_skips_reading_raw_history(hist_raw_data):
+    """--no-plots 时左下面板根本不画 -> 原始宽表一个字节都不该读。"""
+    r = _run_short(hist_raw_data, ["--pred-col-template", "{station}", "--no-fleet", "--no-plots",
+                                   "--hist-root", str(hist_raw_data / "jt")])
+    assert "[hist-raw]" not in r.stdout
