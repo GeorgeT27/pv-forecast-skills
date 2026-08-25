@@ -172,3 +172,27 @@ def test_load_raw_history_missing_root_is_a_hard_error(tmp_path):
     with pytest.raises(SystemExit):
         hap.load_raw_history(str(tmp_path / "nope"), ["plant_guangfu1358"],
                              pd.Timestamp("2026-08-13 00:00"), pd.Timestamp("2026-08-13 23:45"), tjlx=1)
+
+
+# ============================================================ 真实文件可能长的样子
+def test_parse_wide_file_tolerates_bom_and_tabs(tmp_path):
+    """真实落盘的 txt 可能带 utf-8 BOM、或用制表符而非空格分列 —— 两者都不该让解析失手。"""
+    p = write_wide(str(tmp_path), "2026-08-13", "1358", [(1, {"V0000": "5.0", "V1045": "42.0"})])
+    with open(p, encoding="utf-8") as f:
+        text = f.read()
+    with open(p, "w", encoding="utf-8-sig") as f:
+        f.write(text.replace(" ", "\t"))
+    s = hap.parse_wide_file(p, tjlx=1)
+    assert len(s) == 96
+    assert s[pd.Timestamp("2026-08-13 00:00")] == 5.0
+    assert s[pd.Timestamp("2026-08-13 10:45")] == 42.0
+
+
+def test_parse_wide_file_tolerates_trailing_blank_and_crlf(tmp_path):
+    """Windows 换行 + 末尾空行。"""
+    p = write_wide(str(tmp_path), "2026-08-13", "1358", [(1, {"V0000": "5.0"})])
+    with open(p, encoding="utf-8") as f:
+        text = f.read()
+    with open(p, "wb") as f:
+        f.write((text.replace("\n", "\r\n") + "\r\n").encode("utf-8"))
+    assert hap.parse_wide_file(p, tjlx=1)[pd.Timestamp("2026-08-13 00:00")] == 5.0

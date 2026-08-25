@@ -999,3 +999,41 @@ def test_hist_span_log_explains_why_it_is_longer_than_7_days(hist_raw_data):
     assert "7.0 days" in r.stdout                      # hist_data 只有 1 个起报日 -> 恰好 7 天
     assert "1 起报日" in r.stdout
     assert "8 date folder(s)" in r.stdout              # 7 天跨 8 个自然日
+
+
+@pytest.fixture
+def hist_raw_cf_data(tmp_path):
+    """--hist-root 与 --counterfactual 同开：单窗 480 点 + 672 点历史 + 原始宽表全都齐。"""
+    D = pd.Timestamp("2026-07-26 10:00:00")
+    n = 480
+    gt = [float(100 + k) for k in range(n)]
+    rows = [{"station": "c1", "timestamp_win": D,
+             "observe_power_future": [g / 10.0 for g in gt],
+             "observe_power": [float(k % 50) for k in range(672)],
+             "GHI_SOLARGIS_predict": [g + 40.0 for g in gt],
+             "GHI_real_future": gt}]
+    pd.DataFrame(rows).to_parquet(tmp_path / "input.parquet")
+    pred = pd.DataFrame({"dtime": [D + pd.Timedelta(minutes=15 * (k + 1)) for k in range(n)]})
+    pred["c1"] = [(g + 40.0) / 10.0 for g in gt]
+    pred.to_parquet(tmp_path / "predict.parquet")
+    for day in [f"2026-07-{d}" for d in range(19, 27)]:
+        _write_raw_history(tmp_path / "jt", day, "1", 33.0)
+    return tmp_path
+
+
+def test_hist_root_and_counterfactual_coexist(hist_raw_cf_data, fake_infer):
+    """左下叠原始线、右下叠反事实线互不干扰，两条附加线都在，指标照出。"""
+    r = subprocess.run(
+        [sys.executable, SCRIPT, "--input", str(hist_raw_cf_data / "input.parquet"),
+         "--predict", str(hist_raw_cf_data / "predict.parquet"),
+         "--out-dir", str(hist_raw_cf_data / "out"), "--pred-col-template", "{station}",
+         "--hist-root", str(hist_raw_cf_data / "jt"),
+         "--counterfactual", "--inference-dir", fake_infer.dir,
+         "--checkpoints-dir", str(hist_raw_cf_data / "ckpt"),
+         "--config", str(hist_raw_cf_data / "config.yaml")],
+        cwd=str(hist_raw_cf_data), capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "[hist-raw] c1: 672 pts  2026-07-19 10:15 -> 2026-07-26 10:00" in r.stdout
+    pw = pd.read_csv(_rep(hist_raw_cf_data) / "D+1" / "station_power_rmse.csv")
+    assert set(pw["cf_status"]) == {"ok"}
+    assert (_rep(hist_raw_cf_data) / "D+1" / "station_c1.png").exists()
