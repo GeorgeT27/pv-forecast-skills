@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import history_avail_power as hap
+from pvcore import history_raw as hap
 
 VCOLS = [f"V{h:02d}{m:02d}" for h in range(24) for m in (0, 15, 30, 45)]
 
@@ -44,25 +44,24 @@ def test_parse_wide_file_expands_to_96_quarter_hour_points(tmp_path):
     assert s[pd.Timestamp("2026-08-13 23:45")] == 9.0
 
 
-def test_parse_wide_file_null_becomes_zero(tmp_path):
-    """数值空列写作 null（大小写不敏感）-> 填 0，而不是 NaN。"""
+def test_parse_wide_file_null_becomes_nan(tmp_path):
+    """数值空列写作 null（大小写不敏感）-> NaN 而不是 0：功率里 0 是合法值，不能拿来冒充缺测。"""
     p = write_wide(str(tmp_path), "2026-08-13", "1358",
                    [(1, {"V0000": "null", "V0015": "NULL", "V0030": "3.0"})])
     s = hap.parse_wide_file(p, tjlx=1)
-    assert s[pd.Timestamp("2026-08-13 00:00")] == 0.0
-    assert s[pd.Timestamp("2026-08-13 00:15")] == 0.0
+    assert np.isnan(s[pd.Timestamp("2026-08-13 00:00")])
+    assert np.isnan(s[pd.Timestamp("2026-08-13 00:15")])
     assert s[pd.Timestamp("2026-08-13 00:30")] == 3.0
-    assert np.isfinite(s.to_numpy()).all()
 
 
-def test_parse_wide_file_missing_column_becomes_zero(tmp_path):
-    """文件里根本没有 V1045 这一列 -> 该时刻仍要出现且取 0（96 点一个不少）。"""
+def test_parse_wide_file_missing_column_becomes_nan(tmp_path):
+    """文件里根本没有 V1045 这一列 -> 该时刻仍要出现（96 点一个不少）但取 NaN。"""
     short = [c for c in VCOLS if c != "V1045"]
     p = write_wide(str(tmp_path), "2026-08-13", "1358", [(1, {"V1030": "7.0"})], vcols=short)
     s = hap.parse_wide_file(p, tjlx=1)
     assert len(s) == 96
     assert s[pd.Timestamp("2026-08-13 10:30")] == 7.0
-    assert s[pd.Timestamp("2026-08-13 10:45")] == 0.0
+    assert np.isnan(s[pd.Timestamp("2026-08-13 10:45")])
 
 
 def test_parse_wide_file_picks_requested_tjlx(tmp_path):
@@ -125,15 +124,31 @@ def test_load_raw_history_concatenates_days_and_clips_to_span(tmp_path):
 
 
 def test_load_raw_history_missing_day_leaves_a_gap(tmp_path, capsys):
-    """整天文件缺失 -> 留空洞并告警，绝不拿一整天的 0 冒充（那在图上等于假装全天停机）。"""
+    """整天文件缺失 -> 网格补齐成 NaN 并告警，绝不拿一整天的 0 冒充（那在图上等于假装全天停机）。
+    补进网格是为了让 matplotlib 真的断线：索引里直接少这些点的话，图上会从缺口前一点拉直线连到后一点。"""
     for day in ("2026-08-11", "2026-08-13"):
         write_wide(str(tmp_path), day, "1358", [(1, {c: "1.0" for c in VCOLS})])
     got = hap.load_raw_history(str(tmp_path), ["plant_guangfu1358"],
                                pd.Timestamp("2026-08-11 00:00"), pd.Timestamp("2026-08-13 23:45"), tjlx=1)
     s = got["plant_guangfu1358"]
-    assert len(s) == 192
-    assert pd.Timestamp("2026-08-12 00:00") not in s.index
+    assert len(s) == 288                                   # 三天整网格，缺的那天也占着位置
+    assert int(s.notna().sum()) == 192                     # 但只有两天有真数据
+    assert pd.Timestamp("2026-08-12 00:00") in s.index     # 缺失日在索引里…
+    assert s.loc["2026-08-12"].isna().all()                # …整天全是 NaN，不是 0
     assert "2026-08-12" in capsys.readouterr().out
+
+
+def test_load_raw_history_single_missing_point_breaks_the_line(tmp_path):
+    """单点 null（10:15 那格）-> NaN 空洞，而不是 0：图上断一格，不会被读成「这一刻没出力」。"""
+    write_wide(str(tmp_path), "2026-08-13", "1358",
+               [(1, {c: ("null" if c == "V1015" else "5.0") for c in VCOLS})])
+    got = hap.load_raw_history(str(tmp_path), ["plant_guangfu1358"],
+                               pd.Timestamp("2026-08-13 00:00"), pd.Timestamp("2026-08-13 23:45"), tjlx=1)
+    s = got["plant_guangfu1358"]
+    assert len(s) == 96
+    assert np.isnan(s[pd.Timestamp("2026-08-13 10:15")])
+    assert s[pd.Timestamp("2026-08-13 10:00")] == 5.0
+    assert s[pd.Timestamp("2026-08-13 10:30")] == 5.0
 
 
 def test_load_raw_history_missing_station_folder_lists_what_exists(tmp_path, capsys):

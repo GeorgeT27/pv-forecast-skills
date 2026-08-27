@@ -3,11 +3,11 @@
 
 目录约定  {root}/{YYYY-MM-DD}/IN/{plantid}/DQYC_IN_HISTORY_AVAIL_POWER_WIDE.txt
           —— {root} 指到「含日期文件夹」那一层，例如 .../products/data/qy/63/1002
-宽表格式  utf-8、回车隔行、空格隔列、大小写不敏感；数值空列写 "null"。
+宽表格式  utf-8、回车隔行、空格隔列、大小写不敏感；数值空列写 "null"（-> NaN，画图时断线）。
           列 = PlantID PDate Tjlx V0000 V0015 ... V2345，V0000 即当日 00:00 的取值。
           Tjlx = 0 调度端 / 1 场站端 / 2 agc限电标志位，同一 plant+date 可能每种一行。
 
-供 station_analysis_short.py 在历史功率面板上叠加「原始」那条线（主表 observe_power 是调整后的）。
+供短期分析在历史功率面板上叠加「原始」那条线（主表 observe_power 是调整后的，两者是两回事）。
 """
 from __future__ import annotations
 
@@ -30,17 +30,18 @@ def station_to_plant_id(station) -> str:
 
 
 def _to_float(tok) -> float:
-    """"null" / 空 / 不可解析 -> 0.0（用户口径：没值就填零）。"""
+    """"null" / 空 / 不可解析 -> NaN。功率里 0 是合法值（夜间、停机都是真 0），拿 0 冒充缺测就再也
+    分不出「没出力」和「没数据」，所以缺测一律 NaN，画图时断线。"""
     try:
         v = float(tok)
     except (TypeError, ValueError):
-        return 0.0
-    return v if np.isfinite(v) else 0.0
+        return np.nan
+    return v if np.isfinite(v) else np.nan
 
 
 def parse_wide_file(path, tjlx: int = 1) -> pd.Series | None:
-    """一个宽表文件 -> 该 PDate 当天 96 点的 Series（缺列/null 补 0）。
-    文件里没有请求的 Tjlx 那一行时返回 None —— 交给调用方告警并留空洞，不拿一整天的 0 冒充。"""
+    """一个宽表文件 -> 该 PDate 当天 96 点的 Series（缺列/null 留 NaN）。
+    文件里没有请求的 Tjlx 那一行时返回 None —— 交给调用方告警并留空洞，不拿一整天的空值冒充。"""
     with open(path, encoding="utf-8", errors="replace") as f:
         lines = [ln.split() for ln in f.read().splitlines() if ln.strip()]
     if not lines:
@@ -53,11 +54,14 @@ def parse_wide_file(path, tjlx: int = 1) -> pd.Series | None:
     pos = {c: i for i, c in enumerate(cols)}
     ti = pos.get("TJLX")
     for r in rows:
-        if ti is None or ti >= len(r) or int(_to_float(r[ti])) != int(tjlx):
+        if ti is None or ti >= len(r):
+            continue
+        tv = _to_float(r[ti])                                # Tjlx 本身解析不出来就当这行不匹配
+        if not np.isfinite(tv) or int(tv) != int(tjlx):
             continue
         day = pd.Timestamp(r[pos["PDATE"]]).normalize()
         idx = pd.date_range(day, periods=96, freq=STEP)
-        vals = [_to_float(r[pos[c]]) if c in pos and pos[c] < len(r) else 0.0 for c in VCOLS]
+        vals = [_to_float(r[pos[c]]) if c in pos and pos[c] < len(r) else np.nan for c in VCOLS]
         return pd.Series(vals, index=idx)
     return None
 
@@ -93,7 +97,12 @@ def load_raw_history(root, stations, t_start, t_end, tjlx: int = 1, verbose: boo
             continue
         s = pd.concat(parts)
         s = s.groupby(s.index).mean().sort_index()
-        out[str(st)] = s[(s.index >= t_start) & (s.index <= t_end)]
+        s = s[(s.index >= t_start) & (s.index <= t_end)]
+        # 补齐成完整 15 分钟网格：整天缺失的地方留 NaN。不补的话索引里直接没有这些点，
+        # matplotlib 会从缺口前一点拉一条直线连到后一点，看起来像有数据。
+        if not s.empty:
+            s = s.reindex(pd.date_range(s.index[0], s.index[-1], freq=STEP))
+        out[str(st)] = s
     if verbose:
         if miss_day:
             print(f"  [hist-raw] no {WIDE_FILENAME} for {len(miss_day)} date(s): "
@@ -107,6 +116,9 @@ def load_raw_history(root, stations, t_start, t_end, tjlx: int = 1, verbose: boo
                   f"available: {have[:15]}{' ...' if len(have) > 15 else ''}")
         for st, s in out.items():
             if len(s):
-                print(f"  [hist-raw] {st}: {len(s)} pts  {s.index[0]:%Y-%m-%d %H:%M} -> "
-                      f"{s.index[-1]:%Y-%m-%d %H:%M}  range [{s.min():.4g}, {s.max():.4g}]")
+                n_gap = int(s.isna().sum())                  # 网格里的空洞：缺测点 + 整天缺失
+                gap = f"  ({n_gap} missing -> line broken there)" if n_gap else ""
+                rng = (f"[{s.min():.4g}, {s.max():.4g}]" if s.notna().any() else "[all missing]")
+                print(f"  [hist-raw] {st}: {int(s.notna().sum())} pts  {s.index[0]:%Y-%m-%d %H:%M} -> "
+                      f"{s.index[-1]:%Y-%m-%d %H:%M}  range {rng}{gap}")
     return out
