@@ -154,11 +154,37 @@ GHI' = clip(K_t · k, 0, --cf-kt-max) · GHI_cs  白天
 
 ## 用法
 
+### 跑批脚本 `run_short.sh`
+
+不想记参数就用它,六个模式:
+
+```bash
+./run_short.sh              # mock：现产 mock 数据再跑全链路，不需要模型，用来验环境
+./run_short.sh basic        # 只跑基础分析（input + predict）
+./run_short.sh nanwang      # 加 --info-csv：南网口径 + factor 扫描 + city
+./run_short.sh cf           # 加 --counterfactual：GHI 换真值的 oracle 归因（需模型）
+./run_short.sh kt           # 加 --cf-kt-scale：K_t 乘性扫描（需模型）
+./run_short.sh full         # cf + kt 一起
+```
+
+路径改脚本里的 CONFIG 段,或用环境变量临时覆盖任意一项
+（`INPUT` / `PREDICT` / `INFO` / `OUT` / `DATE` / `CKPT` / `CONFIG` / `INFER_DIR` / `CF_INPUT` / `KT` / `HIST_ROOT` / `PY`）:
+
+```bash
+INPUT=/data/in.parquet PREDICT=/data/pred.parquet INFO=/data/info.csv ./run_short.sh nanwang
+CKPT=/m/ckpt CONFIG=/m/cfg.yaml INFER_DIR=/m KT=0.8,0.9,1.1,1.2 ./run_short.sh full
+```
+
+模式之后的参数原样透传给 `station_analysis_short.py`:`./run_short.sh nanwang --drop-night --worst-only 5`。
+脚本会先查文件在不在、`cf`/`kt`/`full` 的三件套给没给,再把完整命令行打出来,跑完列产物清单。
+
+### 直接调
+
 ```bash
 python3 station_analysis_short.py --input input.parquet [--predict predict.parquet] --out-dir out \
                                        # --predict 仅在开 --counterfactual 时可省略
   [--drop-night --night-end-hour 5]    # 去掉每天 00:00–05:00（RMSE 也按去掉后算）
-  [--tick-hours 1] [--step-min 15]     # x 轴刻度间隔 / list 步长
+  [--tick-hours 1]                     # x 轴刻度间隔（list 步长锁死 15min，不可配）
   [--feature-pairs "GHI_SOLARGIS_predict:GHI_real_future:GHI,ssrd_pos_1_predict:GHI_real_future:ssrd1"]
   [--top-n 30] [--mad-k 3] [--capacity "st1:500,st2:5"]        # 总览：榜单条数 / 离群阈 / 装机
   [--info-csv info.csv]  # 或 --info；每站 GCCAPCITY/GCCAPACITY → 南网 nanwang_official 指标 + city 列。
@@ -235,6 +261,7 @@ CSV**；info-csv 缺某站 → 该站告警跳过。
 ├── station_analysis_ultra_short.py  # 超短期入口：argparse + 主流程
 ├── inference.py                     # 本地推理（反事实用），独立于本包
 ├── make_mocks.py                    # 生成 mock_input/mock_predict.parquet + mock_info.csv
+├── run_short.sh                     # 短期跑批：mock / basic / nanwang / cf / kt / full 六个模式
 └── pvcore/
     ├── timeseries.py      list 单元格展平（正向/反向）、夜间与窗口掩码、交集对齐 _aligned、并集展示 _display*
     ├── metrics.py         ★ 全部指标：rmse / nrmse_pct / resolve_cap / pooled_rmse / hourly_nrmse /
