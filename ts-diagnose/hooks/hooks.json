@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Write|Edit",
+        "hooks": [
+          {"type": "command", "command": "python3 \"<PKG>/hooks/stage_probe.py\" 2>/dev/null || true", "timeout": 10}
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {"type": "command", "command": "python3 \"<PKG>/hooks/gate_guard.py\"", "timeout": 15}
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {"type": "command", "command": "python3 \"<PKG>/hooks/orient_reminder.py\" 2>/dev/null || true", "timeout": 5}
+        ]
+      }
+    ]
+  }
+}
