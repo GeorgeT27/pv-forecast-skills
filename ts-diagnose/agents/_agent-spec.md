@@ -10,6 +10,7 @@ Task 3–7 写卡片时照本文件的模板实例化；写完必须过 `scripts
 | `producer` | 有 `produces`、无任何 `pause_after`、无结论阶段 | 全部生产阶段，跑到产物落盘 | 无（产物落盘即返回） | `produces` 必须是已知产物之一；playbook 全部 stage 都不得有 `pause_after` |
 | `compute` | 至少一个 `subagent_ok:true` 阶段、且有 `pause_after` | 从 stage 0 起连续到并包含第一个 `pause_after` 的「计算区间」 | 区间终点即交回主 agent | `compute_stages` 区间内每个 stage 在 playbook 里必须 `subagent_ok:true`；区间内必须存在至少一个 `pause_after:true` 的 stage；结论阶段（`subagent_ok:false`）不进区间 |
 | `compute-fine` | 无任何 `subagent_ok:true` 阶段、无 `pause_after`（目前只有 subset-influence） | 不整段交接；只认领主 agent 逐次指派的**一个**具名重活脚本 | 无整段停顿，每个脚本工跑完即回 | playbook 全部 stage 都不得有 `subagent_ok:true`；`compute_stages` 字面值固定为 `"scripts"` |
+| `worker` | 有 `subagent_ok:true` 的重训/评估型阶段，且这些阶段的工作单元是「一条配置 + ≥3 种子」 | 不整段交接；每次只执行主 agent 指派的一条任务，回一张 receipt | 每条任务即回 | `compute_stages` 固定 `"scripts"`；`serves_stages` 列出的 stage 必须 `subagent_ok:true`；输出契约含 `receipt_line`；文件名 `<playbook>-worker.md` 或 `<playbook>-baseline.md` |
 
 `compute` 卡片若在结论阶段之后仍有 `subagent_ok:true` 的变体阶段（如 feature-importance 的 5–6），
 在 frontmatter 填 `on_demand_stages`；这些阶段停顿后由主 agent 按用户点名再派同一张卡片，

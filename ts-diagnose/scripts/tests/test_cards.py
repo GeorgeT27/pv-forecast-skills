@@ -15,7 +15,8 @@ FORBIDDEN_BODY = ["## 逐阶段菜谱", "### Stage", "## 2. 逐阶段"]
 SIX_SECTIONS = ["你是谁", "输入", "步骤", "红线", "输出契约", "停顿"]
 
 def _card_paths():
-    return sorted(p for p in glob.glob(os.path.join(AGENTS_DIR, "*-compute.md")))
+    pats = ("*-compute.md", "*-worker.md", "*-baseline.md")
+    return sorted(p for pat in pats for p in glob.glob(os.path.join(AGENTS_DIR, pat)))
 
 def _split(path):
     text = open(path, encoding="utf-8").read()
@@ -33,10 +34,13 @@ def _stage_range(spec):
 def test_card_conforms(card):
     fm, body = _split(card)
     pid = fm["playbook"]
-    assert fm["name"] == f"{pid}-compute", "命名律：name == <playbook>-compute"
-    assert os.path.basename(card) == f"{pid}-compute.md", "文件名 == name.md"
+    role = fm["name"].rsplit("-", 1)[1]
+    assert role in {"compute", "worker", "baseline"}, "name 须以 -compute/-worker/-baseline 结尾"
+    assert fm["name"] == f"{pid}-{role}", "命名律：name == <playbook>-<role>"
+    assert os.path.basename(card) == f"{fm['name']}.md", "文件名 == name.md"
     mode = fm["mode"]
-    assert mode in {"producer", "compute", "compute-fine"}
+    assert mode in {"producer", "compute", "compute-fine", "worker"}
+    assert (mode == "worker") == (role in {"worker", "baseline"}), "worker 模式与 -worker/-baseline 后缀一一对应"
     tools = fm.get("tools") or []
     assert "AskUserQuestion" not in tools, "工具锁死：卡片不得含 AskUserQuestion"
 
@@ -87,6 +91,13 @@ def test_card_conforms(card):
                 assert all(lo <= sid <= hi for sid in producing), (
                     f"{pid}: produces manifest/marker written at stage(s) {producing}, "
                     f"outside compute range {lo}-{hi}")
+    elif mode == "worker":
+        assert str(fm.get("compute_stages")) == "scripts"
+        served = fm.get("serves_stages") or []
+        assert served, "worker 须声明 serves_stages"
+        for sid in served:
+            assert by_id[str(sid)].get("subagent_ok") is True, f"worker 服务的 stage {sid} 必须 subagent_ok:true"
+        assert "receipt_line" in body, "worker 输出契约须含 receipt_line"
     else:  # compute-fine
         assert not any(s.get("subagent_ok") for s in stages), "compute-fine 的 playbook 不应有 subagent_ok:true 阶段"
         assert str(fm.get("compute_stages")) == "scripts"
