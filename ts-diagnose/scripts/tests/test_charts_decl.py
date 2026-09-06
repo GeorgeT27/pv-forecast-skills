@@ -14,10 +14,7 @@ import engine_common as ec  # noqa: E402
 ENGINE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ORIENT = os.path.join(ENGINE, "scripts", "orient.py")
 
-# 入口闸（五件套）恒问：training_log/truth/train_y/checkpoint/model_code。
-# 这些 orient e2e 测试关心的是图表选择门本身，不是材料盘点——预先把五件套的其余
-# 四项（truth 已由各用例自带 present 记录覆盖）落成 absent-confirmed+source=user，
-# 让它们越过入口闸，回到闸后的图表门行为。
+# 这些 orient e2e 测试关心图表选择门；保留的额外材料记录仅作兼容夹具。
 FIVE_OK_REST = {mid: {"status": "absent-confirmed", "source": "user"}
                for mid in ("training_log", "train_y", "checkpoint", "model_code")}
 # predict/truth 是 demo-charts 的 required 材料，present 记录需补实质字段才过闸。

@@ -89,7 +89,7 @@ upgrade_rule: "总差距方向与主导切片方向一致（slice-gap 仅在 wor
 
 首要陷阱：**排名 ≠ 机制**。Stage 0/1 全部是事实阶段，禁止使用机制语言。机制假设只能在 Stage 2 产生：由模型档案的桥接假设与图 JSON 证据合流得出，产出的是可否证的假设账本，不是结论——机制判定移交验证主脊做干预确认。
 
-量纲纪律：点级 pool 口径（error-breakdown/horizon 等：所有点混在一起算）与行 RMSE 均值口径（rolling-stability/oracle-gap 等：先按行算 RMSE 再取均值），两族数值不可直接比大小，只比走势与排名。
+量纲纪律：比较两端必须同指标公式、同聚合口径、同测量目标；不满足时只比各自内部走势/排名，并明确不可直接比值。delta 符号约定写入产物，全文一致。
 
 第四陷阱：**多图同源 ≠ 多证据**。多张图方向一致，只说明同一证据维度内部自洽（mechanisms.md §2「证据维度」），不构成第二条独立证据。总差距要登记进假设账本，还必须过 cross-dim-stability 的正交切分稳定性检查（判据见 frontmatter `upgrade_rule`）。
 
@@ -98,7 +98,7 @@ upgrade_rule: "总差距方向与主导切片方向一致（slice-gap 仅在 wor
 长表与对齐由 setup 产物提供：`<setup>` = config.products.setup.workdir，alignment_report.json 与各长表都在这个目录里。本 playbook 不再写适配器。
 
 ### Stage 0 总差距事实
-输入：`<setup>/predictions.csv` + `<setup>/alignment_report.json`。先读 dropped 统计；缺窗不对称时，后续结论必须声明"只在对齐子集上成立"。
+输入：`<setup>/predictions.csv` + `<setup>/alignment_report.json`。先读 dropped 统计；缺窗不对称时，后续结论必须声明"只在对齐子集上成立"。关于配置对称的陈述须引用 experiment_config/training_log 摘录；未核实项明写 unknown。
 
 **metric_table 产物复用规则**：metric_table 产物 built/linked，且其 `metrics_summary.json` 的 `caliber` 与本次 `metric-caliber` 答案一致 → 直接复用其汇总值作为指标表，不重算。口径不一致 → 视同 absent：照常自算，并在 FINDINGS 注明存在另一口径的指标表。
 
@@ -130,7 +130,7 @@ done：gap_summary.json 落盘。
 参数补充：worst-slice-compare 与 cross-dim-stability 要传 `--focal-model`，值 = model-set 答案里最关注的那个模型。worst-slice 的置换基线默认开启：`--n-perm 200 --perm-seed 0`。改种子等于改期望结果，必须连 golden 一起改。
 
 广谱图（error-breakdown/intraday-profile 等）不在默认集里：已有 chart_sweep 产物（体检类 playbook 跑过）→ 直接复用其图 JSON 做判读；没有 → 需要时经图表选择门从可加画池加画，或先跑体检类 playbook。
-判读：读各图 JSON 的描述符（见各 recipe 的判读节），产出 FINDINGS.md 现象清单——只写「现象」；因缺材料跳过的图逐条注明「因缺 <材料> 未画」。
+判读：读各图 JSON 的描述符（见各 recipe 的判读节），产出 FINDINGS.md 现象清单——只写「现象」；因缺材料跳过的图逐条注明「因缺 <材料> 未画」。已有真实输入上的单开关 receipt 也在此按 switch、逐种子 delta、适用域记录为实现级干预事实，不解释源码组件或跨域迁移。
 done：charts/*.json 至少一个 + INDEX.md + FINDINGS.md 含「现象」→ **pause_after 停顿**。
 
 ### Stage 2 机制归因（变体，material:model_code 解锁）
@@ -151,11 +151,15 @@ done：charts/*.json 至少一个 + INDEX.md + FINDINGS.md 含「现象」→ **
 
 **切片认领规则（硬规则）**：`slice_map` 必须收录 Stage 1 全部超噪声底的显著切片，覆盖每个已切维度（时段、波动分位、lead、单元/通道、时间段），不得只保留单一维度。其中方向与总差距相反（对照模型显著占优）的每个切片，必须被至少一条假设的 `falsifiable_pred` 显式认领——写明干预后该切片 delta 的预期方向；无假设可认领的，逐条写进顶层 `uncovered` 列表并注明「无假设认领」——未认领切片只用 `uncovered` 这一个字段名表达，不得另造同义字段（如 `not_registered`），下游验证按此字段核对。每条押注方向的假设，登记时同步登记互补假设（编号 `H<n>b`）：同 component、同干预，`falsifiable_pred` 为原方向取反——组件移除使对手模型的劣势切片追平或反超，即确认「该组件损害这些切片」。互补假设的 confirm/kill 判据各自独立成文，`provenance` 同标 `"pre-registered"`，判定共用同一次干预的 receipt，不占新预算。
 
-declined 时：本阶段解锁但产不出合规账本——`component` 必须锚定 model_profile 的具体组件，无档案锚不了。FINDINGS.md 记「机制归因缺模型档案，账本未产出」，流程止于 Stage 1 现象清单，移交时如实说明缺档案。
+Stage 2 已因 `model_code` 解锁、但 `model_profile` declined 时：不能产出源码锚定的机制账本。若已有真实输入上的单开关 receipt，最小账本只登记其机制解释为 `component="unknown"`、`status="undecided"`、`provenance="switch-label-only"` 的待验假设，并附 switch、逐种子 delta、适用域与 receipt；receipt 本身仅作为限该域/配置的实现级干预事实，不升级为源码组件机制或跨域结论。没有 receipt 的架构先验同样停在待验假设。若 `model_code` 与 `model_profile` 均缺，Stage 2 不解锁；receipt 只在 Stage 1 的事实清单中记录。
 
 按 `discriminating_power` 降序排列。产出写回 FINDINGS.md：登记选中假设的 id/claim/component/falsifiable_pred/discriminating_power——状态只用「假设」保留字，不写"已验证"类字样。
 
-done：`hypothesis_ledger.json` 落盘、`hypotheses` 数组非空（`validate_ledger` 对无 `hypotheses` 键的畸形账本不报错，是已知盲区——必须人工核对非空，不能只看校验通过）、过
+若 Stage 1 没有任何显著切片，不编造机制；落一个 `component="unknown"`、
+`status="undecided"`、`provenance="no_candidate"` 的占位条目，并在 FINDINGS 标明
+“无可验证假设”。
+
+done：`hypothesis_ledger.json` 落盘、`hypotheses` 数组非空、通过
 `python3 <ENGINE>/scripts/hypothesis_ledger.py hypothesis_ledger.json`，FINDINGS.md 出现「假设」→ pause_after 停顿，移交验证主脊。
 
 ## 3. 停顿点与汇报
@@ -173,7 +177,7 @@ Stage 1 各图相互独立，可以并发：每张图一个子代理。brief 只
 ## 5. 材料降级说明
 
 - predict / truth 缺：setup 产物建不起来，本 playbook 连带不可做——向用户说明后终止。
-- model_code 缺：Stage 2 锁死（变体不解锁）——流程止于 Stage 1 现象清单，机制假设账本不产出，移交时如实说明缺 model_code。
+- model_code/model_profile 缺：不产源码锚定账本；已有干预事实由 Stage 1 保留并标清域/配置边界，纯架构叙事停在待验假设。
 - features 缺：D 组三图跳过，输入侧归因缺席（现象清单注明）。
 - train_y 缺：train-test-drift 跳过。"世界变了"这类候选解释只剩一个弱替代：y-vs-feature-mapping 的期内 split。
 - training_log / experiment_config 缺：不影响本 playbook 主线（它们只服务 Stage 2 的旁证），缺席仅记录。

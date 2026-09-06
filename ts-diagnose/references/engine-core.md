@@ -57,12 +57,13 @@ AskUserQuestion 问用户要不要拿某条实验线预填；同意就把实验�
 
 1. orient 报 ✗ 的问题，在其 stage 开工前**必须** AskUserQuestion。同一阶段的多个
    未答题合并成一次提问，每题带上 playbook 声明的 options。
-2. **恒问五类**——无论 playbook 有没有声明，遇到就必须问：
+2. **恒问五类**——任务实际用到且信息不明时必须问：
    ① 数据 schema / 单位 / 口径不明；
    ② 成功判据没定义；
    ③ 证据不足以升级结论（问"接受降级还是补证据"，把补证据的成本列出来）；
    ④ 破坏性或昂贵操作（GPU 重训、覆盖已有产物）；
    ⑤ 多个候选文件/版本，不知道选哪个。
+   材料入口只阻塞 playbook 声明的 required；optional 或未激活变体材料按需盘点。
 3. 有 default 的问题可以不问，但采用默认必须在 PROGRESS.md 记一行"按默认"。
 4. 答案落 `diagnose_config.json` 的 questions 块：
    `{"<qid>": {"answer": "...", "source": "user", "date": "YYYY-MM-DD"}}`。
@@ -180,8 +181,7 @@ absent-confirmed 时，验证主脊跳过，循环退化为"生成器吐带标�
 1. **三道门**——结论阶段逐条过（orient 在产 CONCLUSION.md 的阶段会打印这份清单；
    三门全过，才可在 FINDINGS.md 标「已证实」）：
    - **门 1 稳健性**：配对检验通过，且剔除最极端 10% 样本后方向不变；
-   - **门 2 假设登记**：先在 HYPOTHESES.md 写下预测，**然后**才看数——禁止看完数
-     再编故事；
+   - **门 2 假设登记**：先在 playbook 的假设账本写下预测与 provenance，**然后**才看数；
    - **门 3 反驳门**：替代解释逐条排除；排不掉的，结论显式降级（含 playbook 特有的
      反驳门条目）。
 

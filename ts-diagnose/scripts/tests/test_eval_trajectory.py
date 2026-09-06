@@ -80,6 +80,25 @@ def test_maybe_emit_noop_without_env(tmp_path, monkeypatch):
     assert list(tmp_path.iterdir()) == []
 
 
+def test_maybe_emit_returns_event_count(tmp_path, monkeypatch):
+    """返回值是「埋点确认行」的数据源:开了就报数,让生效与否可见。"""
+    log = tmp_path / "traj.jsonl"
+    monkeypatch.setenv(et.ENV_VAR, str(log))
+    n = et.maybe_emit(None, _state())
+    assert n == len(log.read_text(encoding="utf-8").strip().splitlines())
+    assert n > 0
+
+
+def test_maybe_emit_returns_zero_without_env(monkeypatch):
+    monkeypatch.delenv(et.ENV_VAR, raising=False)
+    assert et.maybe_emit(None, _state()) == 0
+
+
+def test_maybe_emit_returns_zero_on_io_error(monkeypatch):
+    monkeypatch.setenv(et.ENV_VAR, "/nonexistent-dir-xyz/traj.jsonl")
+    assert et.maybe_emit(None, _state()) == 0
+
+
 def test_maybe_emit_swallows_io_error(monkeypatch, capsys):
     monkeypatch.setenv(et.ENV_VAR, "/nonexistent-dir/x/y/traj.jsonl")
     et.maybe_emit(None, _state())  # 不应抛

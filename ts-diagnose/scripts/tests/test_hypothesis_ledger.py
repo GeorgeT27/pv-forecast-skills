@@ -29,6 +29,11 @@ def test_refuted_requires_kill_receipt():
     errs = hl.validate_ledger({"slice_map": [], "hypotheses": [h]})
     assert any("kill_receipt" in e for e in errs)
 
+def test_no_candidate_is_undecided_only():
+    h = dict(VALID["hypotheses"][0], provenance="no_candidate", status="confirmed")
+    errs = hl.validate_ledger({"slice_map": [], "hypotheses": [h]})
+    assert any("no_candidate" in e for e in errs)
+
 
 def test_empty_object_rejected():
     """畸形账本：顶层无 hypotheses 键，不得静默视为合法（原 bug：{}.get(...) == [] → 无错误）。"""

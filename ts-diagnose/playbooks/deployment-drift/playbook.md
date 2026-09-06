@@ -166,7 +166,7 @@ done：charts/*.json 至少一个 + FINDINGS.md 含「现象」→ **pause_after
 done：cause_screen.json 落盘。
 
 ### Stage 4 机制归因（变体，material:model_code 解锁）
-输入两份：model_profile 产物（upstream 机制）——状态 built/linked 时用其工作目录下 models.md 里的桥接假设，declined 时本阶段虽然解锁也只能停在现象层级、结论要声明缺档案；以及 Stage 2/3 的产物。
+输入两份：model_profile 产物（upstream 机制）——状态 built/linked 时用其工作目录下 models.md 里的桥接假设；declined 时登记带“代码锚点未核验”的未验证假设，不写源码机制结论；以及 Stage 2/3 的产物。
 菜谱：逐条桥接假设 → 找出它预言的图形态 → 与实际图 JSON 描述符对照 → 按 upgrade_rule 判定是否升级。产出写回 FINDINGS.md，状态只用保留字。
 done：FINDINGS.md 出现「假设」。
 
@@ -203,7 +203,7 @@ CONCLUSION.md 模板（按此顺序写）：口径与对齐声明 → 退化判�
 
 - predict / truth 缺（absent-confirmed）：本 playbook 不可做。没有降级路径，向用户说明后终止。
 - features 缺：Stage 3 锁死，诱因证据线缺席，结论上限「现象」（见 §3），CONCLUSION 里要显式声明。
-- model_code 缺：Stage 4 锁死，机制归因缺席，升级只能依赖外部证据。
+- model_code/model_profile 缺：Stage 4 只能登记未验证假设；没有代码锚点时不写源码机制结论。
 - train_y 缺：train-test-drift 跳过。"世界变了"这类候选解释只剩一个弱替代：y-vs-feature-mapping 的期内 split。
 - training_log / experiment_config / data_profile 缺：只影响旁证与事件核验，缺席记录即可。
 

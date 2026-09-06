@@ -2,6 +2,7 @@
 
 <!-- 每行：日期 | 改了哪个文件的哪节 | 触发这次改动的反馈原文（一句话） | 为什么这么改 -->
 
+- 2026-08-31 | conclusion_gate 规则 5+6（溯源闭环+证据清单，同规则 4 的 produces_ablation_receipts 作用域，6 个非 pilot playbook 零破坏）：每张 receipts/H*.json 必须是 ablation_verdict --out 的完整 schema（produced_by+script_sha256 在盘且指纹相符、seeds≥3），provenance.code.serves 必须挂回对应假设，intervention_plan 已执行条目 script 必须回填；CONCLUSION 必带 `## 证据清单` 节逐条点名证据文件、盘上每张 receipt（含被否证的）必列防摘樱桃。playbook Stage 4/§6 同步 | 自进化第 0 步：C1 拼图 16 条 gap 全部源于"引用行为靠自觉"（H2 手搓 10 字段薄回执、8 个孤儿脚本、结论无证据清单） | 把 Stage 3/4 已有散文纪律变成机器拦截；轨迹图（skill-evolve graph/build.py）按这些字段确定性收割依赖边，gap 归零后反思不再靠读文件猜依赖
 - 2026-08-03 | 新增 Layer -1 批量编排层（scripts/batch.py + references/batch-orchestration.md）：同一份数据一次并行诊断多条 level-2 playbook，生产者跑一次、提问一次、计算 fan-out 到事实提取、合并停顿、结论仍主 agent 落笔 | 用户问"如何同时跑多个 playbook、subagent 无提问权下消息如何回传" | subagent 无提问权是硬约束，唯一解是把交互全提到主 agent 的两个合并停顿点，重活各吃各的 256k
 - 2026-07-14 | 首版落地（机制层 + SKILL + references 五篇 + playbook 三个） | 用户："现有技能针对特有情况写死，需要提取 workflow 做泛化技能，不确定时必须问用户，且要能固化回专用技能" | 引擎+playbook+profile 三层：workflow 与领域解耦；设计 spec 见 docs/superpowers/specs/2026-07-14-ts-diagnose-engine-design.md
 - 2026-07-14 | 验证记录 | —— | 机制层 pytest 23 项全绿；training-sufficiency 合成数据影子验证全程走通（植入效应 m03/m08 均召回、五个验证步 PASS、必答题零跳过）；robustness / feature-importance orient dry-run 通过；crystallize 固化演练三步验证（冷启动 --profile / 快照冒烟 / 影子重跑 Stage 0 一致）全 PASS

@@ -35,13 +35,38 @@ def find_workdir(cwd):
     return os.path.dirname(max(cfgs, key=os.path.getmtime)) if cfgs else None
 
 
+def _traj_log_real():
+    """轨迹日志自身的真实路径(未设 env 时 None)。"""
+    p = os.environ.get(ENV_VAR)
+    try:
+        return os.path.realpath(p) if p else None
+    except OSError:
+        return None
+
+
 def fingerprint(workdir):
-    """relpath → [mtime_ns, size]，只 stat 标志性小文件，不碰训练产物目录。"""
+    """relpath → [mtime_ns, size]，只 stat 标志性小文件，不碰训练产物目录。
+
+    轨迹日志若落在 workdir 内必须排除:否则每写一条事件就改变指纹,下次调用又报
+    一条 artifact_write 指向日志自己 → 永不短路、事件无限自增,真实段边界被淹没。
+    """
     fp = {}
+    traj = _traj_log_real()
+
+    def _is_traj(full):
+        if not traj:
+            return False
+        try:
+            return os.path.realpath(full) == traj
+        except OSError:
+            return False
 
     def _stat(rel):
+        full = os.path.join(workdir, rel)
+        if _is_traj(full):
+            return
         try:
-            st = os.stat(os.path.join(workdir, rel))
+            st = os.stat(full)
             fp[rel] = [st.st_mtime_ns, st.st_size]
         except OSError:
             pass
@@ -60,7 +85,7 @@ def fingerprint(workdir):
         for e in os.scandir(workdir):
             if e.is_file() and e.name.endswith(ROOT_SUFFIXES) \
                     and not e.name.startswith(".") and e.name != "diagnose_state.json" \
-                    and e.name != "diagnose_config.json":
+                    and e.name != "diagnose_config.json" and not _is_traj(e.path):
                 fp[e.name] = [e.stat().st_mtime_ns, e.stat().st_size]
     except OSError:
         pass
@@ -231,7 +256,36 @@ def selftest():
         assert any(e["type"] == "config_changed"
                    and "intervention-budget-confirmed" in e["added_keys"]
                    for e in evs4), evs4
+    _selftest_traj_log_excluded()
     print("stage_probe selftest ok")
+
+
+def _selftest_traj_log_excluded():
+    """回归:轨迹日志落在 workdir 内不许进指纹,否则事件无限自增(2026-08-24)。"""
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        log = os.path.join(td, "trajectory.jsonl")
+        old = os.environ.get(ENV_VAR)
+        os.environ[ENV_VAR] = log
+        try:
+            json.dump({"playbook": "pb"},
+                      open(os.path.join(td, "diagnose_config.json"), "w"))
+            json.dump({"playbook": "pb", "current_stage": 0, "stages": {}},
+                      open(os.path.join(td, "diagnose_state.json"), "w"))
+            evs, st = diff_events(None, td)
+            assert [e["type"] for e in evs] == ["segment_enter"], evs
+            # 模拟 hook 把事件写进 workdir 内的日志,再跑一轮:必须零事件
+            with open(log, "a", encoding="utf-8") as f:
+                for e in evs:
+                    f.write(json.dumps(e, ensure_ascii=False) + "\n")
+            evs2, _ = diff_events(st, td)
+            assert evs2 == [], f"轨迹日志自触发未修复:{evs2}"
+            assert "trajectory.jsonl" not in st["fingerprint"], st["fingerprint"]
+        finally:
+            if old is None:
+                os.environ.pop(ENV_VAR, None)
+            else:
+                os.environ[ENV_VAR] = old
 
 
 if __name__ == "__main__":

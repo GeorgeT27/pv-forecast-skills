@@ -40,18 +40,16 @@ stages:
     prereqs:
       - desc: 假设已选定
         check: "stage:1"
-      - desc: 模型档案（含 ablation_switches）就绪
-        check: "product:model_profile"
     pause_after: true
     subagent_ok: true
   - id: 3
-    name: 执行与判定（强制 subagent 外包）
+    name: 执行或复核与判定
     done_when:
       artifacts: ["verdict_summary.json"]
     prereqs:
       - desc: 干预计划已设计并停顿汇报
         check: "stage:2"
-      - desc: 用户已确认花费本轮训练预算
+      - desc: 用户已确认新跑或仅复核
         check: "question:intervention-budget-confirmed"
     subagent_ok: true
   - id: 4
@@ -63,8 +61,8 @@ stages:
         check: "stage:3"
     subagent_ok: false
 materials:
-  required: [predict, truth, checkpoint, experiment_config]
-  optional: [training_log, model_code]
+  required: [predict, truth]
+  optional: [checkpoint, experiment_config, training_log, model_code]
 questions:
   - id: noise-floor
     stage: 0
@@ -82,9 +80,9 @@ questions:
     skip_if: "artifact:hypothesis_ledger.json"
   - id: intervention-budget-confirmed
     stage: 3
-    ask: "已核对 intervention_plan.json 里的干预计划（单变量、≥3 种子、双向可判、预算阶梯），同意花费其中的训练预算了吗？"
-    why: "干预＝真实重训，烧钱烧时间；花费前必须显式确认，不许 subagent 自行开跑"
-    options: ["确认，开始执行", "暂缓，先改计划"]
+    ask: "如何执行 intervention_plan.json：新跑干预，还是只复核已有 receipt？"
+    why: "新跑需要确认训练预算；复用 receipt 不得重复训练"
+    options: ["确认并执行新干预", "仅复核已有 receipt", "暂缓"]
     default: null
 ---
 
@@ -96,7 +94,7 @@ questions:
 
 **三条腿纪律（硬规则）**：切片测量（差异在哪、是否超噪声底）+ 机理假设（指向具体组件、可否证、干预前登记）+ 干预验证（实测 delta，判定确认/否证/未决）。三条腿不齐——尤其是没有干预验证——不得出现任何架构/组件因果表述。conclusion_gate 在结论闸层面机械拦截这条（`CAUSAL_RE` 命中但无 `## 消融证据` receipt → 直接 exit 1），但机械拦截是最后一道防线，不是免检牌：写 CONCLUSION.md 之前，主 agent 自己先按本节纪律逐条自查。
 
-首要陷阱——**池化平局 ≠ 无差异**。池化指标差距小于噪声底，不代表两个模型没有真实差异，只代表还没有切到能看见差异的维度。已有实证：池化差距 0.0073 < 噪声底 0.0102，但切到 lead time 维度后近端 lead 1-24 的 z 达 8.0、切到 hour-of-day 后午后 13-15 点的 z 达 9.1——如果在 Stage 0 看到"池化差距不显著"就停手写"无差异"结论，就是本 playbook 最容易犯、也是危害最大的错误。**Stage 0 永远不许因池化平局而终止**，必须转入切片。
+首要陷阱——**池化平局 ≠ 无差异**。池化差距低于噪声底只说明要继续切片；Stage 0 不得据此终止或写“无差异”。
 
 第二陷阱——**机理叙事无干预支撑就是猜测，且往往猜得很像真的**。"patch 保留时间局部性"这类假设读起来专业、流利、符合直觉，但在实证案例里 30 分钟内就被干预直接否证。叙事的说服力和它的真实性没有关系；只有 delta 数字有关系。
 
@@ -108,13 +106,17 @@ questions:
 
 ### Stage 0 现象定位（噪声底核验 + 切片测量）
 
-输入：`<setup>` = config.products.setup.workdir 下的规范长表（predict/truth 对齐、时间索引）；同配置 ≥3 种子的基线指标（噪声底来源）。
+输入：`<setup>` = config.products.setup.workdir 下的规范长表（predict/truth 对齐、时间索引）；同配置 ≥3 种子的基线指标（噪声底来源）。setup 的规范长表本身未固定 `seed` 列；跨种子分析必须使用用户明确提供的 seed/run 映射或已有逐种子产物，禁止把 model 名称臆当 seed。没有可识别的 seed 维度且没有已有噪声底/receipt 时，只能登记缺口，不能现算噪声底。
 
 **第一步，噪声底**。`noise-floor` 问题答"已有数值"→ 直接落 `noise_floor.json`（自足：`{"metric":str,"config":str,"seeds":[...],"per_seed":[float,...],"mean":float,"std":float,"noise_floor_3sigma":float}`）。答"需现算"→ 用 checkpoint + experiment_config 起 ≥3 个基线种子重训（同配置、其余超参不变），走 subagent 外包（见 §5 Brief A），汇总每种子的口径指标，`noise_floor_3sigma = std(per_seed, ddof=1) * 3`。
 
 **第二步，池化对照，不许因平局停手**。若已有其他分析产出的池化差距数值，与噪声底对照：差距 < 噪声底**不是**"无差异"的证据，只说明要往下切片才能看见真实版图（§1 首要陷阱）。
 
-**第三步，切片测量**。写 `analysis_scripts/build_slice_metrics.py`：从各种子的预测/真值长表按标准维度分桶算口径指标，产出 slice_zcheck.py 的输入长表（列：`slice,seed,model_a,model_b`）。标准维度——lead time 分桶、预测时刻（hour-of-day）、变量/通道、目标窗口波动性分位；领域可扩展（光伏：辐照度分档、晴雨天）。周期性维度（hour-of-day 等）按自然最小粒度分桶测量（逐小时）；汇报时只许合并相邻且同号的桶，合并桶不得跨越符号翻转点。非周期维度用等宽分桶时逐桶做细分核查：把桶对半细分重测，两个子桶符号相反、或任一子桶单独过阈而母桶未过 → 该维度改用子桶粒度进入切片版图。母桶判 `~noise` 不代表其子区间无真实差异，未过细分核查的粗桶不得写成该区间的最终判定。**脚本验证步**（本脚本是运行时现场生成的数据整形脚本，不是共享引擎脚本，不接入 gen_gate——按 spec §4.2 用对账代替）：核对产出行数 = 切片数 × 种子数，每个 (slice, seed) 恰出现一次；抽 2 行手算核对与源文件一致，记 PROGRESS.md。
+**第三步，切片测量**。写 `analysis_scripts/build_slice_metrics.py`：从各种子的预测/真值长表按
+预先登记的时间、horizon、通道或目标状态分桶，产出 `slice,seed,model_a,model_b` 长表。
+切片定义只能依赖真值、时间或外生变量，不能依赖模型误差；周期桶按自然最小粒度测量，
+非周期桶在符号变化或过阈时细分。合并只允许相邻且同号的桶。验证行数守恒、每个
+`(slice, seed)` 唯一，并抽查 2 行与源数据一致，结果记 PROGRESS.md。
 
 跑：
 ```bash
@@ -130,24 +132,22 @@ done：`noise_floor.json` + `slice_zcheck.json` 落盘，FINDINGS.md 出现「�
 
 ### Stage 1 假设账本校验与选择
 
-输入：Stage 0 的切片版图；`model_profile` 产物（model-audit 产出的组件清单，供假设指向具体代码位置）。
+输入：Stage 0 的切片版图；可用的 `model_profile`；已有单开关 receipt 及其原计划。
 
-`ledger-path` 问题答"给出文件路径"→ 读入该 JSON。**先跑校验，再检查非空——两步缺一不可**：
+`ledger-path` 问题答"给出文件路径"→ 读入该 JSON。先跑校验，再核对 `hypotheses` 非空：
 ```bash
 python3 <ENGINE>/scripts/hypothesis_ledger.py <ledger-path>
 ```
-`validate_ledger` 对"顶层对象没有 `hypotheses` 键"这种畸形账本返回空错误列表（视为合法）——**这是已知的校验盲区，不是"账本没问题"的证明**。校验通过之后必须另外显式核对 `len(ledger.get("hypotheses", [])) > 0`；账本里一条假设都没有，视同没有账本，走"现场起草"分支。
+账本为空视同没有账本，走“现场起草”分支。若 Stage 0 没有任何 `verdict=="real"` 切片，
+不要编造候选；落一个 `component="unknown"`、`status="undecided"`、
+`provenance="no_candidate"` 的占位条目，并在 FINDINGS 标明“无可验证假设”。
 
 第三步，切片认领核对（硬规则）：把账本 `slice_map` 与 Stage 0 `slice_zcheck.json` 里 `verdict=="real"` 的切片逐条对照。每个 real 切片必须处于三种状态之一：①被某条假设的 `falsifiable_pred` 认领；②在账本里标注为某条已认领机制在另一维度的同源表现并写出对应关系；③登记进账本 `uncovered` 列表。方向与池化总差距相反的 real 切片，不认领就必须进 `uncovered`，不得留在隐性状态。`uncovered` 非空 → 回生成器补登记（干预执行前补的标 `provenance: "pre-registered"`），或把该切片写进结论的已知缺口。读入的账本若用其他字段名表达未认领切片（如 `not_registered`），先重命名为 `uncovered` 再继续核对，不得双名并存。
 
-`ledger-path` 问题答"现场起草"（或账本为空）→ 在切片版图基础上生成 2–3 条候选假设，每条必须：①指向 `model_profile` 里的具体组件；②给出可否证预测（"若干预组件 X，某切片的优势方向应当怎样变化"）；③标 `provenance: "pre-registered"`（本步骤发生在任何干预执行之前）；④claim 中的每一个断言都必须被本条的 confirm_criterion 或 kill_criterion 覆盖——没有判据覆盖的断言不得写进 claim：拆成独立假设（各自的 falsifiable_pred 与判据），或留在 FINDINGS.md 现象清单；假设判定为 confirmed 时，只有判据覆盖到的断言升级，未覆盖的断言不随行升级。每条押注方向的假设，登记时同步登记互补假设（编号 `H<n>b`）：同 component、同干预，`falsifiable_pred` 为原方向取反——组件移除使对手模型的劣势切片追平或反超，即确认「该组件损害这些切片」。互补假设的 confirm/kill 判据各自独立成文，`provenance` 同标 `"pre-registered"`，判定共用同一次干预的 receipt，不占新预算。指纹库只是生成器、不是结论器——下表是常见误差签名到候选组件的启发式映射，用来提速生成，不能替代干预验证：
+`ledger-path` 问题答"现场起草"（或账本为空）→ 在切片版图基础上生成 2–3 条候选假设，每条必须：①有档案时指向具体组件；无档案但有 receipt 时只锚定 switch，并标“代码锚点未核验”；无档案且无 receipt 时用 `component="unknown"`、标“代码锚点未核验”的 `undecided` 条目占位；②给出可否证预测；③标明实际 provenance，干预前登记才写 `"pre-registered"`；④claim 中每个断言都被 confirm/kill 判据覆盖，未覆盖的拆开或留在现象清单。每条押注方向的假设同步登记同 component、同干预、方向取反的互补假设 `H<n>b`，共用 receipt。指纹库只生成候选，不能替代干预验证：
 
-| 误差签名 | 候选组件方向 |
-|---|---|
-| 近端 lead 分离、远端一致 | 局部性/patch 粒度、位置编码 |
-| 跨变量场景下有分离、单变量场景下消失 | 跨变量注意力/通道混合 |
-| 特定时段（如爬坡段）分离 | 归一化/去趋势方式、激活饱和 |
-| 高波动分位分离、低波动分位一致 | 损失函数形状、抗噪结构（如趋势-季节分解） |
+候选组件必须来自 `model_profile` 的代码/配置锚点；没有锚点时只登记带作用域的待验
+假设，不用泛化的“签名→组件”表替代干预验证。
 
 按 `discriminating_power`（一次干预能区分几个候选假设）降序排列，写回 `hypothesis_ledger.json`（schema 见 `scripts/hypothesis_ledger.py` 顶部 `REQUIRED` 字段与 `scripts/tests/test_hypothesis_ledger.py::VALID`）。
 
@@ -157,7 +157,7 @@ done：`hypothesis_ledger.json` 落盘且非空、过 `validate_ledger`，FINDIN
 
 ### Stage 2 判别性干预设计
 
-输入：Stage 1 选中的最高判别力假设；`model_profile` 的 `ablation_switches`（component→switch→kind 三元组）。
+输入：Stage 1 选中的最高判别力假设；可用时读取 `model_profile.ablation_switches`。已有合规单开关 receipt 时，可复用其关联计划。
 
 菜谱：
 1. 在 `ablation_switches` 里查该假设 `component` 对应的条目。`kind=config-flag` → 直接可用现成参数；`kind=code-stub` → 需要新写干预代码（如置零/替换 stub），写清改动范围；`kind=not-intervenable` → 该假设**在当前代码库不可干预**，如实标注，不得强行绕过设计一个不对等的替代干预。
@@ -165,17 +165,19 @@ done：`hypothesis_ledger.json` 落盘且非空、过 `validate_ledger`，FINDIN
 3. **双向可判**：写清"什么结果算确认、什么结果算否证"——即预登记 `pred_direction`（`increase`/`decrease`，对应 `ablation_verdict.verdict()` 的方向参数）。设计阶段写不出否证判据的干预不合格，退回重设计。
 4. **预算阶梯**：先设计判别力最高的一个干预；单轮训练上限 ~10 次（如 4 个 switch × 3 种子内的裁剪组合）。是否追加取决于 Stage 3 的结果，不在本阶段一次性铺开。
 
-落 `intervention_plan.json`（自足：`[{"hypothesis_id":str,"component":str,"switch":str,"kind":str,"seeds":[...],"pred_direction":"increase"|"decrease","kill_criterion":str,"confirm_criterion":str,"script":null}]`）。`script` 设计时置 `null`，Stage 3 收到 receipt 后由主 agent 回填为执行该干预的 eval 脚本路径（如 `analysis_scripts/eval_H1.py`）——每条干预必须能从计划直接找到它的脚本。
+`model_profile` declined 时不设计新 switch：有可复核 receipt，就从原计划填同一结构，`script=produced_by`；没有 receipt，则计划项加 `skipped_reason: "no_model_profile"`，机制假设保持未验证。
+
+落 `intervention_plan.json`（结构：`[{"hypothesis_id", "component", "switch", "kind", "seeds", "pred_direction", "kill_criterion", "confirm_criterion", "script"}]`）。新计划 `script=null`，复用 receipt 时填 `produced_by`；不可执行项加 `skipped_reason`。每条已执行干预都必须能找到 eval 脚本。
 
 产出：向用户展示计划（含预计训练次数），**不写 FINDINGS 状态**（这是设计产物，不是现象/假设判定）。
 
 done：`intervention_plan.json` 落盘 → **pause_after 停顿**（§4，等 `intervention-budget-confirmed` 确认再进 Stage 3）。
 
-### Stage 3 执行与判定（强制 subagent 外包）
+### Stage 3 执行与判定
 
 输入：`intervention_plan.json`；`intervention-budget-confirmed` 已确认。
 
-**强制外包契约（硬规则，见 references/subagent-brief.md）**：`intervention_plan.json` 里的每一条干预，必须派一个 subagent 执行——改 switch、≥3 种子重训、评估、算 delta、跑判定。主 agent **不得亲自跑训练**。subagent 只回一条紧凑 receipt（配置 diff + delta + 噪声底对照 + 种子数 + 判定），不回训练日志、不回中间产物、不回 checkpoint 路径以外的任何中间文件。
+**执行契约**：先跳过带 `skipped_reason` 的项；`script==null` 的新干预仅在 checkpoint 与 experiment_config 在场时派 subagent 执行改 switch、≥3 种子重训、评估和判定，否则标 `no_trainable_framework`；主 agent 不亲自训练。`script` 非空的既有 receipt 只复核脚本 hash、配置 diff、真实输入、逐种子 delta 与判定，不重训。新跑 subagent 只回紧凑 receipt。
 
 主 agent 收到每条 receipt 后：①把 `intervention_plan.json` 该条的 `script` 字段回填为 receipt 里的 `produced_by`（eval 脚本路径）；②用 `ablation_verdict.py` 复核（subagent 应该已经用同一脚本算过，这里是主 agent 侧的独立复核，不是重新计算）：
 ```bash
@@ -187,7 +189,7 @@ python3 <ENGINE>/scripts/ablation_verdict.py \
 ```
 把打印的 receipt 行原样保留——它已经是 `## 消融证据` 节要贴的格式。
 
-**切片重算（硬规则，不占训练预算）**：每条干预的预测产物落盘后，在 Stage 0 `slice_zcheck.json` 全部 `verdict=="real"` 的切片上重算该干预的 delta——同一口径、同一批种子、直读已落盘的干预产物，不新增训练。每个 real 切片各跑一次 `ablation_verdict.py` 产 slice receipt；该干预推动了哪些 real 切片、没推动哪些，连同 receipt 行写进 `verdict_summary.json`。对每个被推动的 real 切片，回答「干预后 Stage 0 的原始分离是归零、反转还是残留」，三态写进 `verdict_summary.json` 的 slice_recompute——只报 moved 计数不算完成本步。归零/反转且超该切片噪声底的证据必须挂到认领该切片的假设（含互补假设）名下判定；无认领者，补登记 `provenance: "complement"` 的互补假设（限与某条 pre-registered 假设同组件同干预、判据为其方向取反），判定沿用同一 receipt。除 complement 外的 post-hoc 假设仍需新干预才能升级为 confirmed。全部干预跑完后仍未被任何干预推动的 real 切片，其机制解释停留「假设」层级，结论里逐条显式标注。
+**切片重算（硬规则，不占训练预算）**：每条干预产物落盘后，在 Stage 0 `slice_zcheck.json` 全部 `verdict=="real"` 的切片上，用同一口径和同一批种子直读产物重算 delta；每个切片保留 receipt，并按该切片噪声底判定。结果写入 `verdict_summary.json`，标注归零、反转、残留、加强（同向优势变大）或对手差距缩小。各类及正负方向都必须进入 CONCLUSION；只报一个类别的计数不算完成。归零/反转且超噪声底的证据挂到对应假设；无认领者只允许补同组件、同干预、取反方向的 `complement` 假设。其他 post-hoc 假设仍需新干预。未被推动的 real 切片逐条标为未解释。
 
 三态判定与后续动作：
 - **confirmed**（超噪声底且方向对）→ 更新 `hypothesis_ledger.json` 该假设 `status="confirmed"`；可以支撑因果结论。
@@ -198,7 +200,7 @@ python3 <ENGINE>/scripts/ablation_verdict.py \
 
 宣告循环收敛引用「confirmed 且能解释切片版图」这一终止条件前，先核对切片重算结果与 Stage 1 的认领清单：存在未认领、或未被任何干预推动的 real 切片 → 该终止条件不成立，收敛只能引用预算耗尽或生成器提不出新假设，且未解释切片逐条写进结论的已知缺口。
 
-**降级路径**（两个独立触发条件，任一命中即走同一条路径）：①`checkpoint`/`experiment_config` 材料 absent-confirmed——没有可重训框架，干预无法执行；②`model_profile` 产物 `declined`（`upstream` 里声明 `required: false`，用户在三分支问题里选了放弃，见 §7）——没有 `ablation_switches`，Stage 2 连"该干预哪个 switch"都定不出来，Stage 3 同样无从执行。两者任一命中 → Stage 2/3 判定为不可执行；主 agent 人工写一份 `verdict_summary.json`，把 Stage 1 全部 pending 假设标 `skipped_reason`（对应写 `"no_trainable_framework"` 或 `"no_model_profile"`，两者都缺则都写），`n_confirmed=n_refuted=0`，`n_undecided=`全部待验假设数——满足本阶段 done_when 的产物存在性，进入 Stage 4 出具"未验证假设"结论（design doc §8 的既定回退，对无可重训框架/无模型档案的老用法零破坏）。
+**降级路径**：`checkpoint`/`experiment_config` absent-confirmed 只禁止新跑；`model_profile` declined 且没有可复核 receipt 时记 `no_model_profile`。没有 receipt 的机制假设写 `skipped_reason` 并记为未验证；既有 receipt 按其实际 verdict 更新精确限定的 switch 效应，源码组件解释仍记 `undecided`。汇总后进 Stage 4。
 
 done：`verdict_summary.json` 落盘（正常路径含 ≥1 条 receipt；降级路径显式标注 skipped）。
 
@@ -214,12 +216,12 @@ done：`verdict_summary.json` 落盘（正常路径含 ≥1 条 receipt；降级
      --serves eval_H1.py=H1 eval_H2.py=H2 ... --out provenance.json
    ```
    `--serves` 把每个 eval 脚本挂回它服务的假设（有段号时写 `eval_H1.py=H1@<segment_id>`）；只服务事实层的脚本（如 `build_slice_metrics.py`）不用挂。写完核对：每条经过干预的假设，其 eval 脚本都在 serves 里，一个孤儿脚本都不许剩。
-3. 写 `CONCLUSION.md`（§6 模板，含 `## 模型结构依据` 与有因果表述时必带的 `## 消融证据`）。写完先过数字复算：正文里每个计数断言（「N 个切片」「N/M 种子同号」）对照其所引 JSON 字段或同段枚举清单重新数一遍；每个派生数字（百分比、占比、倍数、份额）用落盘产物里的原始数复算一遍，写明分子、分母与来源产物；占比类数字必须声明分母口径（净和 / 同向和 / 绝对值和，取其一并写明）。复算对不上的数字，改到对上或删除；复算记录记 PROGRESS.md。
+3. 写 `CONCLUSION.md`（§6 模板，含 `## 模型结构依据`、有因果表述时必带的 `## 消融证据`，以及必带的 `## 证据清单`——逐条点名结论所站的证据文件，反引号包路径；盘上每张 `receipts/H*.json`（含被否证的）与 `verdict_summary.json` 都必须列出，只列支持结论的过不了闸）。数字复算先把计数谓语翻成逐条明细的布尔判据，再从明细重数；汇总字段只作交叉核对。派生数字写明分子、分母、聚合/测量目标和来源；逐种子数组按产物固定顺序并标注 seed，禁止无标签排序。符号约定在文首声明并全文一致。复算不上的改写或删除，记录记 PROGRESS.md。
 4. 跑结论闸：
    ```bash
    python3 <ENGINE>/scripts/conclusion_gate.py
    ```
-   不过闸 → 按报错逐条补（多半是缺 receipt 或缺图引用），不许绕过。
+   不过闸 → 按报错逐条补（多半是缺 receipt 或缺图引用），不许绕过。闸对本 playbook 额外机检两组（规则 5+6）：**溯源闭环**——每张 `receipts/H*.json` 必须是 `ablation_verdict.py --out` 生成的完整 schema（含 `produced_by`+`script_sha256`，脚本在盘且指纹相符、seeds≥3），`provenance.json` 的 serves 必须把该脚本挂回对应假设，`intervention_plan.json` 每条已执行干预的 `script` 必须已回填；**证据清单**——见上一步。这些不是新增动作，是把 Stage 3/4 已有纪律变成机器拦截。
 
 done：`CONCLUSION.md` + `gate_reports/conclusion_gate.json` 落盘。
 
@@ -231,17 +233,17 @@ done：`CONCLUSION.md` + `gate_reports/conclusion_gate.json` 落盘。
 2. **假设**（Stage 1）：现象 + 指向具体组件的可否证预测 + 预登记（`provenance="pre-registered"`）→ 升「假设」。`post-hoc` 假设永远不能仅凭"看起来解释得通"升级，必须经它自己专属的新干预。
 3. **已证实/被推翻/未决**（Stage 3）：唯一的升级路径是干预验证——`ablation_verdict.verdict()` 判定 `confirmed` 且干预满足单变量纪律（种子集与噪声底同批或另起 ≥3、其余变量固定）→ 升「已证实」；`refuted` → 「被推翻」（保留 kill_receipt，不删）；`undecided` → 停留「假设」层级，结论显式标"未决"。
 
-任何一步不满足 → 停在当前层级，如实写明所在层级；**没有 Stage 3 的 receipt，不得使用因果语言**（conclusion_gate 机械拦截这条，见 §1）。
+任何一步不满足 → 停在当前层级，如实写明所在层级。既有 receipt 只支撑其实际域/配置下的实现级干预事实；没有 Stage 3 receipt，不得把源码组件机制写成因果结论。
 
 ## 4. 停顿点与汇报
 
 **Stage 0 完成即停**，向用户汇报：①噪声底数值与来源（已有/现算）；②池化差距 vs 噪声底的关系（并声明"平局不等于无差异，已转入切片"）；③各切片的 verdict、z、mean_diff、赢家。请用户点名：还要切哪个维度、切片粒度要不要调。
 
-**Stage 2 完成即停**，向用户汇报：①选中的假设与判别力排序；②干预计划——每条干预的 switch/kind/seeds/双向判据；③预计训练次数（预算阶梯当轮上限）。请用户确认 `intervention-budget-confirmed` 再进 Stage 3——这是真金白银的重训，不许静默开跑。
+**Stage 2 完成即停**，向用户汇报：①选中的假设与判别力排序；②干预计划——每条干预的 switch/kind/seeds/双向判据；③新跑次数与待复核 receipt 数。请用户确认 `intervention-budget-confirmed` 再进 Stage 3；仅复核已有 receipt 不重训。
 
 ## 5. subagent 拆分建议
 
-Stage 0 的基线种子重训（噪声底现算）与 Stage 3 的每条干预，都是**强制**外包（不是"建议"）——见 `references/subagent-brief.md`。Stage 1 的账本校验/选择、Stage 2 的计划草拟可以外包起草，但排序判别力与最终拍板留给主 agent。Stage 4 不外包。
+Stage 0 的基线种子重训（噪声底现算）与 Stage 3 的新干预，都是**强制**外包——见 `references/subagent-brief.md`；已有 receipt 只由主 agent 复核。Stage 1 的账本校验/选择、Stage 2 的计划草拟可以外包起草，但排序判别力与最终拍板留给主 agent。Stage 4 不外包。
 
 ## 6. 结论模板与特有反驳门
 
@@ -252,28 +254,23 @@ CONCLUSION.md 按 `references/conclusion-reporting.md` 的通用骨架写，`## 
 档案 H3：跨变量注意力混合在近端时段损害预测，净效应为负。
 ## 消融证据
 - H3 confirmed: switch=--itrans_no_attn delta=+0.031 noise_floor=0.0102 seeds=3
+## 证据清单
+- `receipts/H3.json` — H3 判定回执（produced_by: analysis_scripts/eval_H3.py）
+- `receipts/H4.json` — H4 判定回执（refuted，同样列出）
+- `verdict_summary.json` — 全部干预汇总与切片重算
+- `explanatory_power.json` — 焦点切片闭合率
 ```
 
 `## 消融证据` 一字不差抄 Stage 3 `ablation_verdict.py` 打印的 receipt 行——那一行本身就是 `conclusion_gate.RECEIPT_LINE_RE` 要匹配的格式，不要手改措辞。
 
-Stage 3 走了降级路径（§2 Stage 3「降级路径」段）时，`## 模型结构依据` **照命中的触发写对应句；只命中一个就只写一个；禁止谎称另一个也缺**——两个触发源各自独立成句、各自都自带 `absent-confirmed` 与"降级"两个词，不需要凑成一整句、更不许为了凑字面匹配而断言一个实际存在的材料"也缺"：
+复用 receipt 且无 model_profile 时，`## 模型结构依据` 仍引用对应 H-ID，并写“代码锚点未核验”；因果措辞只限该 switch、模型、配置和数据域，不外推源码组件或跨域迁移。
 
-- 命中 `skipped_reason: "no_model_profile"`（model_profile 产物 declined）→ 只写这句：
-  "model_profile 档案 declined → 无结构档案可锚定（模型档案 absent-confirmed），结构性解释降级为未验证假设。"
-  ——`absent-confirmed` 挂在"模型档案"（model_profile 这份档案本身，用户确认放弃、
-  确凿缺失）上，不挂在 `model_code`（模型代码材料）上：`model_profile` 是产物
-  （状态 built/linked/declined/absent），`model_code` 是独立材料（状态
-  present/absent-confirmed/unknown）——两者可以不一致（用户手里明明有 model_code，
-  只是不想跑 model-audit，此时 declined 的是档案、`model_code` 依旧 present），把
-  "declined 的档案缺失"错写成"model_code 缺失"就是断言了一个实际存在的材料"缺"，
-  同样是伪造。
-- 命中 `skipped_reason: "no_trainable_framework"`（checkpoint/experiment_config 材料 absent-confirmed）→ 只写这句："checkpoint/experiment_config 材料 absent-confirmed → 无法干预，结论降级为未验证假设。"
-- 两个 `skipped_reason` 都命中（Stage 3 recipe「降级路径」段允许同时写两个）→ 两句都写。
+Stage 3 降级时，只写实际命中的句子，禁止为过闸虚构另一项缺失：
 
-单独任何一句都已经同时含 `absent-confirmed` 与"降级"，conclusion_gate 的降级豁免
-（`"absent-confirmed" in sec and "降级" in sec`，对整个「模型结构依据」节做子串匹配，
-不要求两个词出现在同一句、也不要求两个触发源都被断言）单独一句就能过闸——不必也不许
-再多断言一个没有发生的缺失去"确保过闸"，那是伪造证据，违反闸本身要防的事。
+- `no_model_profile`：`model_profile` 档案 declined 且无可复核 receipt（档案 absent-confirmed）→ 无结构锚点，结论降级为未验证假设。
+- `no_trainable_framework`：checkpoint/experiment_config absent-confirmed → 无法干预，结论降级为未验证假设。
+
+两项都命中才写两句；`model_profile` declined 不等于 `model_code` 缺失。
 
 特有反驳门——写结论前逐条自问并记录：
 - **平局停手门**：Stage 0 是不是因为池化平局就没往下切片？没切完就写"无差异"＝违反 §1 首要陷阱，结论不可信。
@@ -281,17 +278,18 @@ Stage 3 走了降级路径（§2 Stage 3「降级路径」段）时，`## 模型
 - **事后编故事门**：refuted 之后是不是当轮补了一个没经过新干预的替代解释？有 → 结论必须标"post-hoc，未经干预验证"，不许当确认结论写。
 - **家族外推门**：结论里出现"这一类模型都……"时，家族内独立干预证据是否 ≥2 个成员？不足 → 只能写单模型结论。
 - **不可干预门**：假设的 `component` 在 `ablation_switches` 里标了 `not-intervenable`？→ 该假设结论上限"未验证假设"，不许强行设计不对等替代干预冒充验证。
-- **背景陈述门**：结论正文（含大白话原因句）里每一句关于数据性质的陈述——水平漂移、分布变化、噪声特征、季节形态——必须对应一个已落盘量测，引用产物文件与数字。量测口径必须与陈述口径一致：陈述跨段变化（如训练段→测试段）必须有跨段量测，段内替代量测不充当跨段证据。给不出对应量测 → 现补一次量测，或删句。
+- **背景与前提陈述门**：关于数据性质或比较前提（覆盖范围、配置、种子、训练/评估协议）的每句话，都必须引用匹配口径的量测或配置摘录；给不出就标“未核实”，不得用自述 note 代替证据。
 - **状态口径门**：结论里每个假设的判定动词与账本 `status` 字段逐条比对，措辞强于状态（undecided 写成"被否掉/被排除"）或弱于状态 → 改账本或改措辞，二者取其一后重过本门。
 - **头条对账门**：一句话结论/执行摘要里 confirmed 机制的清单与计数，与账本 `status=="confirmed"` 集合一一对应——多一条、少一条、或与正文任何一处的数量表述不一致，改到对上再出稿。confirmed 的细化假设（`H<n>b` 类）进头条时必须并置其母假设已被否证的边界与自身的池化方向，不得写成模型的整体优势机制。标题句与加粗结论句单独摘出后仍须与账本 status 相容：否定式断言（「不是 X」）只许覆盖 `status=="refuted"` 的假设；涉及 undecided 或未执行假设的组件，标题句自带作用域限定，或不在标题句点名。
 - **版图降级门**：按配对差绝对值或分歧幅度选择性剔除样本/单元的裁剪是影响力集中度检验，不是抗噪检验——不得据其宣称任何 `verdict=="real"` 切片「方向翻转」或「经不起检验」，只许写「该优势集中在少数高分歧单元」并保留 Stage 0 判定。推翻 real 切片方向的唯一途径是同口径的跨种子重算证据。
-- **数字复算门**：正文每个计数、百分比、倍数、占比都能从落盘产物的原始数按声明口径复算（或重数）出来吗？复算不出的数字不得保留。「X 以上/以下/超过 X」式的阈值概括，必须被其所指的全部实测值满足；任一实测值不满足，改写为实测区间（最小值–最大值）或收窄所指范围。
+- **数字复算门**：计数、比例、倍数能否从逐条产物按声明口径复算？计数先核谓语再核数字；阈值和量级词必须有同粒度数字及适用判据，否则改写为可证事实。
+- **否证边界门**：每个 `refuted` 都写清“推翻的范围”和“没有推翻的已测效应”；pooled null 不得写成组件无作用。pooled 近零而切片异号时，正文说明正负相消并各举代表切片。
 
 ## 7. 材料降级说明
 
 - `predict`/`truth` 缺：`setup` 产物建不起来，本 playbook 连带不可做——向用户说明后终止。
-- `model_profile`（model-audit 产物，`upstream` 声明 `required: false`——与引擎里其他消费同一产物的 playbook 一致）缺：orient 会问三分支——现在内联生产 model-audit / 链接已有 `.modelmap` / **放弃（declined）**。选"放弃"不终止全 playbook：Stage 0（切片测量）与 Stage 1（假设账本校验/选择，`component` 字段仍可登记，只是没有代码锚点核对）照常进行；Stage 2 的 `product:model_profile` 前置不满足，判定为不可执行，走 Stage 3 recipe 的"降级路径"（§2 Stage 3）——与 checkpoint/experiment_config 缺失走同一条路径，收敛到 Stage 4 的"未验证假设"结论（§6 模板）。机制归因离不开代码锚点是真的，但后果是**降级**、不是**终止**——终止会让已经做完的 Stage 0/1 现象与假设清单白白浪费。
-- `checkpoint`/`experiment_config` absent-confirmed：与上一条同一降级路径（Stage 2/3 判定为不可执行，按 Stage 3 recipe 的"降级路径"写占位 `verdict_summary.json`，Stage 4 结论按 §6 的降级模板写"未验证假设"）。这是 design doc §8 的既定回退：对没有可重训框架的老用法零破坏。
+- `model_profile` declined：Stage 0/1 照常；有 receipt 则复核限定 switch 效应，无 receipt 才降级。缺档案不等于已有事实消失。
+- `checkpoint`/`experiment_config` absent-confirmed：禁止新跑，不影响既有 receipt 复核。
 - `training_log` 缺：不影响主线（仅用于旁证基线重训是否收敛稳定），缺席仅记录。
 - `model_code`（可选，独立于 `model_profile`）缺：不影响主线（`model_profile` 已含代码锚点摘要），仅在需要直接读代码消歧时缺席记录。
 
@@ -299,9 +297,5 @@ Stage 3 走了降级路径（§2 Stage 3「降级路径」段）时，`## 模型
 
 本 playbook 不声明任何 `charts:`——核心证据是数值统计（跨种子配对 z、消融 delta），不是可视化对比。conclusion_gate 的图证据规则（规则 3）只在 `has_chart_stage(fm)` 为真时触发，本 playbook 恒为假，不受影响。
 
-`chartbook/recipes/` 全部 28 个 recipe 逐条过一遍，统一跳过，分组理由：
-
-- `worst-slice-compare` / `model-error-correlation` / `oracle-gap` / `horizon-degradation` / `cross-dim-stability` / `model-rank-significance` / `error-breakdown` / `intraday-profile` / `worst-points` / `rolling-stability` / `true-vs-pred-scatter` / `bad-window-clustering` / `good-bad-contrast` / `error-acf` / `horizon-error-quantiles` / `theil-decomposition` / `time-shift-diagnosis` / `pp-calibration` / `baseline-skill` / `revision-stability`：结构性不适用——这些 recipe 消费的是**单种子/跨模型**的池化或切片对比，本 playbook 的核心证据是**跨种子**配对差值（同一模型不同种子），维度不同，图无法直接复用；需要可视化"差距在哪"时应先跑生成假设的上游分析（自带这些图），本 playbook 只消费其产出的假设账本，不重画。
-- `feature-error-conditional` / `feature-trend-overlay` / `y-vs-feature-mapping` / `feature-regime-error`：输入侧关联图，需 `features`/`feature_true` 材料，与本 playbook 的组件级机制归因主线无关。
-- `train-test-drift` / `lookback-decay`：训练侧材料图，与消融验证主线无关。
+`chartbook/recipes/` 统一不在本 playbook 重画：跨模型/池化/切片图由上游分析产出，本 playbook 只消费其假设账本；输入关联图和训练侧图不属于组件消融验证主线。
 - `global-attribution` / `local-waterfall`：归因组图，需 `serving_api` 反事实通道，本 playbook 用消融干预（重训对比）替代反事实调用，两条证据路径不重叠，不需要这两张图。

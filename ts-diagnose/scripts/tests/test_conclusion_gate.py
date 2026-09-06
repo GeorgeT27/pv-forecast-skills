@@ -43,11 +43,13 @@ stages:
 ---
 """
 
+EVIDENCE = "## 证据清单\n- `charts/error-breakdown.png` — 切片版图\n"
+
 GOOD = """# 结论
 误差集中在 horizon 末段（见 charts/error-breakdown.png）。
 ## 模型结构依据
 档案 H3：attention 窗口 96 点 → 预期长时效退化，与 charts/error-breakdown.png 一致。
-"""
+""" + EVIDENCE
 
 
 def setup(tmp_path, conclusion, with_chart=True, pb_text=PB):
@@ -86,7 +88,8 @@ def test_fail_missing_structure_section(tmp_path):
 
 def test_degraded_statement_accepted(tmp_path):
     c = ("# 结论\n（见 charts/error-breakdown.png）\n## 模型结构依据\n"
-         "模型档案缺失（materials.model_code = absent-confirmed），结构性解释降级为猜测级。\n")
+         "模型档案缺失（materials.model_code = absent-confirmed），结构性解释降级为猜测级。\n"
+         + EVIDENCE)
     assert run_gate(setup(tmp_path, c)).returncode == 0
 
 
@@ -151,8 +154,132 @@ def test_pass_arch_causal_with_ablation_receipt(tmp_path):
     c = ("# 结论\n（见 charts/error-breakdown.png）\n## 模型结构依据\n"
          "档案 H3：跨变量注意力**导致**近端优势。\n"
          "## 消融证据\n"
-         "- H3 confirmed: switch=--itrans_no_attn delta=+0.031 noise_floor=0.0102 seeds=3\n")
+         "- H3 confirmed: switch=--itrans_no_attn delta=+0.031 noise_floor=0.0102 seeds=3\n"
+         + EVIDENCE)
     assert run_gate(setup(tmp_path, c)).returncode == 0
+
+
+# ---- 规则 5 溯源闭环 + 规则 6 证据清单 ----
+
+def _traceable_world(tmp_path, **overrides):
+    """搭一个溯源闭环完整的工作目录:脚本+回执(正典 schema)+provenance serves+plan 回填。
+    overrides 用于逐环破坏。返回 (wd, conclusion_text)。"""
+    import hashlib as hl
+    wd = setup(tmp_path, None)
+    (wd / "analysis_scripts").mkdir()
+    script = wd / "analysis_scripts" / "eval_H3.py"
+    script.write_text("# eval\n", encoding="utf-8")
+    sha = hl.sha256(script.read_bytes()).hexdigest()
+    rec = {"hypothesis_id": "H3", "switch": "--itrans_no_attn", "delta": 0.031,
+           "noise_floor_3sigma": 0.0102, "seeds": 3,
+           "pred_direction": "increase", "verdict": "confirmed",
+           "line": "- H3 confirmed: switch=--itrans_no_attn delta=+0.031 "
+                   "noise_floor=0.0102 seeds=3",
+           "produced_by": "analysis_scripts/eval_H3.py", "script_sha256": sha,
+           "t_start": "T0", "t_end": "T1", "script_selftest": "植入回收通过"}
+    rec.update(overrides.get("receipt", {}))
+    for k in overrides.get("receipt_drop", []):
+        rec.pop(k, None)
+    (wd / "receipts").mkdir()
+    (wd / "receipts" / "H3.json").write_text(json.dumps([rec]), encoding="utf-8")
+    prov = {"code": {"files": {"analysis_scripts/eval_H3.py": sha},
+                     "serves": {"eval_H3.py": {"episode_id": "H3",
+                                               "segment_id": None}}}}
+    if overrides.get("no_serves"):
+        prov["code"].pop("serves")
+    (wd / "provenance.json").write_text(json.dumps(prov), encoding="utf-8")
+    (wd / "verdict_summary.json").write_text(json.dumps(
+        {"interventions": [{"hypothesis_id": "H3", "verdict": "confirmed"}]}),
+        encoding="utf-8")
+    plan = [{"hypothesis_id": "H3", "switch": "--itrans_no_attn",
+             "script": overrides.get("plan_script",
+                                     "analysis_scripts/eval_H3.py")}]
+    plan += overrides.get("plan_extra", [])
+    (wd / "intervention_plan.json").write_text(
+        json.dumps({"interventions": plan}), encoding="utf-8")
+    c = ("# 结论\n（见 charts/error-breakdown.png）\n## 模型结构依据\n"
+         "档案 H3：跨变量注意力**导致**近端优势。\n"
+         "## 消融证据\n" + rec.get("line", "- H3 confirmed: switch=--x "
+                                            "delta=+0.031 noise_floor=0.0102 "
+                                            "seeds=3") + "\n"
+         "## 证据清单\n"
+         "- `receipts/H3.json` — H3 判定回执\n"
+         "- `verdict_summary.json` — 干预汇总\n")
+    (wd / "CONCLUSION.md").write_text(c, encoding="utf-8")
+    return wd
+
+
+def test_traceable_world_passes(tmp_path):
+    r = run_gate(_traceable_world(tmp_path))
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_fail_thin_receipt_missing_produced_by(tmp_path):
+    wd = _traceable_world(tmp_path, receipt_drop=["produced_by",
+                                                  "script_sha256"])
+    r = run_gate(wd)
+    assert r.returncode == 1 and "缺必填字段" in r.stdout
+
+
+def test_fail_single_seed_receipt(tmp_path):
+    r = run_gate(_traceable_world(tmp_path, receipt={"seeds": 1}))
+    assert r.returncode == 1 and "3 种子" in r.stdout
+
+
+def test_fail_script_hash_mismatch(tmp_path):
+    wd = _traceable_world(tmp_path)
+    (wd / "analysis_scripts" / "eval_H3.py").write_text("# 改过了\n",
+                                                        encoding="utf-8")
+    r = run_gate(wd)
+    assert r.returncode == 1 and "被改过" in r.stdout
+
+
+def test_fail_orphan_script_without_serves(tmp_path):
+    r = run_gate(_traceable_world(tmp_path, no_serves=True))
+    assert r.returncode == 1 and "孤儿脚本" in r.stdout
+
+
+def test_fail_plan_script_not_backfilled(tmp_path):
+    r = run_gate(_traceable_world(tmp_path, plan_script=None))
+    assert r.returncode == 1 and "script 为空" in r.stdout
+
+
+def test_fail_plan_entry_without_receipt_or_skip(tmp_path):
+    r = run_gate(_traceable_world(tmp_path, plan_extra=[
+        {"hypothesis_id": "H9", "switch": "--y", "script": None}]))
+    assert r.returncode == 1 and "H9" in r.stdout
+
+
+def test_fail_missing_evidence_section(tmp_path):
+    wd = _traceable_world(tmp_path)
+    text = (wd / "CONCLUSION.md").read_text(encoding="utf-8")
+    (wd / "CONCLUSION.md").write_text(text.split("## 证据清单")[0],
+                                      encoding="utf-8")
+    r = run_gate(wd)
+    assert r.returncode == 1 and "证据清单" in r.stdout
+
+
+def test_fail_evidence_cherry_picks_receipts(tmp_path):
+    # 盘上多一张被否证的 H4 回执但清单没列它 → 拦(防只列支持结论的)
+    wd = _traceable_world(tmp_path)
+    import hashlib as hl
+    script = wd / "analysis_scripts" / "eval_H4.py"
+    script.write_text("# eval4\n", encoding="utf-8")
+    sha = hl.sha256(script.read_bytes()).hexdigest()
+    prov = json.load(open(wd / "provenance.json", encoding="utf-8"))
+    prov["code"]["files"]["analysis_scripts/eval_H4.py"] = sha
+    prov["code"]["serves"]["eval_H4.py"] = {"episode_id": "H4",
+                                            "segment_id": None}
+    (wd / "provenance.json").write_text(json.dumps(prov), encoding="utf-8")
+    (wd / "receipts" / "H4.json").write_text(json.dumps([{
+        "hypothesis_id": "H4", "switch": "--y", "delta": -0.001,
+        "noise_floor_3sigma": 0.0102, "seeds": 3,
+        "pred_direction": "increase", "verdict": "refuted",
+        "produced_by": "analysis_scripts/eval_H4.py",
+        "script_sha256": sha}]), encoding="utf-8")
+    r = run_gate(wd)
+    assert r.returncode == 1 and "漏列" in r.stdout \
+        and "receipts/H4.json" in r.stdout
 
 
 def test_pass_non_ablation_playbook_causal_wording_without_receipt(tmp_path):

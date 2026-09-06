@@ -304,8 +304,8 @@ def main():
             print(f"  [✗] {mm}")
         for u, s in up_blocked:
             print(f"  [✗] 必需上游产物未就绪：{u['product']}（{s['status']}）")
-        print("  ⚑ 引擎级恒问五类·开工前自检（命中任一必停 AskUserQuestion，"
-              "orient 不替你判，playbook 没声明也照问）：")
+        print("  ⚑ 引擎级恒问五类·开工前自检（任务用到且信息不明时必停 AskUserQuestion，"
+              "orient 不替你判）：")
         print("    ① schema/单位/口径不明 ② 成功判据未定义 "
               "③ 证据不足以升级（问降级 or 补证据并列成本）")
         print("    ④ 破坏性/昂贵操作（重训/覆盖产物/写外部目录） ⑤ 多候选文件或版本选哪个")
@@ -313,7 +313,7 @@ def main():
             print("  🚪 结论阶段·三道门自检（三门全过才可在 FINDINGS.md 标「已证实」；"
                   "细则 mechanisms.md）——逐条办：")
             print("    门1 稳健性：配对检验过 + 剔除最极端 10% 方向不变；")
-            print("    门2 假设登记：先在 HYPOTHESES.md 写下预测，再看数（禁事后编故事）；")
+            print("    门2 假设登记：先在 playbook 的假设账本写下预测与 provenance，再看数；")
             print("    门3 反驳门：替代解释逐条排除，排不掉就显式降级"
                   "（含 playbook 特有反驳门条目）；")
             print("    另：≥2 证据线按 upgrade_rule 一致才升『假设』；样本<阈值只报排名不报显著；")
@@ -382,7 +382,13 @@ def _write_state_progress(fm, cur, args, ctx=None, actives=None, state=None, blo
     # 评测模式轨迹事件(SKILL_EVOLVE_TRAJECTORY_AGENT 未设置时零行为);任何异常不许影响诊断
     try:
         import eval_trajectory
-        eval_trajectory.maybe_emit(old_state, new_state)
+        n_ev = eval_trajectory.maybe_emit(old_state, new_state)
+        # 开了埋点就回一行确认:让「轨迹在写」可见。不猜评测语境、不在未设时出声,
+        # 日常仍是零行为改变;评测方据此判断埋点是否真的生效(静默失败是 2026-08-24
+        # 四场盲跑轨迹全丢的直接原因)。
+        traj_path = os.environ.get(eval_trajectory.ENV_VAR)
+        if traj_path:
+            print(f"  📈 轨迹埋点已开 → {traj_path}(本次 +{n_ev} 事件)")
     except Exception as e:  # noqa: BLE001 —— 埋点故障只降级轨迹完整性,不降级诊断
         print(f"[orient] 评测埋点异常(已忽略):{e}", file=sys.stderr)
 

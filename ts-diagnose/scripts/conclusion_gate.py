@@ -4,7 +4,9 @@
 否则打印缺项 exit 1。结论阶段的 done_when 依赖该 receipt（playbook 声明）。"""
 from __future__ import annotations
 
+import glob
 import hashlib
+import json
 import os
 import re
 import sys
@@ -18,6 +20,98 @@ CHART_REF_RE = re.compile(r"[\w./_-]+\.(?:png|svg|json)")
 CAUSAL_RE = re.compile(r"(导致|因为|归因于|caused by|due to|→\s*优势|使得)")
 RECEIPT_LINE_RE = re.compile(r"(confirmed|refuted|undecided).*(switch|delta).*seeds?=\d")
 ABLATION_SECTION = "## 消融证据"
+EVIDENCE_SECTION = "## 证据清单"
+# ablation_verdict.py --out 写的正典 receipt schema:三态判定四件 + 溯源块。
+# 手搓的薄 receipt(缺 produced_by/逐字段)在此被拦——回执必须由脚本生成。
+RECEIPT_REQUIRED = ("hypothesis_id", "switch", "delta", "noise_floor_3sigma",
+                    "seeds", "pred_direction", "verdict",
+                    "produced_by", "script_sha256")
+
+
+def sha256_of(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for blk in iter(lambda: f.read(65536), b""):
+            h.update(blk)
+    return h.hexdigest()
+
+
+def _last_entry(path):
+    """receipt 文件是追加数组(重跑安全);裸 dict 是历史形态。取最新一条。"""
+    doc = json.load(open(path, encoding="utf-8"))
+    if isinstance(doc, list):
+        return doc[-1] if doc else None
+    return doc if isinstance(doc, dict) else None
+
+
+def check_traceability():
+    """规则 5 溯源闭环:回执→脚本→假设的链条逐环机检,断一环不放行。"""
+    receipts = sorted(glob.glob("receipts/H*.json"))
+    prov = None
+    if os.path.exists("provenance.json"):
+        try:
+            prov = json.load(open("provenance.json", encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            fail("provenance.json 存在但解析失败")
+    for rp in receipts:
+        rec = _last_entry(rp)
+        if rec is None:
+            fail(f"{rp} 为空或不是合法 receipt")
+        missing = [k for k in RECEIPT_REQUIRED if rec.get(k) in (None, "")]
+        if missing:
+            fail(f"{rp} 缺必填字段 {missing}——receipt 必须由 ablation_verdict.py "
+                 "--out 生成(含溯源块),不许手搓薄回执")
+        if not (isinstance(rec["seeds"], int) and rec["seeds"] >= 3):
+            fail(f"{rp} seeds={rec['seeds']!r}——数值判定必须 ≥3 种子,"
+                 "不足只能标 skipped_reason 走降级路径")
+        script = rec["produced_by"]
+        if not os.path.exists(script):
+            fail(f"{rp} 的 produced_by 指向不存在的脚本:{script}")
+        if sha256_of(script) != rec["script_sha256"]:
+            fail(f"{rp} 的 script_sha256 与 {script} 当前内容不符——"
+                 "脚本在出回执后被改过,重跑判定再出结论")
+        if prov is None:
+            fail(f"有 receipt({rp})但无 provenance.json——先跑 provenance.py"
+                 "(带 --serves)再过闸")
+        serves = (prov.get("code") or {}).get("serves") or {}
+        entry = serves.get(os.path.basename(script))
+        if not entry or entry.get("episode_id") != rec["hypothesis_id"]:
+            fail(f"孤儿脚本:{script} 未在 provenance --serves 里挂回 "
+                 f"{rec['hypothesis_id']}(现挂:{entry})")
+    if os.path.exists("intervention_plan.json"):
+        plan = json.load(open("intervention_plan.json", encoding="utf-8"))
+        items = plan.get("interventions", plan) if isinstance(plan, dict) else plan
+        for iv in items if isinstance(items, list) else []:
+            if not isinstance(iv, dict) or iv.get("skipped_reason"):
+                continue
+            hid = iv.get("hypothesis_id")
+            rp = f"receipts/{hid}.json"
+            if not os.path.exists(rp):
+                fail(f"干预 {hid} 无 receipt 也无 skipped_reason——"
+                     "执行了就要有回执,没执行要写明原因")
+            if not iv.get("script"):
+                fail(f"intervention_plan 里 {hid} 的 script 为空——"
+                     "收到 receipt 后须回填为其 produced_by")
+
+
+def check_evidence_list(text):
+    """规则 6 证据清单:结论逐条点名所站文件;盘上每张 receipt 必列(防摘樱桃)。"""
+    if EVIDENCE_SECTION not in text:
+        fail(f"缺「{EVIDENCE_SECTION}」节——结论必须逐条点名它站在哪些证据文件上"
+             "(反引号包路径,如 `receipts/H2.json`)")
+    sec = text.split(EVIDENCE_SECTION, 1)[1].split("\n## ", 1)[0]
+    cited = re.findall(r"`([^`\s]+)`", sec)
+    if not cited:
+        fail(f"「{EVIDENCE_SECTION}」节没有任何反引号包的文件路径")
+    dead = [p for p in cited if not os.path.exists(p)]
+    if dead:
+        fail(f"证据清单引用了不存在的文件:{dead}")
+    must = sorted(glob.glob("receipts/H*.json")) \
+        + [p for p in ("verdict_summary.json",) if os.path.exists(p)]
+    unlisted = [p for p in must if p not in cited]
+    if unlisted:
+        fail(f"证据清单漏列:{unlisted}——盘上每张假设 receipt(含被否证的)"
+             "与 verdict_summary 都必须列出,不许只列支持结论的")
 
 
 def fail(msg):
@@ -66,6 +160,12 @@ def main():
             fail("结论含架构因果表述但「## 消融证据」节无对应 receipt"
                  "（须含 confirmed/refuted/undecided + switch/delta + seeds=N）——"
                  "降级为「未验证假设」或补 receipt")
+
+    # 规则 5+6：溯源闭环 + 证据清单。同规则 4 的作用域契约：只对声明
+    # produces_ablation_receipts 的 playbook 生效，6 个非 pilot playbook 零破坏。
+    if fm.get("produces_ablation_receipts"):
+        check_traceability()
+        check_evidence_list(text)
 
     os.makedirs("gate_reports", exist_ok=True)
     ec.dump_json({"passed": True,

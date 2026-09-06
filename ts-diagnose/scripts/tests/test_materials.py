@@ -128,6 +128,19 @@ def test_blocking_materials(tmp_path):
     assert ec.blocking_materials(fm, cfg3) == [("truth", "absent")]
 
 
+def test_intake_blockers_do_not_require_unrelated_global_materials(tmp_path):
+    """只盘点 playbook 声明的 required 材料；未使用的训练/代码材料不阻塞。"""
+    fm = fm_with_materials(
+        tmp_path, "materials:\n  required: [predict, truth]\n  optional: []\n")
+    cfg = {"materials": {
+        "predict": {"status": "present", "paths": ["p"],
+                     "schema": {"y_col": "y", "time_col": "ts"}},
+        "truth": {"status": "present", "paths": ["t"],
+                   "schema": {"y_col": "y", "time_col": "ts"}},
+    }}
+    assert ec.intake_blockers(fm, cfg) == []
+
+
 def test_existing_playbooks_still_load():
     """向后兼容：无 materials 键的 playbook，加载与判定不受影响。
     （feature-importance 自 2026-07-24 feature-blame 方法并入后声明了
@@ -174,11 +187,12 @@ def test_material_dsl_drives_variant(tmp_path):
     assert ec.variant_active(fm, ctx) == {"model-side": True}
 
 
-def test_modelmap_blocker(tmp_path, monkeypatch):
+def test_optional_model_code_does_not_block(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg = {"materials": {"model_code": {"status": "present", "paths": ["/repo"]}}}
-    fm_diag = {"id": "model-comparison"}
-    assert ec.modelmap_blocker(cfg, fm_diag) is not None      # 无回执 → 阻塞
+    fm_diag = {"id": "model-comparison",
+               "materials": {"required": [], "optional": ["model_code"]}}
+    assert ec.modelmap_blocker(cfg, fm_diag) is None
     (tmp_path / "MODELMAP_RECEIPT.json").write_text(
         '{"modelmap_dir": "x", "commit": "abc"}', encoding="utf-8")
     assert ec.modelmap_blocker(cfg, fm_diag) is None          # 有回执 → 放行
@@ -186,15 +200,21 @@ def test_modelmap_blocker(tmp_path, monkeypatch):
     assert ec.modelmap_blocker({}, fm_diag) is None           # 无 model_code → 不管
 
 
-def test_modelmap_blocker_declined_product_still_blocks(tmp_path, monkeypatch):
-    """Task 8 Step 3：model_profile 产物 status=declined（用户放弃档案）且
-    model_code present、无 MODELMAP_RECEIPT.json —— declined ≠ 有档案，闸照落。
-    用户放弃档案的路径是 conclusion 声明缺席，不是绕过 model-audit 强制。"""
+def test_modelmap_blocker_ignores_playbook_without_material_declaration(tmp_path, monkeypatch):
+    """没有 materials 声明的旧/简单 playbook 不消费 model_code，不应强制建档。"""
+    monkeypatch.chdir(tmp_path)
+    cfg = {"materials": {"model_code": {"status": "present", "paths": ["m"]}}}
+    assert ec.modelmap_blocker(cfg, {"id": "simple"}) is None
+
+
+def test_modelmap_declined_product_allows_degraded_path(tmp_path, monkeypatch):
+    """用户放弃可选档案后，playbook 自己的降级路径仍可继续。"""
     monkeypatch.chdir(tmp_path)
     cfg = {"materials": {"model_code": {"status": "present", "paths": ["/repo"]}},
            "products": {"model_profile": {"status": "declined"}}}
-    fm = {"id": "model-comparison"}
-    assert ec.modelmap_blocker(cfg, fm) is not None
+    fm = {"id": "model-comparison",
+          "materials": {"required": [], "optional": ["model_code"]}}
+    assert ec.modelmap_blocker(cfg, fm) is None
 
 
 # ---------------------------------------------------------------- profile 固化
@@ -261,14 +281,14 @@ def test_present_gaps():
 
 
 def test_intake_blockers_five_piece_always_asked(tmp_path):
-    """五件套是引擎级恒问：playbook 只声明 predict/truth，五件套照样阻塞。"""
+    """入口只阻塞 playbook 声明的 required 材料。"""
     fm = fm_with_materials(
         tmp_path, "materials:\n  required: [predict, truth]\n")
     got = dict(ec.intake_blockers(fm, {}))
-    for mid in ("training_log", "truth", "train_y", "checkpoint",
-                "model_code", "predict"):
+    for mid in ("truth", "predict"):
         assert got[mid] == "unknown"
-    assert "features" not in got      # 非五件套、非 required → 不恒问
+    for mid in ("training_log", "train_y", "checkpoint", "model_code", "features"):
+        assert mid not in got
 
 
 def test_intake_blockers_reasons(tmp_path):
@@ -276,7 +296,7 @@ def test_intake_blockers_reasons(tmp_path):
     cfg = {"materials": {
         "predict": {"status": "present", "paths": ["p.parquet"],
                     "schema": {"y_col": "p", "time_col": "ts"}},
-        "truth": {"status": "present"},                              # 缺实质字段
+        "truth": {"status": "present"},                              # 未声明，不阻塞
         "train_y": {"status": "absent-confirmed", "source": "user"},
         "training_log": {"status": "absent-confirmed"},              # source≠user
         "checkpoint": {"status": "absent-confirmed", "source": "user"},
@@ -284,9 +304,8 @@ def test_intake_blockers_reasons(tmp_path):
     }}
     got = dict(ec.intake_blockers(fm, cfg))
     assert "predict" not in got
-    assert got["truth"].startswith("present-incomplete:")
-    assert "paths" in got["truth"]
-    assert got["training_log"] == "absent-not-user"
+    assert "truth" not in got
+    assert "training_log" not in got
     assert "train_y" not in got and "checkpoint" not in got
     # required 材料 absent-confirmed（source=user）仍须 degraded_ok
     cfg["materials"]["predict"] = {"status": "absent-confirmed", "source": "user"}

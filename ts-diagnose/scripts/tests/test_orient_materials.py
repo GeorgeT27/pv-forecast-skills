@@ -31,11 +31,7 @@ def run_orient(workdir, *args):
     return r.stdout
 
 
-# 入口闸（五件套）恒问：training_log/truth/train_y/checkpoint/model_code。
-# truth 同时是本 demo playbook 的 required 材料，各用例自带 truth 记录（present 或
-# absent-confirmed+degraded_ok），故不放进 FIVE_OK（放进去也会被用例自己的记录覆盖）。
-FIVE_OK = {mid: {"status": "absent-confirmed", "source": "user"}
-           for mid in ("training_log", "train_y", "checkpoint", "model_code")}
+FIVE_OK = {}
 
 
 def setup_pb(tmp_path, cfg_materials=None, five_ok=True):
@@ -59,7 +55,7 @@ def test_blocked_when_unknown(tmp_path):
     assert "追问" in out
 
 
-def test_open_when_present_and_modelmap_blocked(tmp_path):
+def test_optional_model_code_does_not_block_orient(tmp_path):
     mats = {"predict": {"status": "present", "paths": ["x.parquet"],
                         "schema": {"y_col": "y", "time_col": "ts"}},
             "truth": {"status": "present", "paths": ["x.parquet"],
@@ -67,16 +63,12 @@ def test_open_when_present_and_modelmap_blocked(tmp_path):
             "model_code": {"status": "present", "paths": ["x.parquet"]}}
     out = run_orient(setup_pb(tmp_path, mats))
     assert "[✓present] predict (required)" in out
-    # model_code present 但无 .modelmap 回执 → modelmap 全局阻塞，不可开工；
-    # 阻塞行必须点名缺的具体回执文件与嵌入执行指引，不能只说"缺档案"让人猜
-    assert "model-audit" in out and "嵌入" in out
-    assert "MODELMAP_RECEIPT.json" in out
-    assert "先嵌入执行 playbook「model-audit」" in out
-    assert "→ 前置齐，可开工 Stage 0" not in out
+    assert "先嵌入执行 playbook「model-audit」" not in out
+    assert "→ 前置齐，可开工 Stage 0" in out
 
 
 def test_modelmap_receipt_unlocks_open(tmp_path):
-    """touch 回执后重跑 → modelmap 阻塞解除，可开工出现。"""
+    """已有回执不影响 optional model_code 的正常开工。"""
     mats = {"predict": {"status": "present", "paths": ["x.parquet"],
                         "schema": {"y_col": "y", "time_col": "ts"}},
             "truth": {"status": "present", "paths": ["x.parquet"],
@@ -112,12 +104,8 @@ def test_absent_without_waiver_blocks(tmp_path):
 
 
 def test_legacy_playbook_no_materials_section(tmp_path):
-    """向后兼容：真实 training-sufficiency playbook 无 materials 键（无 required/optional），
-    故 playbook 自己的「材料盘点」段不出现；但入口闸五件套（含 truth，training-sufficiency
-    未声明 required 故不受 degraded_ok 约束）仍恒问，须全部补齐才能过闸。"""
-    mats = dict(FIVE_OK)
-    mats["truth"] = {"status": "absent-confirmed", "source": "user"}
-    cfg = {"playbook": "training-sufficiency", "materials": mats}
+    """无 materials 声明的旧 playbook 不因未使用材料被入口闸阻塞。"""
+    cfg = {"playbook": "training-sufficiency"}
     ec.dump_json(cfg, str(tmp_path / "diagnose_config.json"))
     out = run_orient(tmp_path)
     assert "BLOCKED" not in out
@@ -125,8 +113,7 @@ def test_legacy_playbook_no_materials_section(tmp_path):
 
 
 def test_goto_still_gated_when_materials_unknown(tmp_path):
-    """--goto 直达阶段不得绕过入口闸：五件套 unknown 时，即便 --goto 0（demo playbook
-    唯一阶段），仍要 BLOCKED、不许开工。"""
+    """--goto 直达阶段不得绕过入口闸：required 材料 unknown 时仍须 BLOCKED。"""
     out = run_orient(setup_pb(tmp_path, five_ok=False), "--goto", "0")
     assert "BLOCKED: 材料盘点未完成" in out
     assert "可开工" not in out

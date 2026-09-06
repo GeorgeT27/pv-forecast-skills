@@ -218,7 +218,7 @@ CLI 参数与产物的最小 schema 以 `golden/manifest.json` 为准，可执�
 | 结论类型 | 上限 | 升级条件 | 对应门 |
 |---|---|---|---|
 | 某 series 已到平台/仍在下降 | 已证实 | 判据口径明确 + 尾部形态跨 iteration 稳定（剔除最差 10% 单元后方向不变） | 稳健性门 |
-| 某成员拉高 loss/拖慢收敛 | 现象→假设 | Stage 3 的 CI 排除 0 **且** 与 Stage 4 目标侧排名的 Spearman 一致；升级前先在 HYPOTHESES.md 登记 | 假设登记 + 多证据线 |
+| 某成员拉高 loss/拖慢收敛 | 现象→假设 | Stage 3 的 CI 排除 0 **且** 与 Stage 4 目标侧排名的 Spearman 一致；升级前先登记 H-ID | 假设登记 + 多证据线 |
 | 训练分配（顺序/规模）有问题 | 假设 | position/size 控制变量效应显著 + 反驳门过 | 反驳门 |
 | batch/数据量不足 | 假设 | 需要 training-config 的配置事实 +（最好）不同 batch 的对照曲线；单靠曲线形态最多标"现象" | 反驳门 |
 
