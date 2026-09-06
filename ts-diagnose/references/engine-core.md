@@ -128,16 +128,20 @@ AskUserQuestion 问用户要不要拿某条实验线预填；同意就把实验�
   已变）时让用户二选一：重建，或写 `accept_stale=true` 确认沿用（结论必须声明）。
   机制见 `_playbook-spec.md` 的 `produces`/`upstream` 两节。
 
-- **subagent 编排**：重活（大日志解析、批量计算、逐产物事实提取）外包给 subagent，
-  brief 模板见 `subagent-briefs.md`。分片任务各写各的 `--out` 输出文件，主 agent 收齐
-  后合并；`diagnose_config / diagnose_state / PROGRESS / FINDINGS` 只由主 agent 写。
-
-  **分层原则**：满足三个条件的生产者 playbook（声明了 `produces`、没有结论阶段、
-  执行段没有用户裁决与 FINDINGS 写入——如 data-setup、metric-eval），由主 agent 收齐
-  questions 答案后按 `Brief-PRODUCER` **整体外包**，主 agent 只做提问、派发、收汇报、
-  写 config.products 回填。不满足条件的生产者（model-audit、fact-scan）按各自 §5
-  拆分外包。分析类 playbook 由主 agent 亲自执行，只外包其 §5 列出的机械子任务——
-  **结论永远由主 agent 落笔**。
+- **派发（卡片制）**：重活不现场拼 Brief，按名字派 `agents/` 里的预定义卡片。
+  命中 playbook `X` → 派 `X-compute`：producer 卡（data-setup / metric-eval / model-audit）
+  整体跑到产物落盘；compute 卡跑 Stage 0 到第一个 pause_after 为止；compute-fine
+  （subset-influence）与 worker（architecture-attribution-worker）每次只做一条指派任务。
+  派发前：按该 playbook `questions:` 问齐 `stage ≤` 区间终点的题，答案与已就绪的上游产物目录
+  填进卡片「输入」节，`<ENGINE>`/`<workdir>` 填绝对路径；`upstream[]` required 产物缺 →
+  先派对应 producer 卡（setup→data-setup-compute、model_profile→model-audit-compute、
+  metric_table→metric-eval-compute）。卡片回 `NEED_INFO` → 主 agent 问用户、写 config、
+  **重派同一张卡**；回 `BLOCKED` → 主 agent 修材料或脚本后重派，不换卡。
+  **回退**：Agent 工具可用类型里没有该名字（非 Claude Code 宿主或未安装）→ 把
+  `agents/<name>.md` 全文作为 prompt 派 `general-purpose`，PROGRESS.md 记一行「卡片未注册，
+  走回退」。索引、回环细则与 Brief-EMBED 见 `subagent-briefs.md`。
+  **单写者**：`diagnose_config / diagnose_state / PROGRESS / FINDINGS` 只由主 agent 写；卡片不得再派
+  subagent；**结论永远由主 agent 落笔**。
 
 - **上下文预算**：产物自足（json 自带完整数字与形状描述），判读读 json，不读 PNG、
   不读原始大文件；每阶段落盘，随时可断点续跑。
@@ -169,8 +173,9 @@ model-comparison），不在自己内部下结论——结论由引擎编排一�
 
 **subagent 外包（强制）**：验证主脊的每条干预必须外包给 subagent 执行，主 agent
 只收一条紧凑 receipt（配置 diff + delta + 噪声底对照 + 种子数 + 判定），不吃训练
-过程的上下文。brief 模板见
-`playbooks/architecture-attribution/references/subagent-brief.md`，不在此重复。
+过程的上下文。派 `architecture-attribution-worker`（task=intervention），每条干预一次派发；
+噪声底需现算时同卡 task=noise-floor；细则见该 playbook 的
+`references/subagent-brief.md`。
 
 **回退（无 `trainable_framework`）**：`checkpoint`/`experiment_config` 材料
 absent-confirmed 时，验证主脊跳过，循环退化为"生成器吐带标注的未验证假设"；
@@ -216,16 +221,17 @@ absent-confirmed 时，验证主脊跳过，循环退化为"生成器吐带标�
 - ❌ orient 报"必需材料未就绪"却跳过盘点直接开工；或材料 unknown 时按"大概有"处理。
   unknown ≠ absent-confirmed：前者必须去问，后者才允许走用户确认过的降级。
 - ❌ 内联生产 upstream 产物时，没收齐它的 questions 答案就丢给 subagent（提问与用户
-  裁决只在主 agent；答案收齐后，纯机械的生产者才可按 `Brief-PRODUCER` 整体外包
-  执行段）；或者跑完不写 manifest/marker/config 回填就继续（下次 orient 仍报
-  absent，等于白跑）。
+  裁决只在主 agent；答案收齐后，纯机械的生产者才可派 producer 卡整体执行）；或者跑完
+  不写 manifest/marker/config 回填就继续（下次 orient 仍报 absent，等于白跑）。
+- ❌ 现场手拼 Brief 派 subagent，而 `agents/` 里已有对应卡片（卡片才有守卫过的红线与输出契约）。
+- ❌ 卡片回 `NEED_INFO` 后主 agent 自己猜答案继续，或换一张卡顶替（必须问用户后重派同一张）。
 
 ## 批量编排（多 playbook 同跑）
 
 同一份数据要一次诊断多条 playbook 时，走 Layer -1 批量层，不逐条串跑。每回合先跑
 `python3 "<ENGINE>/scripts/batch.py" --select <id1,id2,...> --workdir <批量工作目录>`
-（后续回合去掉 --select 刷新），照它报的 phase 与下一步办；完整协议、Brief-BATCH-COMPUTE
-模板、上下文预算见 `references/batch-orchestration.md`。生产者只跑一次入 `_shared/`、
+（后续回合去掉 --select 刷新），照它报的 phase 与下一步办；完整协议、Phase C 的卡片
+派发、上下文预算见 `references/batch-orchestration.md`。生产者只跑一次入 `_shared/`、
 提问一次合并、计算 fan-out 到事实提取、合并停顿、结论仍由主 agent 落笔。
 
 ## 运行后回顾（每次实跑收尾必做）

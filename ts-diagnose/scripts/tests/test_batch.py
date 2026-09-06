@@ -380,8 +380,10 @@ def test_batch_orchestration_doc_has_required_sections():
     assert os.path.exists(doc), "references/batch-orchestration.md 缺失"
     text = open(doc, encoding="utf-8").read()
     for anchor in ("## Phase A", "## Phase B", "## Phase C", "## Phase D",
-                   "## Phase E", "## Brief-BATCH-COMPUTE", "## 上下文预算"):
+                   "## Phase E", "## 上下文预算"):
         assert anchor in text, f"batch-orchestration.md 缺 {anchor} 节"
+    # Phase C 的 worker 是具名卡片，不再有 Brief 模板节
+    assert "`<id>-compute`" in text, "Phase C 须点名 <id>-compute 卡片"
     # 禁止项与停止点必须写明（钉死 subagent 边界）
     assert "phenomena_" in text
     assert "结论永远由主 agent" in text
