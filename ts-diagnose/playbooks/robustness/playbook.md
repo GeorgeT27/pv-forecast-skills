@@ -180,8 +180,8 @@ CLI 契约见 `golden/manifest.json`，参考实现见 `golden/reference/`。脚
 
 扰动矩阵按（结论 × 扰动族）分片并行：每个分片用
 `--out perturb.<conclusion>.<family>.json` 各写各的文件，互不冲突；主 agent 最后合并成
-perturbation_matrix.json。子代理任务模板 Brief-COMPUTE / Brief-FACT 见引擎
-references/subagent-briefs.md。
+perturbation_matrix.json。子代理按名字派 `robustness-compute` 卡片，索引与回退见引擎
+`references/subagent-briefs.md`。
 
 ## 5. 本 playbook 特有反驳门条目
 

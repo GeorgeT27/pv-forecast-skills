@@ -71,8 +71,8 @@ playbook 的活。
 菜谱（编号步骤，逐条建 todo）：
 
 1. （主 agent）确认 metric-spec 已有答案。orient 报 ✗ 时，先向用户提问，再继续；
-2. 【硬规则】（主 agent）按 `references/subagent-briefs.md` 里的 **Brief-PRODUCER**
-   模板派发一个 subagent，由它执行步 3 起的全部菜谱（含 Stage 1）。派发时传实参：
+2. 【硬规则】（主 agent）派 `metric-eval-compute` 卡片整体执行（派发六步与回退见
+   `references/subagent-briefs.md`），由它执行步 3 起的全部菜谱（含 Stage 1）。派发时传实参：
    `<ENGINE>`、工作目录、setup 产物的 workdir、metric-spec 的答案（答案是外部脚本时，
    一并传脚本路径与调用方式）。主 agent 不得自己写 metrics.py；发现自己在写，
    就说明本步被跳过了，停下补派发；
@@ -122,8 +122,8 @@ done：`metric_table_manifest.json` 落盘。随后主 agent 回到父工作目�
 ## 5. subagent 拆分建议
 
 **整体外包（硬规则）**：Stage 0 的步 3 起连同 Stage 1，整体交给同一个 subagent
-串行执行，不再细拆。模板与派发纪律见 `references/subagent-briefs.md` 的
-Brief-PRODUCER。只能由主 agent 做的三件事：向用户提问（metric-spec）、
+串行执行，不再细拆。派发纪律见 `references/subagent-briefs.md`，按名字派
+`metric-eval-compute` 卡片。只能由主 agent 做的三件事：向用户提问（metric-spec）、
 记录 PROGRESS、回填 config.products。
 
 ## 6. 结论模板与反驳门

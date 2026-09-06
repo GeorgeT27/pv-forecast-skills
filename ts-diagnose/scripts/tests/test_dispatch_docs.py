@@ -34,3 +34,12 @@ def test_batch_phase_c_uses_cards():
     t = _read("batch-orchestration.md")
     assert "Brief-BATCH-COMPUTE" not in t
     assert "-compute" in t
+
+
+def test_playbooks_and_batch_have_no_stale_brief_templates():
+    stale = ("Brief-COMPUTE", "Brief-PRODUCER", "Brief-FACT", "Brief-BATCH")
+    paths = glob.glob(os.path.join(ENGINE_DIR, "playbooks", "**", "*.md"), recursive=True)
+    paths.append(os.path.join(ENGINE_DIR, "scripts", "batch.py"))
+    hits = [(p, s) for p in paths for s in stale
+            if s in open(p, encoding="utf-8").read()]
+    assert not hits, f"已删除的 Brief 模板仍被引用：{hits}"

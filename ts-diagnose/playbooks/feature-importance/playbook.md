@@ -194,7 +194,7 @@ upgrade_rule: "变量重要性排名要升「假设」：≥2 条证据线（per
 ## 4. Subagent 拆分建议
 
 - Stage 1 可按变量组分片派给多个 subagent 并行，每片写自己的产物（`--out perm.<group>.json`，占位符按实际组名填）；推理的批量化在脚本内部做，不靠多开 subagent。
-- Stage 0/3 可用 Brief-FACT 模板外包。
+- Stage 0–3 在 `feature-importance-compute` 卡片区间内，整段派发。
 - GPU 只有单卡时不分片。
 
 ## 5. 本 playbook 特有反驳门条目

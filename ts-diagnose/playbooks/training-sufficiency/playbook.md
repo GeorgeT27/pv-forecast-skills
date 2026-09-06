@@ -233,8 +233,8 @@ CLI 参数与产物的最小 schema 以 `golden/manifest.json` 为准，可执�
 
 ## 5. Subagent 拆分建议
 
-- Stage 0/1/2 可以打包交给一个数据 subagent，用 Brief-COMPUTE 模板下任务（见引擎 references/subagent-briefs.md）。多 series、大日志时按 series 分片并行：各自输出 `--out loss_records.<series>.csv`，最后由主 agent 合并。
-- Stage 3/4 计算量轻，主 agent 自己做或交给单个 subagent 都行。Stage 5 的现象提取可交给 Brief-FACT。
+- Stage 0–5 在 `training-sufficiency-compute` 卡片区间内，一次派发（索引见引擎 `references/subagent-briefs.md`）。多 series、大日志时按 series 分片并行：各自输出 `--out loss_records.<series>.csv`，最后由主 agent 合并。
+- Stage 6 结论归主 agent。
 - **单写者纪律**：state/PROGRESS/FINDINGS/config 这几个全局文件只有主 agent 能写，subagent 一律不碰，避免并发写坏状态。
 
 ## 6. 本 playbook 特有反驳门条目（结论标"已证实/假设"前逐条过）
