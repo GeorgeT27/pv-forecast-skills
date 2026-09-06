@@ -32,7 +32,7 @@ model: sonnet                         # 计算工默认 sonnet；重推理阶段
 ```
 
 - `name` 与文件名的双重命名律：`name == <playbook>-compute` 且 `os.path.basename(文件) == name + ".md"`。
-- `playbook` 必须是 v2 副本里真实存在的 id（`ec.find_playbook(playbook)` 能找到 `playbooks/<playbook>/playbook.md`）。
+- `playbook` 必须是真实存在的 playbook id（`ec.find_playbook(playbook)` 能找到 `playbooks/<playbook>/playbook.md`）。
 - `tools` 缺省视为空列表；不管填不填，都不得出现 `AskUserQuestion`。
 
 ## 3. 正文六节模板
