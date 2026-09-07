@@ -275,3 +275,19 @@ def test_status_prints_json(wd):
     r = run(wd, "status")
     doc = json.loads(r.stdout)
     assert doc["champion"] == "E000" and doc["round"] == 1 and doc["verdicts"] == {"baseline": 1}
+
+
+def test_decide_refuses_champion_without_slices_per_seed(wd):
+    run(wd, "candidates", "--ledger", "hypothesis_ledger.json", "--target", "TSMixer")
+    run(wd, "confirm-round")
+    guards = {"horizon:far": {"per_seed": [0.30, 0.31, 0.29], "champion_mean": 0.274, "noise_floor": 0.002}}
+    r1 = receipt(wd, "E001", "F1", [0.180, 0.181, 0.179], guards=guards, sealed_seed_vals=(0.19, 0.19, 0.19))
+    r2 = receipt(wd, "E002", "F2", [0.205, 0.206, 0.204], sealed_seed_vals=(0.215, 0.216, 0.214))
+    r2["slices_per_seed"] = []                     # 契约违规：worker 没交 slices_per_seed
+    ec.dump_json({"results": [r1, r2]}, str(wd / "rounds" / "round_1" / "batch_result.json"))
+    run(wd, "append", "--batch", "rounds/round_1/batch_result.json")
+    before = ec.read_json(str(wd / "champion.json"))
+    r = run(wd, "decide", ok=False)
+    assert r.returncode != 0 and "E002" in r.stdout + r.stderr and "slices_per_seed" in r.stdout + r.stderr
+    assert ec.read_json(str(wd / "champion.json")) == before
+    assert not os.path.exists(str(wd / "rounds" / "round_1" / "summary.json"))

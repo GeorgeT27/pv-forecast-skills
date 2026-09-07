@@ -290,11 +290,13 @@ def cmd_decide(a):
     prev = champ["exp_id"]
     if best:
         sps = best.get("slices_per_seed") or []
+        if not sps:
+            sys.exit(f"✗ {best['exp_id']} 的日志行缺 slices_per_seed，不能立为冠军")
         champ.update({"exp_id": best["exp_id"], "config": {**champ["config"], **best["config_diff"]},
                       "mean": best["mean"], "std": best["std"], "per_seed": best["per_seed"],
                       "noise_floor_3sigma": _nf(best["per_seed"]),
-                      "slices_mean": _slices_mean(sps) if sps else champ["slices_mean"],
-                      "slices_noise_floor": _slices_nf(sps) if sps else champ["slices_noise_floor"],
+                      "slices_mean": _slices_mean(sps),
+                      "slices_noise_floor": _slices_nf(sps),
                       "metrics_dirs": best.get("metrics_dirs") or [], "since_round": rnd})
         champ["history"].append({"round": rnd, "exp_id": best["exp_id"], "mean": best["mean"], "delta": best["delta"]})
     b = champ["budget"]
