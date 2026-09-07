@@ -30,7 +30,7 @@
 | `subset-influence` | N 个训练条目里哪些拖累留出目标（负迁移）/ chunk loss 震荡解释 |
 | `architecture-attribution` | 提出假设后的验证主脊：噪声底 + 切片 z 检验 → 假设账本校验 → 单变量消融干预（每条干预派 `architecture-attribution-worker` 重训 ≥3 种子）→ 确认/否证/未决三态判定；结论只在出口过 conclusion_gate |
 
-（分层机制已全量落地：4 生产者 + 7 分析 playbook 全部声明上游；contexts 机制已退役。）
+（分层机制已全量落地：4 生产者 + 8 分析 playbook 全部声明上游；contexts 机制已退役。）
 
 ## 引擎的运作方式
 
