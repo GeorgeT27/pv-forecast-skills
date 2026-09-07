@@ -803,3 +803,37 @@ def merge_profile(cfg, prof, date_stamp):
 def crystallize_min_cases(fm):
     """固化三关之一（多样性）的 N：playbook frontmatter 可覆盖默认值。"""
     return int(fm.get("crystallize_min_cases") or CRYSTALLIZE_MIN_CASES_DEFAULT)
+
+
+STAGE_HEADING_RE = re.compile(r"^###\s+Stage\s*(\d+)(?:\s*[–\-~/]\s*(\d+))?(?!\d)")
+
+
+def recipe_sections(playbook_path):
+    """playbook 正文 → {stage_id: 小节原文}。小节 = '### Stage N' 标题起，到下一个 '## '/'### ' 止；
+    '### Stage N–M' 把范围内每个 id 映射到同一节。同一 id 两个标题 → ValueError。"""
+    with open(playbook_path, encoding="utf-8") as f:
+        body = f.read().split("---", 2)[2]
+    out, cur, buf = {}, None, []
+
+    def flush():
+        if cur is None:
+            return
+        text = "\n".join(buf).rstrip()
+        for i in cur:
+            if i in out:
+                raise ValueError(f"{playbook_path}: Stage {i} 出现两个菜谱标题")
+            out[i] = text
+
+    for ln in body.splitlines():
+        m = STAGE_HEADING_RE.match(ln)
+        if m:
+            flush()
+            lo, hi = int(m.group(1)), int(m.group(2) or m.group(1))
+            cur, buf = list(range(lo, hi + 1)), [ln]
+        elif cur is not None and (ln.startswith("## ") or ln.startswith("### ")):
+            flush()
+            cur, buf = None, []
+        elif cur is not None:
+            buf.append(ln)
+    flush()
+    return out
