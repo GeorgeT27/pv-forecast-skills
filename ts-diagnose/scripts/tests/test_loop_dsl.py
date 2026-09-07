@@ -99,3 +99,32 @@ def test_orient_preserves_round_and_prints_it(wd):
     assert r.returncode == 0, r.stderr
     assert "第 2 轮" in r.stdout
     assert (ec.read_json("diagnose_state.json") or {}).get("round") == 2
+
+
+PB_BLOCKED = """---
+id: loop-blocked-demo
+name: 入口闸阻塞演示
+goal: 校验 intake-blocked 分支不冲掉已有 round
+materials:
+  required: [predict]
+stages:
+  - id: 0
+    name: 起步
+    done_when: {artifacts: ['stage0.json']}
+---
+正文占位。
+"""
+
+
+def test_orient_blocked_path_preserves_round(tmp_path, monkeypatch):
+    pb = tmp_path / "pb" / "playbook.md"
+    pb.parent.mkdir()
+    pb.write_text(PB_BLOCKED, encoding="utf-8")
+    # 不写 materials 块 → predict 状态 unknown → 触发入口闸 BLOCKED
+    ec.dump_json({"playbook": str(pb)}, str(tmp_path / "diagnose_config.json"))
+    ec.dump_json({"round": 3, "manual_done": []}, str(tmp_path / "diagnose_state.json"))
+    monkeypatch.chdir(tmp_path)
+    r = subprocess.run([sys.executable, ORIENT], cwd=str(tmp_path), capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert "BLOCKED: 材料盘点未完成" in r.stdout
+    assert (ec.read_json("diagnose_state.json") or {}).get("round") == 3

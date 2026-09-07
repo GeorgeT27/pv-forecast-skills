@@ -399,12 +399,14 @@ def _write_state_progress(fm, cur, args, ctx=None, actives=None, state=None, blo
                 old_state = json.load(f)
         except (OSError, json.JSONDecodeError):
             old_state = None
+    # round 永不倒退：intake-blocked 分支不传 state，此处退回落盘的 old_state 取真值
+    rnd = int(((state or old_state) or {}).get("round") or 1)
     if blocked is not None:
         new_state = {"playbook": fm["id"],
                      "updated": dt.datetime.now().isoformat(timespec="seconds"),
                      "current_stage": "intake-blocked", "stages": {},
                      "manual_done": [], "variants": {},
-                     "round": int((state or {}).get("round") or 1)}
+                     "round": rnd}
         line = f"orient：playbook={fm['id']}，BLOCKED 材料盘点未完成：{','.join(blocked)}"
     else:
         new_state = {
@@ -416,7 +418,7 @@ def _write_state_progress(fm, cur, args, ctx=None, actives=None, state=None, blo
                        for st in fm["stages"]},
             "manual_done": (state or {}).get("manual_done") or [],
             "variants": actives,
-            "round": int((state or {}).get("round") or 1),
+            "round": rnd,
         }
         line = (f"orient：playbook={fm['id']}，当前 Stage "
                 f"{cur['id'] if cur is not None else '收尾'}"
