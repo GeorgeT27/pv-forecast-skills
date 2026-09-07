@@ -5,7 +5,10 @@ cfg.json：lsf_mini_dir（lsf-mini 仓库绝对路径）+ run.py 参数（model/
 root_path 写绝对路径）。流程：子进程跑 run.py（cwd=DIR，results.csv 落 DIR/results/）→ 载 DIR/ckpt.pth 在
 val 集推理 → primary=val_mse（标准化空间，与 run.py 的 test_mse 同口径）+ 切片 MSE（horizon 三桶 × 通道）
 → DIR/metrics.json。run.py 自带的 test 指标只写 DIR/sealed/test_metrics.json（封存）；pred.npy/true.npy
-算完即删（Weather 单次各 84 MB）。"""
+算完即删（Weather 单次各 84 MB）。
+primary 的精确定义：对全体 val 窗口 (样本×时间步×通道) 的逐元素平方误差展平取 mean——这与 run.py
+自己算 test_mse 的口径完全一致，两者可比。它不是 run.py 早停用来选 ckpt 的 val_loss（run.py 的
+val_loss 是先对每个 batch 求均值、再对各 batch 的均值取均值；末尾不满批时两种口径的加权不同）。"""
 import argparse
 import datetime as dt
 import json
@@ -93,10 +96,14 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--time-limit", type=int, default=900)
     a = ap.parse_args()
-    cfg = json.load(open(a.config, encoding="utf-8"))
     out = os.path.abspath(a.out)
     os.makedirs(out, exist_ok=True)
     t0 = _now()
+    try:
+        cfg = json.load(open(a.config, encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        _fail(out, "crash", f"config load failed: {type(e).__name__}: {e}"[-2000:], {}, t0)
+        sys.exit(2)
     for k in ("lsf_mini_dir", "model", "data", "root_path"):
         if k not in cfg:
             _fail(out, "crash", f"config 缺 {k}", cfg, t0)
