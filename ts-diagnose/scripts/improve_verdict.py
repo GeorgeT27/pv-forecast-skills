@@ -63,6 +63,9 @@ def judge_round(obj):
     """obj: {"champion_mean", "noise_floor_3sigma", "higher_is_better"?, "candidates": [{exp_id, hypothesis_id, per_seed, guards?}]}"""
     out = {}
     for c in obj["candidates"]:
+        per = [float(x) for x in c.get("per_seed") or []]
+        if len(per) < 3:
+            raise ValueError(f"✗ 候选 {c['exp_id']} 的有效种子只有 {len(per)} 个（<3）——不判定")
         out[c["exp_id"]] = judge(c["exp_id"], c.get("hypothesis_id"), c["per_seed"],
                                  obj["champion_mean"], obj["noise_floor_3sigma"],
                                  guards=c.get("guards"), higher_is_better=bool(obj.get("higher_is_better")))
@@ -83,8 +86,10 @@ def _guards_from(summary, champ, guard_ids):
         per = [float(sp[s]) for sp in summary.get("slices_per_seed") or [] if s in sp]
         if not per or s not in (champ.get("slices_mean") or {}):
             sys.exit(f"✗ 守护切片 {s} 在 summary.slices_per_seed 或 champion.slices_mean 里缺失")
+        if s not in (champ.get("slices_noise_floor") or {}):
+            sys.exit(f"✗ 守护切片 {s} 在 champion.slices_noise_floor 里缺失")
         guards[s] = {"per_seed": per, "champion_mean": champ["slices_mean"][s],
-                     "noise_floor": (champ.get("slices_noise_floor") or {}).get(s, 0.0)}
+                     "noise_floor": champ["slices_noise_floor"][s]}
     return guards
 
 

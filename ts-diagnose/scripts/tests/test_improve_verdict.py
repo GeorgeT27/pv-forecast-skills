@@ -94,3 +94,30 @@ def test_cli_round_mode(tmp_path):
     assert r.returncode == 0, r.stderr
     out = json.loads((tmp_path / "verdicts.json").read_text(encoding="utf-8"))
     assert out["verdicts"]["E001"]["verdict"] == "undecided"
+
+
+def test_guards_from_exits_when_noise_floor_missing(tmp_path):
+    summary = {"per_seed": [0.180, 0.181, 0.179],
+               "slices_per_seed": [{"far": 0.25}, {"far": 0.26}, {"far": 0.25}],
+               "t_start": "2026-09-07T10:00:00", "t_end": "2026-09-07T10:03:00"}
+    champ = {"mean": 0.200, "noise_floor_3sigma": 0.006,
+             "slices_mean": {"far": 0.26}, "slices_noise_floor": {}}  # 缺少 far 的 noise_floor
+    (tmp_path / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+    (tmp_path / "champion.json").write_text(json.dumps(champ), encoding="utf-8")
+    adapter = tmp_path / "adapter.py"
+    adapter.write_text("print('x')\n", encoding="utf-8")
+    r = subprocess.run([sys.executable, SCRIPT, "--exp-id", "E003", "--hypothesis-id", "F1",
+                        "--summary", "summary.json", "--champion", "champion.json", "--guard", "far",
+                        "--config-diff", '{}', "--script", str(adapter),
+                        "--out", "receipts/E003.json"],
+                       cwd=str(tmp_path), capture_output=True, text=True)
+    assert r.returncode != 0 and "slices_noise_floor" in (r.stdout + r.stderr) and "far" in (r.stdout + r.stderr)
+
+
+def test_judge_round_refuses_fewer_than_three_seeds():
+    import pytest
+    obj = {"champion_mean": 0.200, "noise_floor_3sigma": 0.006,
+           "candidates": [{"exp_id": "E001", "hypothesis_id": "F1", "per_seed": [0.199, 0.198]}]}
+    with pytest.raises(ValueError) as exc_info:
+        iv.judge_round(obj)
+    assert "E001" in str(exc_info.value) and "种子" in str(exc_info.value)
