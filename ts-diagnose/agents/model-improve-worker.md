@@ -25,6 +25,8 @@ model: sonnet
 按 `playbooks/model-improve/playbook.md` 的 Stage 0 第 2 步（task=baseline）或 Stage 2 第 1 步（task=candidate）执行；契约见 `<ENGINE>/references/evaluator-contract.md`。
 1. `python3 "<ENGINE>/scripts/evaluator.py" run-seeds --evaluator evaluator.json --config-diff '<config_diff JSON>' --out-root runs/<exp_id>`，记起止时刻。退出码 2 表示有种子非 ok：读 `runs/<exp_id>/summary.json` 的 `run_status`。
 2. candidate 任务且全部种子 ok：`python3 "<ENGINE>/scripts/improve_verdict.py" --exp-id <exp_id> --hypothesis-id <hypothesis_id> --summary runs/<exp_id>/summary.json --champion champion.json --guard <guard_slices 逗号分隔> --config-diff '<config_diff JSON>' --script <evaluator.json 里的 adapter 路径> --t-start <ISO> --t-end <ISO> --selftest "<一句话：summary 种子数与 evaluator.json.seeds 一致>" --out receipts/<exp_id>.json`。
+   - `evaluator.json` 的 `metric.direction` 是 `higher_is_better` 时，这条命令末尾加 `--higher-is-better`。
+   - `hypothesis_id` 为 null 时，这条命令省去 `--hypothesis-id` 参数。
 3. 有种子非 ok：不跑 improve_verdict，回 BLOCKED，`run_status` 照 summary 填，`blocked_reason` 写种子号与 metrics.json 的 error 首行。
 阶段与 prereq 由主 agent 掌握；本卡不跑 `python3 "<ENGINE>/scripts/orient.py"`（阶段状态单写者是主 agent）。
 

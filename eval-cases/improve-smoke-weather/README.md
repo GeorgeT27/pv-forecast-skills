@@ -92,4 +92,7 @@ python3 "$ENGINE/scripts/orient.py" | head -5
 ## 说明
 
 - `receipts/*.json` 的 `produced_by` 字段是本机绝对路径（`/private/tmp/improve-loop-phase4/eval-cases/adapters/lsf_mini_adapter.py`）；换一台机器重跑 `conclusion_gate.py`，该路径不存在会导致规则 7 校验不过——这是预期行为，不是 bug，重跑前须在目标机器上重新走一遍改进环产生本机自己的 receipts。
+- 本机绝对路径不止 receipt 一处：`evaluator.json` 的 `adapter` 是 `/private/tmp/improve-loop-phase4/eval-cases/adapters/lsf_mini_adapter.py`，`base_config.lsf_mini_dir` 与 `base_config.root_path` 指向 `/Users/tqa946816/Documents/华为/光伏预测/lsf-mini`，`champion.json` 的 `base_config` 存了同样这两个路径。
+- 所以在本用例上跑 `evaluator.py validate` 与 `conclusion_gate.py`，上述路径必须在本机存在，否则校验不过。
+- 下一次冒烟把 `evaluator.json` 的 `adapter` 写成相对路径 `../adapters/lsf_mini_adapter.py`，只留数据集目录一处按机器改。
 - 本目录不读、不参考 `eval-cases/holdout/HW1/`（同数据集上的冻结留出用例）。

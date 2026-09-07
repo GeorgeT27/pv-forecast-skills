@@ -124,7 +124,7 @@ done：`evaluator.json` + `champion.json` + `experiment_log.jsonl` 落盘 → **
 1. 账本来源：`python3 "<ENGINE>/scripts/experiment_log.py" candidates --ledger <账本路径> --target <improve-target 的模型名>`。只取 `kind=improvement`、`status=pending`、`fix.target_model` 相同的条目，按其 `derived_from` 父假设的 `discriminating_power` 降序。
 2. 素版来源：把 `model_profile` 的 `ablation_switches` 存成 JSON，跑 `candidates --switches <该 JSON> --target <模型名> --guard <守护切片,逗号分隔>`。`config-flag` 先于 `code-stub`，`not-intervenable` 不进队。
 3. 两种来源可以同时给。已跑过的 `config_diff` 自动去重；超出每轮上限或剩余预算的候选进 `deferred`。
-4. 向用户汇报本轮候选清单与训练次数（候选数 × 种子数），用户说开跑后执行 `experiment_log.py confirm-round`。候选为空时不确认，改走 `stop --reason no_candidates`。
+4. 向用户汇报本轮候选清单与训练次数（候选数 × 种子数），用户说开跑后执行 `experiment_log.py confirm-round`。候选为空时不确认，改走 `stop --reason no_candidates`，然后 `python3 "<ENGINE>/scripts/orient.py" --goto 4` 进结论阶段。`stop` 只在 Stage 3 的停顿点或这里候选为空时跑，别处不跑。
 
 第 2 轮起的候选：先看上一轮 `summary.json` 的 `deferred`；需要新假设时回生成器 playbook 重跑（配对写「新冠军 vs 旧冠军」，新条目 `provenance: post-hoc`）。
 

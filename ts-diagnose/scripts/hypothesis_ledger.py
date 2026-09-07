@@ -40,7 +40,8 @@ def validate_ledger(obj):
                 errs.append(f"{hid}: improvement 假设必须带 fix 对象")
             else:
                 for k in FIX_REQUIRED:
-                    if not fix.get(k):
+                    # 空 list / 空 dict 是合法取值（如无守护切片），只有键不在或值为 null 才算缺
+                    if k not in fix or fix[k] is None:
                         errs.append(f"{hid}: fix 缺 {k}")
                 if fix.get("config_diff") is not None and not isinstance(fix["config_diff"], dict):
                     errs.append(f"{hid}: fix.config_diff 须为 dict（键=knob 名）")

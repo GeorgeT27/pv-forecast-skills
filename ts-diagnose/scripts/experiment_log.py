@@ -19,7 +19,18 @@ import engine_common as ec  # noqa: E402
 LOG = "experiment_log.jsonl"
 CHAMP = "champion.json"
 FINAL = "final_test.json"
-SEALED_KEYS = ("test", "sealed")
+
+
+def _is_sealed_key(k):
+    """封存键：整键 test、以 test_ 开头、或含 sealed（不区分大小写）。
+    knob 名或切片 id 里出现的 test 子串（latest_ckpt、contest 等）放行。"""
+    s = str(k).lower()
+    return s == "test" or s.startswith("test_") or "sealed" in s
+
+
+def _higher_is_better(champ):
+    """冠军记的口径方向；champion.json 无 metric.direction 时按 lower_is_better。"""
+    return (champ.get("metric") or {}).get("direction") == "higher_is_better"
 
 
 def _now():
@@ -231,7 +242,7 @@ def cmd_append(a):
     batch = _need(a.batch, "读不到批结果")
     results = batch.get("results", batch) if isinstance(batch, dict) else batch
     for k in _keys(results):
-        if any(s in str(k).lower() for s in SEALED_KEYS):
+        if _is_sealed_key(k):
             sys.exit(f"✗ 结果里出现封存字段 {k!r}——环内不许读测试集")
     by_exp = {c["exp_id"]: c for c in cands["candidates"]}
     existing = {r["exp_id"] for r in read_log()}
@@ -262,6 +273,9 @@ def cmd_append(a):
                 sys.exit(f"✗ {res['receipt_file']} 的 exp_id={rec.get('exp_id')} ≠ {eid}")
             if rec.get("verdict") not in ("keep", "discard", "undecided"):
                 sys.exit(f"✗ {eid} receipt 判定非法：{rec.get('verdict')}")
+            if json.dumps(rec.get("config_diff"), sort_keys=True) != json.dumps(c["config_diff"], sort_keys=True):
+                sys.exit(f"✗ {eid} 的 receipt config_diff {rec.get('config_diff')} ≠ 候选登记的 "
+                         f"{c['config_diff']}——门 2：config_diff 不许事后改")
             row.update({"per_seed": rec["per_seed"], "mean": rec["mean"], "std": rec["std"], "delta": rec["delta"],
                         "noise_floor_3sigma": rec["noise_floor_3sigma"], "guard": rec.get("guard") or {},
                         "verdict": rec["verdict"], "receipt_file": res["receipt_file"], "receipt_line": rec["line"]})
@@ -286,13 +300,15 @@ def cmd_decide(a):
     if missing:
         sys.exit(f"✗ 候选 {missing} 还没有日志行——先 append")
     keeps = [r for r in rows if r["verdict"] == "keep"]
-    best = min(keeps, key=lambda r: r["mean"]) if keeps else None
+    pick = max if _higher_is_better(champ) else min      # 口径方向决定「最好的 keep」是最大还是最小
+    best = pick(keeps, key=lambda r: r["mean"]) if keeps else None
     prev = champ["exp_id"]
     if best:
         sps = best.get("slices_per_seed") or []
         if not sps:
             sys.exit(f"✗ {best['exp_id']} 的日志行缺 slices_per_seed，不能立为冠军")
-        champ.update({"exp_id": best["exp_id"], "config": {**champ["config"], **best["config_diff"]},
+        # config 打在 base_config 上（与 evaluator.apply_diff 同口径，不叠加历轮 diff）
+        champ.update({"exp_id": best["exp_id"], "config": {**champ["base_config"], **best["config_diff"]},
                       "mean": best["mean"], "std": best["std"], "per_seed": best["per_seed"],
                       "noise_floor_3sigma": _nf(best["per_seed"]),
                       "slices_mean": _slices_mean(sps),
@@ -377,11 +393,12 @@ def cmd_finalize(a):
     c = b if champ["exp_id"] == "E000" else _sealed_primary(champ["metrics_dirs"])
     bm, cm, nf = statistics.fmean(b), statistics.fmean(c), _nf(b)
     delta = cm - bm
+    norm = -delta if _higher_is_better(champ) else delta   # 符号归一：norm<0 恒表示「按本口径变好」
     if champ["exp_id"] == "E000":
         v = "no_change"
-    elif delta < 0 and abs(delta) >= nf:
+    elif norm < 0 and abs(norm) >= nf:
         v = "improved"
-    elif delta > 0 and delta >= nf:
+    elif norm > 0 and norm >= nf:
         v = "worse"
     else:
         v = "not_distinguishable"

@@ -1,5 +1,7 @@
-"""workflows/*.js 静态守卫：meta 纯字面量、无 Date.now/Math.random/文件系统、agentType 来自 args、node --check 通过。"""
+"""workflows/*.js 静态守卫：meta 纯字面量、无 Date.now/Math.random/文件系统、agentType 来自 args、node --check 通过；
+另加共用 CONTRACT 与两张 worker 卡片输出契约示例的相容性（同一支脚本派两种 task）。"""
 import glob
+import json
 import os
 import re
 import shutil
@@ -9,8 +11,10 @@ import pytest
 
 ENGINE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 WF_DIR = os.path.join(ENGINE_DIR, "workflows")
+AGENTS_DIR = os.path.join(ENGINE_DIR, "agents")
 FILES = sorted(glob.glob(os.path.join(WF_DIR, "*.js")))
 BANNED = ("Date.now(", "Math.random(", "new Date(", "require(", "import ", "fs.", "process.")
+CARDS = ("model-improve-worker.md", "architecture-attribution-worker.md")
 
 
 def test_train_batch_exists():
@@ -36,6 +40,79 @@ def test_train_batch_prompt_only_card_input_fields():
     for field in ("exp_id", "hypothesis_id", "config_diff", "guard_slices"):
         assert field in src, f"prompt 取值需覆盖卡片输入字段 {field!r}"
     assert "JSON.stringify(c)" not in src, "prompt 不得把候选对象整体（含 source/predicted_gain 等）原样传给 worker"
+
+
+def _contract():
+    """不依赖 node：从 JS 源抠出 const CONTRACT 字面量转成 JSON（键补引号、单引号换双引号、去尾逗号）。"""
+    src = open(os.path.join(WF_DIR, "ts-train-batch.js"), encoding="utf-8").read()
+    m = re.search(r"^const CONTRACT = (\{.*?^\})$", src, re.S | re.M)
+    assert m, "ts-train-batch.js 里找不到 const CONTRACT = {...} 字面量"
+    js = re.sub(r"([{,]\s*)([A-Za-z_]\w*)\s*:", r'\1"\2":', m.group(1)).replace("'", '"')
+    return json.loads(re.sub(r",(\s*[}\]])", r"\1", js))
+
+
+def _card_example(name):
+    """卡片「输出契约」节的 ```json 示例块；status 占位形如 `A | B | C`，拆成候选列表。"""
+    body = open(os.path.join(AGENTS_DIR, name), encoding="utf-8").read()
+    m = re.search(r"```json\n(.*?)\n```", body, re.S)
+    assert m, f"{name} 缺 ```json 输出契约示例块"
+    doc = json.loads(m.group(1))
+    if isinstance(doc.get("status"), str) and "|" in doc["status"]:
+        doc["status"] = [s.strip() for s in doc["status"].split("|")]
+    return doc
+
+
+def _json_type(v):
+    if v is None:
+        return "null"
+    if isinstance(v, bool):
+        return "boolean"
+    if isinstance(v, (int, float)):
+        return "number"
+    if isinstance(v, str):
+        return "string"
+    if isinstance(v, list):
+        return "array"
+    return "object"
+
+
+def _check(doc, contract):
+    """jsonschema 可导入就用它；否则退回最小检查：required 齐、每个属性的 type 相容（type 可为列表）。"""
+    try:
+        import jsonschema
+    except ImportError:
+        jsonschema = None
+    if jsonschema is not None:
+        jsonschema.validate(doc, contract)
+        return
+    for k in contract["required"]:
+        assert k in doc, f"输出契约示例缺 required 字段 {k!r}"
+    for k, v in doc.items():
+        spec = (contract.get("properties") or {}).get(k)
+        if not spec or "type" not in spec:
+            continue
+        allowed = spec["type"] if isinstance(spec["type"], list) else [spec["type"]]
+        assert _json_type(v) in allowed, f"{k!r} 实际类型 {_json_type(v)} 不在契约 {allowed} 里"
+
+
+@pytest.mark.parametrize("card", CARDS)
+def test_card_output_example_satisfies_shared_contract(card):
+    """运行时按 CONTRACT 校验 worker 的 final message：任一张卡片的输出契约示例过不了 CONTRACT，
+    该 task 的派发就回不来（intervention 的 config_diff 是 CLI 开关数组）。"""
+    contract = _contract()
+    doc = _card_example(card)
+    enum = contract["properties"]["status"]["enum"]
+    status = doc["status"]
+    for s in (status if isinstance(status, list) else [status]):
+        assert s in enum, f"{card} 的 status 取值 {s!r} 不在契约 enum {enum} 里"
+    doc["status"] = status[0] if isinstance(status, list) else status
+    _check(doc, contract)
+
+
+def test_contract_config_diff_accepts_object_and_array():
+    """model-improve-worker 回 config_diff 对象，architecture-attribution-worker 回 CLI 开关数组。"""
+    spec = _contract()["properties"]["config_diff"]["type"]
+    assert isinstance(spec, list) and set(spec) == {"object", "array"}
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="无 node")

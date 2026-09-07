@@ -74,6 +74,12 @@ def test_kind_default_mechanism_and_illegal_kind_rejected():
     assert any("kind" in e for e in hl.validate_ledger({"slice_map": [], "hypotheses": [h]}))
 
 
+def test_improvement_allows_empty_guard_slices():
+    """守护切片可以一个都没有：空 list 是合法取值，不是「缺字段」。"""
+    h = dict(IMPROVE, fix=dict(IMPROVE["fix"], guard_slices=[]))
+    assert hl.validate_ledger({"slice_map": [], "hypotheses": [h]}) == []
+
+
 def test_improvement_requires_fix_fields():
     h = dict(IMPROVE, fix={"target_model": "TSMixer"})
     errs = hl.validate_ledger({"slice_map": [], "hypotheses": [h]})

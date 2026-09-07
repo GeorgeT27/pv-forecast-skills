@@ -15,7 +15,7 @@ const CONTRACT = {
     hypothesis_id: { type: ['string', 'null'] },
     receipt_line: { type: 'string' },
     receipt_file: { type: 'string' },
-    config_diff: { type: 'object' },
+    config_diff: { type: ['object', 'array'] },
     per_seed: { type: 'array', items: { type: 'number' } },
     mean: { type: ['number', 'null'] },
     std: { type: ['number', 'null'] },

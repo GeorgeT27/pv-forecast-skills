@@ -35,12 +35,15 @@ for c in cands["candidates"]:
            "summary_file": f"runs/{eid}/summary.json", "receipt_line": "", "receipt_file": "",
            "need_info": [], "blocked_reason": ""}
     if all(x == "ok" for x in s["run_status"]):
-        r = run([sys.executable, f"{ENGINE}/scripts/improve_verdict.py", "--exp-id", eid,
-                 "--hypothesis-id", c.get("hypothesis_id") or "", "--summary", f"runs/{eid}/summary.json",
-                 "--champion", "champion.json", "--guard", ",".join(c.get("guard_slices") or []),
-                 "--config-diff", json.dumps(c["config_diff"]), "--script", EV["adapter"],
-                 "--t-start", s["t_start"], "--t-end", s["t_end"],
-                 "--selftest", f"seeds={len(s['per_seed'])}=={len(EV['seeds'])}", "--out", f"receipts/{eid}.json"])
+        cmd = [sys.executable, f"{ENGINE}/scripts/improve_verdict.py", "--exp-id", eid,
+               "--hypothesis-id", c.get("hypothesis_id") or "", "--summary", f"runs/{eid}/summary.json",
+               "--champion", "champion.json", "--guard", ",".join(c.get("guard_slices") or []),
+               "--config-diff", json.dumps(c["config_diff"]), "--script", EV["adapter"],
+               "--t-start", s["t_start"], "--t-end", s["t_end"],
+               "--selftest", f"seeds={len(s['per_seed'])}=={len(EV['seeds'])}", "--out", f"receipts/{eid}.json"]
+        if EV["metric"]["direction"] == "higher_is_better":
+            cmd.append("--higher-is-better")   # 本用例是 lower_is_better，这里不加
+        r = run(cmd)
         res["receipt_file"] = f"receipts/{eid}.json"
         res["receipt_line"] = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
     else:

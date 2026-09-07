@@ -25,6 +25,7 @@ EVALUATOR = {"adapter": FAKE,
              "metric": {"id": "val_mse", "direction": "lower_is_better"},
              "slices": ["horizon:near", "horizon:mid", "horizon:far"],
              "seeds": [7, 1337, 2021], "time_limit_s": 5}
+EVALUATOR_HIB = dict(EVALUATOR, metric={"id": "val_r2", "direction": "higher_is_better"})
 BASELINE = {"per_seed": [0.2109, 0.2114, 0.2106], "seeds": [7, 1337, 2021],
             "slices_per_seed": [{"horizon:far": 0.274, "horizon:near": 0.169},
                                 {"horizon:far": 0.275, "horizon:near": 0.169},
@@ -57,26 +58,48 @@ def run(wd, *args, ok=True):
     return r
 
 
-@pytest.fixture
-def wd(tmp_path):
-    ec.dump_json(EVALUATOR, str(tmp_path / "evaluator.json"))
+def _setup(tmp_path, evaluator=EVALUATOR, sealed=(0.23, 0.23, 0.23)):
+    ec.dump_json(evaluator, str(tmp_path / "evaluator.json"))
     ec.dump_json(BASELINE, str(tmp_path / "baseline.json"))
     ec.dump_json(LEDGER, str(tmp_path / "hypothesis_ledger.json"))
     ec.dump_json({"playbook": "model-improve"}, str(tmp_path / "diagnose_config.json"))
-    for d in BASELINE["metrics_dirs"]:
+    for d, v in zip(BASELINE["metrics_dirs"], sealed):
         os.makedirs(tmp_path / d / "sealed", exist_ok=True)
-        (tmp_path / d / "sealed" / "test_metrics.json").write_text(json.dumps({"test_primary": 0.23}), encoding="utf-8")
+        (tmp_path / d / "sealed" / "test_metrics.json").write_text(json.dumps({"test_primary": v}), encoding="utf-8")
     run(tmp_path, "init", "--evaluator", "evaluator.json", "--baseline", "baseline.json",
         "--max-trainings", "30", "--max-rounds", "3", "--max-per-round", "10", "--stagnation-rounds", "2")
     return tmp_path
 
 
-def receipt(wd, exp_id, hyp, per_seed, guards=None, sealed_seed_vals=(0.20, 0.20, 0.20)):
+@pytest.fixture
+def wd(tmp_path):
+    return _setup(tmp_path)
+
+
+@pytest.fixture
+def wd_hib(tmp_path):
+    """metric.direction = higher_is_better；基线封存值有方差，测试集噪声底非 0。"""
+    return _setup(tmp_path, EVALUATOR_HIB, sealed=(0.230, 0.232, 0.228))
+
+
+def _cand_diff(wd, exp_id):
+    """receipt 的 config_diff 必须与本轮候选一致（append 门 2 会校验），从 candidates.json 取。"""
+    rnd = (ec.read_json(str(wd / "diagnose_state.json")) or {}).get("round", 1)
+    doc = ec.read_json(str(wd / "rounds" / f"round_{rnd}" / "candidates.json")) or {}
+    for c in doc.get("candidates") or []:
+        if c["exp_id"] == exp_id:
+            return c["config_diff"]
+    return {}
+
+
+def receipt(wd, exp_id, hyp, per_seed, guards=None, sealed_seed_vals=(0.20, 0.20, 0.20), higher=False):
     champ = ec.read_json(str(wd / "champion.json"))
-    r = iv.judge(exp_id, hyp, per_seed, champ["mean"], champ["noise_floor_3sigma"], guards=guards)
+    r = iv.judge(exp_id, hyp, per_seed, champ["mean"], champ["noise_floor_3sigma"], guards=guards,
+                 higher_is_better=higher)
     adapter = wd / "adapter.py"
     adapter.write_text("print(1)\n", encoding="utf-8")
-    r.update({"config_diff": {}, "produced_by": str(adapter), "script_sha256": iv._sha256(str(adapter)),
+    r.update({"config_diff": _cand_diff(wd, exp_id), "produced_by": str(adapter),
+              "script_sha256": iv._sha256(str(adapter)),
               "t_start": "t0", "t_end": "t1", "script_selftest": "ok"})
     os.makedirs(wd / "receipts", exist_ok=True)
     (wd / "receipts" / f"{exp_id}.json").write_text(json.dumps([r]), encoding="utf-8")
@@ -134,6 +157,7 @@ def test_candidates_from_switches_parses_flags_and_caps_by_budget(wd):
 def test_append_requires_confirm_and_rejects_sealed_unknown_duplicate(wd):
     run(wd, "candidates", "--ledger", "hypothesis_ledger.json", "--target", "TSMixer")
     res = receipt(wd, "E001", "F1", [0.180, 0.181, 0.179])
+    res["latest_ckpt"] = "runs/E001/seed_7/latest.pth"   # 含 test 子串但不是封存键——必须放行
     ec.dump_json({"results": [res]}, str(wd / "rounds" / "round_1" / "batch_result.json"))
     r = run(wd, "append", "--batch", "rounds/round_1/batch_result.json", ok=False)
     assert r.returncode != 0 and "未确认" in r.stdout + r.stderr
@@ -141,6 +165,10 @@ def test_append_requires_confirm_and_rejects_sealed_unknown_duplicate(wd):
     bad = dict(res, sealed_test_primary=0.1)
     ec.dump_json({"results": [bad]}, str(wd / "bad.json"))
     r = run(wd, "append", "--batch", "bad.json", ok=False)
+    assert r.returncode != 0 and "封存" in r.stdout + r.stderr
+    bad2 = dict(res, test_mse=0.1)
+    ec.dump_json({"results": [bad2]}, str(wd / "bad2.json"))
+    r = run(wd, "append", "--batch", "bad2.json", ok=False)
     assert r.returncode != 0 and "封存" in r.stdout + r.stderr
     ec.dump_json({"results": [dict(res, exp_id="E077")]}, str(wd / "unk.json"))
     assert run(wd, "append", "--batch", "unk.json", ok=False).returncode != 0
@@ -291,3 +319,64 @@ def test_decide_refuses_champion_without_slices_per_seed(wd):
     assert r.returncode != 0 and "E002" in r.stdout + r.stderr and "slices_per_seed" in r.stdout + r.stderr
     assert ec.read_json(str(wd / "champion.json")) == before
     assert not os.path.exists(str(wd / "rounds" / "round_1" / "summary.json"))
+
+
+def test_champion_config_is_base_plus_current_diff_not_stacked(wd):
+    """两轮各留下一个不同 knob：冠军 config = base_config + 本轮 diff。
+    evaluator.apply_diff 永远把候选 diff 打在 base_config 上（不叠加），冠军 config 必须同口径，
+    否则 champion.json 描述的是没人训练过的配置。"""
+    _round1(wd)                                     # 第 1 轮 keep = E002，config_diff={"dropout": 0.05}
+    run(wd, "decide")
+    run(wd, "new-round")
+    ec.dump_json({"ablation_switches": [{"component": "lr", "switch": "--learning_rate=0.0005",
+                                         "kind": "config-flag"}]}, str(wd / "sw.json"))
+    run(wd, "candidates", "--switches", "sw.json", "--target", "TSMixer")
+    run(wd, "confirm-round")
+    r3 = receipt(wd, "E003", None, [0.190, 0.191, 0.189], sealed_seed_vals=(0.19, 0.19, 0.19))
+    ec.dump_json({"results": [r3]}, str(wd / "rounds" / "round_2" / "batch_result.json"))
+    run(wd, "append", "--batch", "rounds/round_2/batch_result.json")
+    run(wd, "decide")
+    champ = ec.read_json(str(wd / "champion.json"))
+    assert champ["exp_id"] == "E003"
+    assert champ["config"] == dict(EVALUATOR["base_config"], learning_rate=0.0005)
+    assert champ["config"]["dropout"] == EVALUATOR["base_config"]["dropout"]   # 第 1 轮的 0.05 不残留
+    run(wd, "stop", "--reason", "够了")
+    run(wd, "finalize")
+    doc = ec.read_json(str(wd / "final_test.json"))
+    assert doc["champion"]["config_diff_vs_baseline"] == {"learning_rate": 0.0005}
+
+
+def test_higher_is_better_picks_max_keep_and_finalizes_improved(wd_hib):
+    """metric.direction=higher_is_better：decide 取均值最大的 keep；finalize 的 improved 按方向判。"""
+    run(wd_hib, "candidates", "--ledger", "hypothesis_ledger.json", "--target", "TSMixer")
+    run(wd_hib, "confirm-round")
+    r1 = receipt(wd_hib, "E001", "F1", [0.300, 0.301, 0.299], sealed_seed_vals=(0.30, 0.30, 0.30), higher=True)
+    r2 = receipt(wd_hib, "E002", "F2", [0.250, 0.251, 0.249], sealed_seed_vals=(0.24, 0.24, 0.24), higher=True)
+    ec.dump_json({"results": [r1, r2]}, str(wd_hib / "rounds" / "round_1" / "batch_result.json"))
+    run(wd_hib, "append", "--batch", "rounds/round_1/batch_result.json")
+    r = run(wd_hib, "decide")
+    assert "E000 → E001" in r.stdout
+    champ = ec.read_json(str(wd_hib / "champion.json"))
+    assert champ["exp_id"] == "E001" and abs(champ["mean"] - 0.300) < 1e-9   # 0.300 > 0.250，取大者
+    run(wd_hib, "stop", "--reason", "够了")
+    run(wd_hib, "finalize")
+    doc = ec.read_json(str(wd_hib / "final_test.json"))
+    assert doc["delta"] > 0                                   # 原始 delta 照旧保留（未做符号归一）
+    assert doc["delta"] > doc["noise_floor_3sigma_test"] > 0
+    assert doc["verdict"] == "improved"
+
+
+def test_append_rejects_receipt_config_diff_differing_from_candidate(wd):
+    """门 2：receipt 的 config_diff 与本轮候选不一致 → 拒收（不许事后改配置差异）。"""
+    run(wd, "candidates", "--ledger", "hypothesis_ledger.json", "--target", "TSMixer")
+    run(wd, "confirm-round")
+    res = receipt(wd, "E001", "F1", [0.180, 0.181, 0.179])
+    recs = json.loads((wd / "receipts" / "E001.json").read_text(encoding="utf-8"))
+    recs[-1]["config_diff"] = {"tsmixer_no_channel_mix": True, "dropout": 0.05}
+    (wd / "receipts" / "E001.json").write_text(json.dumps(recs), encoding="utf-8")
+    ec.dump_json({"results": [res]}, str(wd / "rounds" / "round_1" / "batch_result.json"))
+    before = (wd / "experiment_log.jsonl").read_text(encoding="utf-8")
+    r = run(wd, "append", "--batch", "rounds/round_1/batch_result.json", ok=False)
+    out = r.stdout + r.stderr
+    assert r.returncode != 0 and "E001" in out and "config_diff" in out
+    assert (wd / "experiment_log.jsonl").read_text(encoding="utf-8") == before
