@@ -20,6 +20,7 @@ state/config 更新。重活按名字派 `agents/` 卡片；本文件是索引 +
 | subset-influence | `subset-influence-compute` | compute-fine | 每次一个具名脚本 |
 | architecture-attribution | `architecture-attribution-compute` | compute | Stage 0 |
 | architecture-attribution | `architecture-attribution-worker` | worker | Stage 0 噪声底重训 / Stage 3 单条干预 |
+| model-improve | `model-improve-worker` | worker | Stage 0 基线重训 / Stage 2 单条候选重训+评估+比冠军 |
 
 每张卡的 frontmatter 是契约（name/mode/playbook/compute_stages/tools/model），正文六节：
 你是谁 / 输入 / 步骤 / 红线 / 输出契约 / 停顿；规格见 `agents/_agent-spec.md`。

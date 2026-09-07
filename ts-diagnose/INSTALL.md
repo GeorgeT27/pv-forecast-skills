@@ -24,11 +24,11 @@ Claude Code 若不跟随 agents 目录下的 symlink（新会话里 Agent 工具
 
 ## 确认卡片已注册
 
-开一个新的 `claude` 会话，让它列出可用 subagent 类型；应出现 13 个名字：
+开一个新的 `claude` 会话，让它列出可用 subagent 类型；应出现 14 个名字：
 `data-setup-compute` `metric-eval-compute` `model-audit-compute` `training-sufficiency-compute`
 `robustness-compute` `feature-importance-compute` `model-comparison-compute`
 `deployment-drift-compute` `fact-scan-compute` `result-eval-compute` `subset-influence-compute`
-`architecture-attribution-compute` `architecture-attribution-worker`。
+`architecture-attribution-compute` `architecture-attribution-worker` `model-improve-worker`。
 
 ## 钩子说明
 
