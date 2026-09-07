@@ -51,10 +51,13 @@ FINDINGS.md 现象清单（只写 real/~noise 与数字）。
   "produces_dir": "",
   "artifacts": ["noise_floor.json", "slice_metrics.csv", "slice_zcheck.json", "FINDINGS.md"],
   "phenomena": ["≤30 行：每个 real 切片的 z/mean_diff/赢家；~noise 切片计数；池化差距 vs 噪声底"],
+  "verification": ["<验证步/闸名 + 数字 + 过/不过>，如 gen_gate stage1 PASS；对账 行数 12480/12480、抽 3 窗逐值一致"],
   "need_info": [{"question_id": "…", "ask": "…", "why": "…"}],
   "blocked_reason": ""
 }
 ```
+
+- `verification`：区间内跑过的每个验证步/闸各一条（名字 + 数字 + 过/不过）；主 agent 记入 PROGRESS.md。
 
 ## 停顿/交回
 

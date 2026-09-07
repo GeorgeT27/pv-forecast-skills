@@ -19,6 +19,7 @@ model: sonnet
 - 引擎目录：`<ENGINE>`（绝对路径，含 scripts/ playbooks/ chartbook/）
 - 已答问题：无（本 playbook 无前置问题）
 - 已就绪的上游产物目录：`setup=<path>`
+- 图集范围：<主 agent 过图表选择门后选定的图集；卡片只画这些>
 
 ## 步骤（去菜谱）
 
@@ -36,6 +37,7 @@ model: sonnet
   Stage 0 是全程唯一也是终点阶段，没有下一阶段可以深挖。
 - 单写者：只写自己的产物文件（charts/*.json/INDEX.md/FINDINGS.md/chart_sweep_manifest.json），
   不碰 `batch_state.json`/`*config.json` 等共享状态（那些由主 agent 写）。
+- 图集范围由主 agent 在「输入」节给定，卡片不自行增删图；INDEX.md 仍由卡片建。
 - 禁再派 subagent：重活拆分是主 agent 的事，本卡片不得自行派发下一层 subagent。
 
 ## 输出契约
@@ -50,6 +52,7 @@ model: sonnet
   "produces_dir": "",
   "artifacts": ["…"],
   "phenomena": ["≤30 行现象摘要，引图 JSON 数字，不贴 CSV/parquet 明细"],
+  "verification": ["<验证步/闸名 + 数字 + 过/不过>，如 gen_gate stage1 PASS；对账 行数 12480/12480、抽 3 窗逐值一致"],
   "need_info": [{"question_id": "…", "ask": "…", "why": "…"}],
   "blocked_reason": ""
 }
@@ -58,6 +61,7 @@ model: sonnet
 - `COMPUTE_DONE`：填 `phenomena_file`/`produces_dir`/`artifacts`/`phenomena`。
 - `NEED_INFO`：填 `need_info`（未答的 prereq 问题）；本 playbook 无前置问题，正常不触发。
 - `BLOCKED`：填 `blocked_reason`（`setup` 产物缺失等）。
+- `verification`：区间内跑过的每个验证步/闸各一条（名字 + 数字 + 过/不过）；主 agent 记入 PROGRESS.md。
 
 ## 停顿/交回
 

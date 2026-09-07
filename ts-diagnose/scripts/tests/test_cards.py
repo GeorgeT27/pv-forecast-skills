@@ -109,6 +109,10 @@ def test_card_conforms(card):
     for sec in SIX_SECTIONS:
         assert sec in body, f"缺六节之一：{sec}"
     assert "COMPUTE_DONE" in body and "NEED_INFO" in body, "输出契约节须含状态字"
+    if mode != "worker":
+        assert '"verification"' in body, (
+            "输出契约须回传 verification：区间内每个验证步/闸的名字+数字+过/不过，"
+            "主 agent 据此记 PROGRESS.md（无验证记录的产出不可引用）")
     assert f"playbooks/{pid}/playbook.md" in body, "步骤须指向对应 playbook.md"
     assert '"<ENGINE>/scripts/orient.py"' in body, "步骤须用 <ENGINE> 绝对路径调 orient"
     assert "引擎目录：`<ENGINE>`" in body, "输入节须有引擎目录字段"

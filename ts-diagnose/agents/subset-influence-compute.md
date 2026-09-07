@@ -62,6 +62,7 @@ Stage 2 `influence_regression.py`，Mode B 补料先跑 `ckpt_eval.py` → Stage
   "script": "<本次被指派的脚本名>",
   "artifacts": ["…"],
   "phenomena": ["≤30 行数字摘要，引产物 JSON/CSV 数字，不贴逐行明细"],
+  "verification": ["<验证步/闸名 + 数字 + 过/不过>，如 gen_gate stage1 PASS；对账 行数 12480/12480、抽 3 窗逐值一致"],
   "need_info": [{"question_id": "…", "ask": "…", "why": "…"}],
   "blocked_reason": ""
 }
@@ -70,6 +71,7 @@ Stage 2 `influence_regression.py`，Mode B 补料先跑 `ckpt_eval.py` → Stage
 - `COMPUTE_DONE`：填 `artifacts`/`phenomena`。
 - `NEED_INFO`：填 `need_info`（缺的 prereq 材料/参数），不猜、不推进。
 - `BLOCKED`：填 `blocked_reason`（脚本报错、prereq 材料缺失等）。
+- `verification`：区间内跑过的每个验证步/闸各一条（名字 + 数字 + 过/不过）；主 agent 记入 PROGRESS.md。
 
 ## 停顿/交回
 

@@ -3,7 +3,7 @@
 本文件不是可派发的卡片，`test_cards.py` 不校验它（文件名不匹配 `*-compute.md`）。
 Task 3–7 写卡片时照本文件的模板实例化；写完必须过 `scripts/tests/test_cards.py`。
 
-## 1. 三种 mode（设计 §7）
+## 1. 四种 mode（设计 §7）
 
 | mode | 适用 playbook 结构 | 卡片拥有的阶段 | 停顿 | 守卫要点 |
 |---|---|---|---|---|
@@ -22,7 +22,7 @@ Task 3–7 写卡片时照本文件的模板实例化；写完必须过 `scripts
 ---
 name: <id>-compute                    # 派发 key = 文件名去 .md；必须等于 <playbook>-compute
 description: 一句话——覆盖什么诊断目标、跑到哪里止步   # 模糊路由兜底键，不参与守卫
-mode: compute                         # producer | compute | compute-fine
+mode: compute                         # producer | compute | compute-fine | worker
 playbook: <id>                        # → ./playbooks/<id>/playbook.md
 compute_stages: "0-1"                 # producer=全程区间; compute=计算区间 "lo-hi"; compute-fine=固定字面量 "scripts"
 on_demand_stages: "5-6"               # 可省；仅 compute 且有结论后变体阶段时写
@@ -48,14 +48,15 @@ model: sonnet                         # 计算工默认 sonnet；重推理阶段
 ## 输入（主 agent 派发时给你）
 
 - 工作目录：`<workdir>`
+- 引擎目录：`<ENGINE>`（绝对路径，含 scripts/ playbooks/ chartbook/）
 - 已答问题：<列出该 playbook §7 对应的 question id 及答案，逐条>
 - 已就绪的上游产物目录：<例如 `setup=<path>`；按 playbook upstream 声明列全>
 
 ## 步骤（去菜谱）
 
 按 `playbooks/<id>/playbook.md` 的 Stage `<compute_stages>` 执行；
-用 `python3 scripts/orient.py --playbook <id>` 领阶段与 prereq；
-生成脚本前必过 `python3 scripts/gen_gate.py --script <path> --playbook <id> --stage <n>`
+用 `python3 "<ENGINE>/scripts/orient.py" --playbook <id>` 领阶段与 prereq；
+生成脚本前必过 `python3 "<ENGINE>/scripts/gen_gate.py" --script <path> --playbook <id> --stage <n>`
 （golden 在副本的 playbook 目录，脚本自动引用，卡片不内联菜谱正文）。
 
 ## 红线
@@ -77,6 +78,7 @@ model: sonnet                         # 计算工默认 sonnet；重推理阶段
   "produces_dir": "",
   "artifacts": ["…"],
   "phenomena": ["≤30 行现象摘要，引图 JSON 数字，不贴 CSV/parquet 明细"],
+  "verification": ["<验证步/闸名 + 数字 + 过/不过>，如 gen_gate stage1 PASS；对账 行数 12480/12480、抽 3 窗逐值一致"],
   "need_info": [{"question_id": "…", "ask": "…", "why": "…"}],
   "blocked_reason": ""
 }
@@ -85,6 +87,7 @@ model: sonnet                         # 计算工默认 sonnet；重推理阶段
 - `COMPUTE_DONE`：填 `phenomena_file`/`produces_dir`/`artifacts`/`phenomena`。
 - `NEED_INFO`：填 `need_info`（未答的 prereq 问题），不猜、不推进。
 - `BLOCKED`：填 `blocked_reason`（材料缺失/脚本失败等）。
+- `verification`：区间内跑过的每个验证步/闸各一条（名字 + 数字 + 过/不过）；主 agent 记入 PROGRESS.md。
 
 ## 停顿/交回
 
@@ -112,10 +115,18 @@ model: sonnet                         # 计算工默认 sonnet；重推理阶段
   具名脚本本身没有独立菜谱文件，这条指针是卡片与菜谱之间唯一的字面连接，不得省略。
 - 「红线」额外加一条：一次只跑被指派的一个脚本/一层，不自行连跑下一个。
 
+### 3.3 worker（架构归因重训工）
+
+- frontmatter：`compute_stages: "scripts"`、`serves_stages: [0, 3]`（列出的 stage 必须 `subagent_ok: true`）。
+- 「步骤」= 主 agent 一次派一条任务（`task=noise-floor | intervention`），一条跑完即回，不连跑下一条。
+- 「输出契约」= receipt 契约：`receipt_line, receipt_file, config_diff, per_seed, mean, std,
+  noise_floor_3sigma, instability_note`（守卫按 `receipt_line` 字面串校验）。
+- 本卡不跑 `orient.py`：阶段状态的单写者是主 agent。
+
 ## 4. 命名律与薄卡预算
 
-- 命名律：卡片文件名 = agent name = `<playbook-id>-compute.md`，全部卡片（含 3 张 producer）
-  统一走这条命名，无例外。
+- 命名律：卡片文件名 = agent name = `<playbook-id>-<role>.md`，role ∈ {compute, worker, baseline}；
+  每个 playbook 恰好一张 `-compute`，`-worker`/`-baseline` 只在 playbook 声明该角色时存在。
 - 薄卡预算：正文非空行数 ≤80 行；正文不得出现 `## 逐阶段菜谱` / `### Stage` / `## 2. 逐阶段`
   等菜谱标题——凡是要讲步骤细节的地方一律指针化到 `playbooks/<id>/playbook.md` /
   `scripts/orient.py` / `scripts/gen_gate.py`，golden 绝不进卡片。

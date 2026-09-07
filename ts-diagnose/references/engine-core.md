@@ -59,7 +59,8 @@ receipt 是结论阶段唯一完成判据）。
   `<ENGINE>`/`<workdir>` 绝对路径；required 上游缺先派 producer 卡。`NEED_INFO` → 问用户、写 config、
   重派同一张；`BLOCKED` → 修后重派，不换卡。**回退**：Agent 可用类型无该名字 → 卡片全文作 prompt 派
   `general-purpose`，PROGRESS 记「卡片未注册，走回退」。索引与六步见 `subagent-briefs.md`。
-  **单写者**：`diagnose_config / diagnose_state / PROGRESS / FINDINGS` 只由主 agent 写；卡片不再派 subagent；
+  **单写者**：config 只由主 agent 写；state/PROGRESS 由主 agent 写（卡片在自己工作目录跑 orient 是唯一
+  例外）；FINDINGS 卡片只追加「现象」行；卡片不再派 subagent；
   **结论永远由主 agent 落笔**。
 - **上下文预算**：产物自足（json 自带数字与形状），判读读 json，不读 PNG、原始日志、大 parquet。
 
@@ -89,7 +90,7 @@ receipt 是结论阶段唯一完成判据）。
 - ❌ 事实阶段写机制语言（「因为遗忘 / 因为 batch 小」）——解释只出现在结论阶段。
 - ❌ 单证据线就下「某成员/某变量有害」的判定。
 - ❌ 跨 series/模型把不可比量纲的数值 pool 在一起（只比排名）。
-- ❌ subagent 写 state/PROGRESS/FINDINGS/config；两个 subagent 追加同一文件。
+- ❌ subagent 写 config、写「现象」以外的 FINDINGS 状态行、两个 subagent 共用工作目录或追加同一文件。
 - ❌ 把 PNG、原始日志、大 parquet 读进上下文。
 - ❌ 上游产物 absent 不走三分支就开跑；linked/built 不核验 manifest/marker 就消费。
 - ❌ 任务命中已固化专用技能却用引擎从头问一遍。

@@ -31,6 +31,8 @@ state/config 更新。重活按名字派 `agents/` 卡片；本文件是索引 +
 2. 按 `upstream[]` 保证 required 产物 built/linked：缺 → 先派对应 producer 卡（先问齐它自己的题）；
    optional 缺 → 三分支必须问用户，卡片不替用户拍板。
 3. 把答案、上游目录、`<ENGINE>`、`<workdir>` 填进卡片「输入」节，按名字派发（`subagent_type` = 卡片名）。
+   卡片区间含声明 `charts:` 的阶段 → 主 agent 先在工作目录跑 orient 过图表选择门（四步清单），
+   把选定图集写进「输入」节再派卡。
    名字不可用 → 回退：卡片全文作 prompt 派 `general-purpose`，PROGRESS.md 记「卡片未注册，走回退」。
 4. 收 final message（契约 JSON）：`NEED_INFO` → 问用户、写 config、重派同一张卡；`BLOCKED` →
    修材料/脚本后重派同一张卡。
@@ -43,7 +45,12 @@ producer 目标：②③坍缩，问齐 → 整体派发 → 产物落盘即 `CO
 ## 派发纪律（全部卡片共用）
 
 - 并行：互不共享输出文件的卡片可一条消息多派；GPU 任务单卡不分片。
-- 单写者：`diagnose_config.json / diagnose_state.json / PROGRESS.md / FINDINGS.md` 只由主 agent 写。
+- 单写者：`diagnose_config.json` 只由主 agent 写；`diagnose_state.json / PROGRESS.md` 由主 agent 写，
+  卡片在自己的工作目录跑 orient 领阶段是唯一例外（并行派发的卡片必须各有工作目录；分片派发只跑脚本
+  不跑 orient，阶段由主 agent 收齐后推进）；`FINDINGS.md` 卡片只许追加自己阶段的「现象」行，
+  「假设 / 已证实 / 被推翻」与结论行只由主 agent 写。
+- 验证回传：卡片必须在 `verification` 回验证步/闸的名字与数字；主 agent 逐条记入 PROGRESS.md，
+  缺记录的产物不可引用。
 - 分片防竞态：并发各写各的 `--out <name>.<shard>`，主 agent 收齐后合并。
 - 上下文纪律：卡片只读结构化产物，不读 PNG / 逐行原始日志 / 大二进制。
 - 无提问权：卡片没有 AskUserQuestion；缺信息走 `NEED_INFO`；报错原样回传，不自行假设、不带病继续、不重试破坏性操作。

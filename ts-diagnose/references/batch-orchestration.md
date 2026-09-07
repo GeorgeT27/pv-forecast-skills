@@ -10,8 +10,9 @@
 才门 Phase A，只跑一次进 `<批量工作目录>/_shared/<产物id>/`。batch.py 报 phase=A 时：
 按 `producer_union` 逐个内联跑生产方 playbook。收齐其问题答案后按名字派 producer 卡整体
 外包：data-setup → `data-setup-compute`、metric-eval → `metric-eval-compute`、
-model-audit → `model-audit-compute`；fact-scan 派 `fact-scan-compute` 跑到 Stage 0 停顿即
-交回；图表选择门与现象清单归主 agent，不整体外包。产物就绪后**两处登记**：写
+model-audit → `model-audit-compute`；fact-scan：主 agent 先过图表选择门把图集写进「输入」，
+再派 `fact-scan-compute` 跑到 Stage 0 停顿即交回；现象清单的判读与停顿归主 agent。
+产物就绪后**两处登记**：写
 `batch_config.json` 的 `products.<id> = {workdir, status: built}`（供 batch.py 判 phase），
 **并**把该 products 条目拷进每条消费它的 playbook 子目录 `<pb>/diagnose_config.json` 的
 `products`（compute subagent 跑 orient 时只读本地 diagnose_config.json，不读
