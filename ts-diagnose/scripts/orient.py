@@ -61,6 +61,21 @@ def stage_tag(st, fm, ctx, cur, actives):
     return "待做"
 
 
+def _print_recipe(pb_path, stage):
+    secs = ec.recipe_sections(pb_path)
+    text = secs.get(stage["id"])
+    if not text:
+        return
+    done = (stage.get("done_when") or {})
+    done_s = ", ".join(done.get("artifacts") or []) or ("manual" if done.get("manual") else "")
+    if done.get("findings_marker"):
+        done_s += f"；FINDINGS 含「{done['findings_marker']}」"
+    print("-" * 62)
+    print(f"📖 本阶段菜谱（playbook.md §Stage {stage['id']} 原文；done：{done_s}）——照此做，"
+          "标【硬规则】的步骤不得合并或跳过；整份 playbook 只在需要跨阶段判断时再读：")
+    print(text)
+
+
 def main():
     ap = argparse.ArgumentParser(description="ts-diagnose Step 0 Orient")
     ap.add_argument("--playbook", default=None, help="playbook id（首次进入绑定）")
@@ -68,6 +83,9 @@ def main():
     ap.add_argument("--goto", type=int, default=None, help="直达目标阶段 id：校验前置")
     ap.add_argument("--force", action="store_true",
                      help="用户明确要求跳过前置时才可用；PROGRESS 留痕")
+    ap.add_argument("--no-recipe", action="store_true", help="不打印当前阶段菜谱原文")
+    ap.add_argument("--recipe", type=int, default=None, metavar="N",
+                     help="只打印 Stage N 的菜谱原文并退出（复核用，不写 state/PROGRESS）")
     args = ap.parse_args()
 
     today = dt.date.today().isoformat()
@@ -103,7 +121,15 @@ def main():
             notes.append(f"实验线补缺：{', '.join(merged)}")
             ec.save_config(cfg)
 
-    fm = ec.load_frontmatter(ec.find_playbook(cfg["playbook"]))
+    pb_path = ec.find_playbook(cfg["playbook"])
+    fm = ec.load_frontmatter(pb_path)
+    if args.recipe is not None:
+        secs = ec.recipe_sections(pb_path)
+        if args.recipe not in secs:
+            print(f"→ 无 Stage {args.recipe}（本 playbook 阶段：{sorted(secs)}）")
+        else:
+            print(secs[args.recipe])
+        return
     state = ec.read_json(ec.STATE_PATH) or {}
     ctx = {"cfg": cfg, "fm": fm, "state": state}
     actives = ec.variant_active(fm, ctx)
@@ -146,6 +172,9 @@ def main():
         print("     卡片全文作 prompt 派 general-purpose）；产物落盘后主 agent 写 config.products")
         print("     回填——主 agent 不要自己埋头执行。")
     print("-" * 62)
+    example = os.path.join(os.path.dirname(pb_path), "EXAMPLE-RUN.md")
+    if os.path.exists(example) and not any(ec.stage_done(st, ctx) for st in fm["stages"]):
+        print(f"  📎 首次进入：示例轨迹 {example}（golden 数据的完整一遍，读一次即可）")
     for st in fm["stages"]:
         pause = " ⏸" if st.get("pause_after") else ""
         print(f"  Stage {st['id']} {st['name']}{pause}  [{stage_tag(st, fm, ctx, cur, actives)}]")
@@ -324,6 +353,8 @@ def main():
         if ec.prereqs_ok(pr) and not blocked_qs and not mat_blocked and not mm \
                 and not up_blocked:
             print(f"→ 前置齐，可开工 Stage {target['id']}。")
+            if not args.no_recipe:
+                _print_recipe(pb_path, target)
         else:
             print("→ 有 ✗ 先补：缺答案 AskUserQuestion；缺产物回上一阶段；缺路径问用户后写 config。")
     print("=" * 62)

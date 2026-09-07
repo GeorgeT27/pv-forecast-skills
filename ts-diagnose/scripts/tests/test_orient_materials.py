@@ -21,6 +21,10 @@ stages:
     done_when: {artifacts: ['stage0.json']}
 ---
 正文占位。
+
+### Stage 0 起步
+
+菜谱正文占位。
 """
 
 
@@ -65,6 +69,8 @@ def test_optional_model_code_does_not_block_orient(tmp_path):
     assert "[✓present] predict (required)" in out
     assert "先嵌入执行 playbook「model-audit」" not in out
     assert "→ 前置齐，可开工 Stage 0" in out
+    assert "📖 本阶段菜谱" in out
+    assert "### Stage" in out
 
 
 def test_modelmap_receipt_unlocks_open(tmp_path):
