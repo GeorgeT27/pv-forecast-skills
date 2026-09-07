@@ -245,6 +245,7 @@ def cmd_append(a):
             sys.exit(f"✗ {eid} 不在第 {rnd} 轮候选里")
         if eid in existing:
             sys.exit(f"✗ {eid} 已在日志里，不许重复追加")
+        existing.add(eid)  # 批内也当场记账：同一 exp_id 在本批出现两次同样拒绝（不许 append_rows 前漏检）
         row = {"exp_id": eid, "round": rnd, "hypothesis_id": c.get("hypothesis_id"), "source": c["source"],
                "config_diff": c["config_diff"], "seeds": cands["seeds"], "t": _now(),
                "metrics_dirs": res.get("metrics_dirs") or [], "slices_per_seed": res.get("slices_per_seed") or []}

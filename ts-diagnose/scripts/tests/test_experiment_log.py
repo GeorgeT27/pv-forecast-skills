@@ -161,3 +161,14 @@ def test_append_marks_blocked_or_crashed_as_untested(wd):
     run(wd, "append", "--batch", "rounds/round_1/batch_result.json")
     rows = [json.loads(l) for l in (wd / "experiment_log.jsonl").read_text(encoding="utf-8").splitlines()]
     assert rows[-1]["verdict"] == "untested" and "NaN" in rows[-1]["untested_reason"]
+
+
+def test_append_rejects_duplicate_exp_id_within_same_batch(wd):
+    run(wd, "candidates", "--ledger", "hypothesis_ledger.json", "--target", "TSMixer")
+    run(wd, "confirm-round")
+    res = receipt(wd, "E001", "F1", [0.180, 0.181, 0.179])
+    before = (wd / "experiment_log.jsonl").read_text(encoding="utf-8")
+    ec.dump_json({"results": [res, dict(res)]}, str(wd / "rounds" / "round_1" / "batch_result.json"))
+    r = run(wd, "append", "--batch", "rounds/round_1/batch_result.json", ok=False)
+    assert r.returncode != 0 and "重复" in r.stdout + r.stderr
+    assert (wd / "experiment_log.jsonl").read_text(encoding="utf-8") == before
