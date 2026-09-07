@@ -172,7 +172,7 @@ Stage 2（若解锁）完成即停，止步于交接——不产结论。向用�
 
 ## 4. subagent 拆分建议
 
-Stage 1 各图相互独立，可以并发：每张图一个子代理。brief 只带三样：命令模板、长表路径、输出目录（各图写不同的文件，天然防竞态；brief 写法见 references/subagent-briefs.md）。判读与 FINDINGS 汇总必须由主 agent 做。Stage 0/2 不拆——Stage 2 的桥接假设筛选与排序是整体判断，拆了会丢跨假设的判别力比较。
+Stage 1 各图相互独立，可以并发：每张图重复派一次 `model-comparison-compute` 卡，「输入」节只带三样：命令模板、长表路径、输出目录（各图写不同文件，天然防竞态；分片卡不跑 orient）。判读与 FINDINGS 汇总必须由主 agent 做。Stage 0/2 不拆——Stage 2 的桥接假设筛选与排序是整体判断，拆了会丢跨假设的判别力比较。
 
 ## 5. 材料降级说明
 

@@ -20,7 +20,7 @@ batch_config.json——不拷则它看不到上游）。重跑 batch.py。
 
 **required: false 的可选上游**（model_profile、chart_sweep……）不进 `producer_union`，
 不门 Phase A——不然一个用户压根不打算建的可选产物会永久卡住整批。可选上游改由**主
-agent**在 Phase A 期间逐 playbook 走 engine-core 的「上游产物三分支」裁决（现在内联生产 /
+agent**在 Phase A 期间逐 playbook 走 engine-core 的「上游产物」条目（三分支）裁决（现在内联生产 /
 链接已有目录 / 放弃且结论须声明缺此产物）：三分支要 AskUserQuestion 问用户，Phase C 派
 的 compute 子代理不能自己问用户，所以这活留在主 agent 手上，且必须在该 playbook 进
 Phase C 派发之前做完。裁决结果写进该 playbook 子目录 `<pb>/diagnose_config.json` 的

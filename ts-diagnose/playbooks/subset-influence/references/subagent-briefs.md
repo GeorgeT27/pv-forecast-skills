@@ -26,7 +26,7 @@ FINDINGS/CONCLUSION 撰写。派发时把对应 brief **照抄进 Agent 调用�
 
 **何时用**：orient 报上游产物「eval_report」为 [absent]（该产物是可选的），且用户在
 三分支问题里选了「现在内联生产」——此时要先对留出站跑一遍 result-eval playbook
-（背景见 playbook.md §4 与引擎 `references/engine-core.md`「上游产物三分支」纪律）。
+（背景见 playbook.md §4 与引擎 `references/engine-core.md`「上游产物」条目（三分支）纪律）。
 
 **为什么由主 agent 亲自编排**：subagent 不能再派 subagent；且 result-eval 自身
 Stage 3→4 的停顿点（问用户是否深挖）在嵌入运行时由主 agent 代为最小化决策，直接跑满

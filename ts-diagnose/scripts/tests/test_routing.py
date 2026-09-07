@@ -83,7 +83,7 @@ def test_routing_priority_is_two_level():
 
 
 def test_skill_md_line_budget_and_full_playbook_coverage():
-    """SKILL.md ≤60 行（与 test_layering 的预算口径一致），且路由表覆盖全部 10 个 playbook。"""
+    """SKILL.md ≤60 行（与 test_layering 的预算口径一致），且路由表覆盖全部 12 个 playbook。"""
     path = os.path.join(ENGINE_DIR, "SKILL.md")
     lines = open(path, encoding="utf-8").read().splitlines()
     assert len(lines) <= 60, f"SKILL.md {len(lines)} 行 > 60 行预算"

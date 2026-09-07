@@ -193,8 +193,8 @@ upgrade_rule: "变量重要性排名要升「假设」：≥2 条证据线（per
 
 ## 4. Subagent 拆分建议
 
-- Stage 1 可按变量组分片派给多个 subagent 并行，每片写自己的产物（`--out perm.<group>.json`，占位符按实际组名填）；推理的批量化在脚本内部做，不靠多开 subagent。
-- Stage 0–3 在 `feature-importance-compute` 卡片区间内，整段派发。
+- Stage 1 可按变量组分片：每组重复派一次 `feature-importance-compute` 卡，「输入」节给组名与 `--out perm.<group>.json`；分片卡只跑脚本不跑 orient；推理的批量化在脚本内部做。
+- 不分片时 Stage 0–3 在 `feature-importance-compute` 卡片区间内，整段派发。
 - GPU 只有单卡时不分片。
 
 ## 5. 本 playbook 特有反驳门条目
@@ -253,7 +253,7 @@ upgrade_rule: "变量重要性排名要升「假设」：≥2 条证据线（per
 
 - **现象**：单口径单模型下 z+ρ 双关命中（blame_report 行）；翻新画像同级。
 - **假设**：跨模型或跨时段稳定 + 分组条件化后信号仍在 + 有上游机制解释，登记 H-ID。
-- **已证实**：唯一通道 = Stage 6 反事实（见 §8）。用户拒绝反事实 → 最高只能到"假设"并注明。
+- **已证实**：唯一通道 = Stage 6 反事实（见 Stage 6）。用户拒绝反事实 → 最高只能到"假设"并注明。
 - 坏行样本 <10 时只描述、不定论；共线簇内不点名单个成员。
 
 ### Stage 6 变体 counterfactual：反事实验证预算阶梯（`material:serving_api` 解锁）

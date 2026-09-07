@@ -243,7 +243,7 @@ done：`CONCLUSION.md` + `gate_reports/conclusion_gate.json` 落盘。
 
 ## 5. subagent 拆分建议
 
-Stage 0 的基线种子重训（噪声底现算）与 Stage 3 的新干预，都是**强制**外包——见 `references/subagent-brief.md`；已有 receipt 只由主 agent 复核。Stage 1 的账本校验/选择、Stage 2 的计划草拟可以外包起草，但排序判别力与最终拍板留给主 agent。Stage 4 不外包。
+Stage 0 的基线种子重训（噪声底现算）与 Stage 3 的每条新干预，都是**强制**外包——每条派一次 `architecture-attribution-worker` 卡（一次一条任务，回 receipt）；Stage 0 的切片长表与 z 检验派 `architecture-attribution-compute` 卡；索引与回退见引擎 `references/subagent-briefs.md`；已有 receipt 只由主 agent 复核。Stage 1 的账本校验/选择、Stage 2 的计划草拟可以外包起草，但排序判别力与最终拍板留给主 agent。Stage 4 不外包。
 
 ## 6. 结论模板与特有反驳门
 

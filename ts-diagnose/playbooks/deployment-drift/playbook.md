@@ -186,7 +186,7 @@ Stage 2 完成即停，向用户汇报四件事：①退化判定（gap_z、置�
 
 ## 5. subagent 拆分建议
 
-Stage 2 各图相互独立，可以并发：每张图一个子代理。brief 只带三样：命令模板、长表路径、输出目录（各图写不同的文件；brief 写法见 references/subagent-briefs.md）。判读与 FINDINGS 汇总必须由主 agent 做。Stage 0/1/3/5 不拆。
+Stage 2 各图相互独立，可以并发：每张图重复派一次 `deployment-drift-compute` 卡，「输入」节只带三样：命令模板、长表路径、输出目录（各图写不同文件，天然防竞态；分片卡不跑 orient）。判读与 FINDINGS 汇总必须由主 agent 做。Stage 0/1/3/5 不拆。
 
 ## 6. 结论模板与特有反驳门
 
