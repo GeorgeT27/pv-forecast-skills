@@ -11,8 +11,9 @@
     bash install.sh
     bash install.sh --check     # 期望最后一行 ALL OK
 
-`install.sh` 做四件事：`~/.claude/skills/ts-diagnose` → 本目录；`~/.claude/agents/` 下逐张链接
+`install.sh` 做五件事：`~/.claude/skills/ts-diagnose` → 本目录；`~/.claude/agents/` 下逐张链接
 `agents/*-compute.md` `*-worker.md`；`~/.claude/workflows/` 下链接 `workflows/*.js`（如有）；
+删除旧的 `~/.claude/skills/ts-diagnose-v2` 链接（v2 已退役）；
 把 `hooks/hooks.json` 三条钩子合并进 `~/.claude/settings.json`（幂等，可重复跑）。
 
 Claude Code 若不跟随 agents 目录下的 symlink（新会话里 Agent 工具的可用类型没有

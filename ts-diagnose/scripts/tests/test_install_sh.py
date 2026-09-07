@@ -15,6 +15,8 @@ def _cards():
 
 def test_install_links_everything_then_check_passes(tmp_path):
     home = tmp_path / "claude"
+    (home / "skills").mkdir(parents=True)
+    (home / "skills" / "ts-diagnose-v2").symlink_to(ENGINE_DIR)
     r = _run([], home)
     assert r.returncode == 0, r.stderr
     assert os.path.realpath(home / "skills" / "ts-diagnose") == os.path.realpath(ENGINE_DIR)
