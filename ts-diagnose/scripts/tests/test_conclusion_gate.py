@@ -351,35 +351,35 @@ def _improve_setup(tmp_path, text):
 
 def test_rule7_passes_with_full_improve_evidence(tmp_path):
     _improve_setup(tmp_path, IMPROVE_GOOD)
-    r = subprocess.run([sys.executable, GATE], cwd=str(tmp_path), capture_output=True, text=True)
+    r = run_gate(tmp_path)
     assert r.returncode == 0, r.stdout + r.stderr
     assert (tmp_path / "gate_reports" / "conclusion_gate.json").exists()
 
 
 def test_rule7_missing_section_or_receipt_line_fails(tmp_path):
     _improve_setup(tmp_path, IMPROVE_GOOD.replace("## 改进证据", "## 改进"))
-    r = subprocess.run([sys.executable, GATE], cwd=str(tmp_path), capture_output=True, text=True)
+    r = run_gate(tmp_path)
     assert r.returncode != 0 and "改进证据" in r.stdout
 
 
 def test_rule7_unlisted_receipt_or_missing_final_fails(tmp_path):
     _improve_setup(tmp_path, IMPROVE_GOOD.replace("- `receipts/E001.json` — 守护退化被弃\n", ""))
-    r = subprocess.run([sys.executable, GATE], cwd=str(tmp_path), capture_output=True, text=True)
+    r = run_gate(tmp_path)
     assert r.returncode != 0 and "E001" in r.stdout
     _improve_setup(tmp_path, IMPROVE_GOOD)
     (tmp_path / "final_test.json").unlink()
-    r = subprocess.run([sys.executable, GATE], cwd=str(tmp_path), capture_output=True, text=True)
+    r = run_gate(tmp_path)
     assert r.returncode != 0 and "final_test.json" in r.stdout
 
 
 def test_rule7_receipt_hash_mismatch_fails(tmp_path):
     _improve_setup(tmp_path, IMPROVE_GOOD)
     (tmp_path / "adapter.py").write_text("print(2)\n", encoding="utf-8")
-    r = subprocess.run([sys.executable, GATE], cwd=str(tmp_path), capture_output=True, text=True)
+    r = run_gate(tmp_path)
     assert r.returncode != 0 and "sha256" in r.stdout
 
 
 def test_rule7_not_applied_to_other_playbooks(tmp_path):
     setup(tmp_path, GOOD, with_chart=True, pb_text=PB_NON_ABLATION)   # 无改进证据节也过闸
-    r = subprocess.run([sys.executable, GATE], cwd=str(tmp_path), capture_output=True, text=True)
+    r = run_gate(tmp_path)
     assert r.returncode == 0, r.stdout + r.stderr

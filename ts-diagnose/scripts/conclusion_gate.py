@@ -48,6 +48,24 @@ def _last_entry(path):
     return doc if isinstance(doc, dict) else None
 
 
+def _check_receipt_fields(rp, rec, required, missing_hint, seeds_hint, sha_hint):
+    """规则 5/7 共用:receipt 逐字段机检——为空/缺必填字段/seeds<3/脚本失踪/sha 不符,断一环 fail。
+    措辞(missing_hint/seeds_hint/sha_hint)与后续专属校验(如规则 5 的 provenance/serves 联动)
+    留给调用方,这里只做两条规则共有的那一段。"""
+    if rec is None:
+        fail(f"{rp} 为空或不是合法 receipt")
+    missing = [k for k in required if rec.get(k) in (None, "")]
+    if missing:
+        fail(f"{rp} 缺必填字段 {missing}——{missing_hint}")
+    if not (isinstance(rec["seeds"], int) and rec["seeds"] >= 3):
+        fail(f"{rp} seeds={rec['seeds']!r}——{seeds_hint}")
+    script = rec["produced_by"]
+    if not os.path.exists(script):
+        fail(f"{rp} 的 produced_by 指向不存在的脚本:{script}")
+    if sha256_of(script) != rec["script_sha256"]:
+        fail(f"{rp} 的 script_sha256 与 {script} 当前内容不符——{sha_hint}")
+
+
 def check_traceability():
     """规则 5 溯源闭环:回执→脚本→假设的链条逐环机检,断一环不放行。"""
     receipts = sorted(glob.glob("receipts/H*.json"))
@@ -59,21 +77,11 @@ def check_traceability():
             fail("provenance.json 存在但解析失败")
     for rp in receipts:
         rec = _last_entry(rp)
-        if rec is None:
-            fail(f"{rp} 为空或不是合法 receipt")
-        missing = [k for k in RECEIPT_REQUIRED if rec.get(k) in (None, "")]
-        if missing:
-            fail(f"{rp} 缺必填字段 {missing}——receipt 必须由 ablation_verdict.py "
-                 "--out 生成(含溯源块),不许手搓薄回执")
-        if not (isinstance(rec["seeds"], int) and rec["seeds"] >= 3):
-            fail(f"{rp} seeds={rec['seeds']!r}——数值判定必须 ≥3 种子,"
-                 "不足只能标 skipped_reason 走降级路径")
+        _check_receipt_fields(rp, rec, RECEIPT_REQUIRED,
+                               "receipt 必须由 ablation_verdict.py --out 生成(含溯源块),不许手搓薄回执",
+                               "数值判定必须 ≥3 种子,不足只能标 skipped_reason 走降级路径",
+                               "脚本在出回执后被改过,重跑判定再出结论")
         script = rec["produced_by"]
-        if not os.path.exists(script):
-            fail(f"{rp} 的 produced_by 指向不存在的脚本:{script}")
-        if sha256_of(script) != rec["script_sha256"]:
-            fail(f"{rp} 的 script_sha256 与 {script} 当前内容不符——"
-                 "脚本在出回执后被改过,重跑判定再出结论")
         if prov is None:
             fail(f"有 receipt({rp})但无 provenance.json——先跑 provenance.py"
                  "(带 --serves)再过闸")
@@ -128,17 +136,10 @@ def check_improve(text):
     receipts = sorted(glob.glob("receipts/E*.json"))
     for rp in receipts:
         rec = _last_entry(rp)
-        if rec is None:
-            fail(f"{rp} 为空或不是合法 receipt")
-        missing = [k for k in IMPROVE_RECEIPT_REQUIRED if rec.get(k) in (None, "")]
-        if missing:
-            fail(f"{rp} 缺必填字段 {missing}——receipt 必须由 improve_verdict.py --out 生成")
-        if not (isinstance(rec["seeds"], int) and rec["seeds"] >= 3):
-            fail(f"{rp} seeds={rec['seeds']!r}——改进判定必须 ≥3 种子")
-        if not os.path.exists(rec["produced_by"]):
-            fail(f"{rp} 的 produced_by 指向不存在的脚本:{rec['produced_by']}")
-        if sha256_of(rec["produced_by"]) != rec["script_sha256"]:
-            fail(f"{rp} 的 script_sha256 与 {rec['produced_by']} 当前内容不符——适配器在出回执后被改过")
+        _check_receipt_fields(rp, rec, IMPROVE_RECEIPT_REQUIRED,
+                               "receipt 必须由 improve_verdict.py --out 生成",
+                               "改进判定必须 ≥3 种子",
+                               "适配器在出回执后被改过")
     if not os.path.exists("final_test.json"):
         fail("无 final_test.json——写结论前先跑 experiment_log.py finalize（封存测试集只评一次）")
     if "final_test.json" not in text:
