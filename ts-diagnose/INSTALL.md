@@ -12,7 +12,8 @@
     bash install.sh --check     # 期望最后一行 ALL OK
 
 `install.sh` 做五件事：`~/.claude/skills/ts-diagnose` → 本目录；`~/.claude/agents/` 下逐张链接
-`agents/*-compute.md` `*-worker.md` `*-baseline.md`；`~/.claude/workflows/` 下链接 `workflows/*.js`（如有）；
+`agents/*-compute.md` `*-worker.md` `*-baseline.md`；`~/.claude/workflows/` 下链接 `workflows/*.js`（如有）
+——现有 `ts-train-batch.js`（一轮候选并行派 worker 卡；剧本用 scriptPath 调用，按名字调用是否可用以实测为准）；
 删除旧的 `~/.claude/skills/ts-diagnose-v2` 链接（v2 已退役）；
 把 `hooks/hooks.json` 三条钩子合并进 `~/.claude/settings.json`（幂等，可重复跑）。
 `--check` 除了看链接在不在，还校验 `~/.claude/skills/ts-diagnose` 指向的就是本包（指向别的 checkout 时报
