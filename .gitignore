@@ -9,3 +9,12 @@ diagnose_state.json
 diagnose_config.json
 provenance.json
 crystallize_record.json
+
+# 短期分析的 mock 数据：make_mocks.py 用固定种子确定性重建，不必进版本库
+短期分析/mock_input.parquet
+短期分析/mock_predict.parquet
+短期分析/mock_info.csv
+
+# Claude Code 本机设置：绝对路径、个人权限，不进版本库（另一台设备用 ts-diagnose/install.sh 装钩子）
+.claude/settings.json
+.claude/settings.local.json

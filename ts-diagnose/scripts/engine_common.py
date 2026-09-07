@@ -21,7 +21,9 @@ try:
 except ImportError:  # 明确报错好过神秘 ImportError 栈
     raise SystemExit("缺 pyyaml：pip install -r <仓库根>/requirements.txt")
 
-ENGINE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# realpath 而非 abspath：symlink 安装（~/.claude/skills/ts-diagnose → 真包）下必须解析到
+# 物理包目录，否则 detect_project_context() 找不到同级 project-context/，静默失效。
+ENGINE_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 PLAYBOOKS_DIR = os.environ.get("TSD_PLAYBOOKS_DIR") \
     or os.path.join(ENGINE_DIR, "playbooks")
 
@@ -499,9 +501,9 @@ MATERIAL_IDS = ("predict", "truth", "model_code", "training_log", "features",
                 "experiment_config", "data_profile")
 MATERIAL_STATUSES = ("present", "absent-confirmed")  # 其余一律视为 unknown
 
-# 入口闸（spec 2026-07-24 §2）：五件套引擎级恒问——不管 playbook 声明什么，
-# 都必须盘点到 present / absent-confirmed(source=user)。
-GLOBAL_MATERIALS = ("training_log", "truth", "train_y", "checkpoint", "model_code")
+# 材料入口只检查 playbook 声明的 required；未声明的材料由变体/图表按需触发。
+# 保留常量名供旧调用方导入，但不再把它们提升为全局阻塞条件。
+GLOBAL_MATERIALS = ()
 
 # present 记录的实质字段要求：缺任一 → 不算过闸（防"标 present 但没问 schema"）。
 # 字段名支持点路径；未列出的材料默认只要求 paths 非空。
@@ -523,11 +525,11 @@ def present_gaps(cfg, mid):
 
 
 def intake_blockers(fm, cfg):
-    """入口闸：五件套 ∪ playbook required 中所有未过闸材料 → [(mid, reason)]。
+    """入口闸：playbook required 中所有未过闸材料 → [(mid, reason)]。
     absent-confirmed 只认用户亲口（source=user）；required 材料降级还须 degraded_ok。"""
     req = set(materials_of(fm)[0])
     out = []
-    for mid in [m for m in MATERIAL_IDS if m in (set(GLOBAL_MATERIALS) | req)]:
+    for mid in [m for m in MATERIAL_IDS if m in req]:
         s = material_status(cfg, mid)
         rec = ((cfg or {}).get("materials") or {}).get(mid) or {}
         if s == "unknown":
@@ -679,27 +681,23 @@ def has_chart_stage(fm):
 
 
 def modelmap_blocker(cfg, fm):
-    """模型档案强制衔接（spec §4）：有模型代码就必须先有 .modelmap 回执。
-    2026-07-25 裁决：保留本闸不降级为 upstream 声明——variants 无法表达 material 触发的
-    optional→required 升级（phase2-TODO 第 4 条）。"""
+    """兼容性硬闸：仅 required model_code 可阻塞；optional 走 upstream 三分支。"""
     if (fm or {}).get("id") == "model-audit":
         return None
     if material_status(cfg, "model_code") != "present":
         return None
-    # 声明了 materials 块、但 model_code 不在 required/optional 里 → 本 playbook
-    # 根本不消费模型代码（如内联生产 data-setup 时父 config 的 materials 被整块拷
-    # 入子目录，捎带了 model_code:present）——档案闸不适用，放行。
-    # 注意：未声明 materials 块的 playbook（如 training-sufficiency/robustness）
-    # 不在此列——它们仍受档案闸约束，不能因为“没声明”就被当成“声明了不用”。
+    # 未声明 materials 的旧/简单 playbook 不消费模型代码；父 config 传入的
+    # model_code:present 也不应凭空触发 model-audit。
     declared = (fm or {}).get("materials")
-    if declared is not None:
-        req, opt = materials_of(fm or {})
-        if "model_code" not in req + opt:
-            return None
+    if declared is None:
+        return None
+    req, _ = materials_of(fm or {})
+    if "model_code" not in req:
+        return None
     if os.path.exists("MODELMAP_RECEIPT.json"):
         return None
     try:
-        if product_status(cfg, "model_profile")["status"] in ("built", "linked"):
+        if product_status(cfg, "model_profile")["status"] in ("built", "linked", "declined"):
             return None
     except ValueError:
         pass  # model_profile 产物未声明（model-audit 未升格的部署形态）——退回 receipt 判定
@@ -807,3 +805,54 @@ def merge_profile(cfg, prof, date_stamp):
 def crystallize_min_cases(fm):
     """固化三关之一（多样性）的 N：playbook frontmatter 可覆盖默认值。"""
     return int(fm.get("crystallize_min_cases") or CRYSTALLIZE_MIN_CASES_DEFAULT)
+
+
+STAGE_HEADING_RE = re.compile(r"^###\s+Stage\s*(\d+)(?:\s*[–\-~/]\s*(\d+))?(?!\d)")
+
+
+def recipe_sections(playbook_path):
+    """playbook 正文 → {stage_id: 小节原文}。小节 = '### Stage N' 标题起，到下一个 '## '/'### ' 止；
+    '### Stage N–M' 把范围内每个 id 映射到同一节。同一 id 两个标题 → ValueError。"""
+    with open(playbook_path, encoding="utf-8") as f:
+        body = f.read().split("---", 2)[2]
+    out, cur, buf = {}, None, []
+
+    def flush():
+        if cur is None:
+            return
+        text = "\n".join(buf).rstrip()
+        for i in cur:
+            if i in out:
+                raise ValueError(f"{playbook_path}: Stage {i} 出现两个菜谱标题")
+            out[i] = text
+
+    for ln in body.splitlines():
+        m = STAGE_HEADING_RE.match(ln)
+        if m:
+            flush()
+            lo, hi = int(m.group(1)), int(m.group(2) or m.group(1))
+            cur, buf = list(range(lo, hi + 1)), [ln]
+        elif cur is not None and (ln.startswith("## ") or ln.startswith("### ")):
+            flush()
+            cur, buf = None, []
+        elif cur is not None:
+            buf.append(ln)
+    flush()
+    return out
+
+
+def recipe_preamble(playbook_path):
+    """菜谱通则原文：紧邻第一个 '### Stage N' 之前的那个 '## ' 小节，从标题行起到该
+    Stage 标题止（不含）。生成闸等【硬规则】写在这里，orient 要连同阶段菜谱一起打印。
+    没有这样的 '## ' 标题 → 返回 ''。"""
+    with open(playbook_path, encoding="utf-8") as f:
+        body = f.read().split("---", 2)[2]
+    buf = []
+    for ln in body.splitlines():
+        if STAGE_HEADING_RE.match(ln):
+            break
+        if ln.startswith("## "):
+            buf = [ln]
+        elif buf:
+            buf.append(ln)
+    return "\n".join(buf).rstrip()

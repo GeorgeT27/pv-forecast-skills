@@ -1,104 +1,64 @@
-# 子 agent 派发模板（参数化 Brief）
+# 子 agent 派发（卡片制）
 
-<!-- 泛化自两个专用技能的 subagent-briefs：那边的 Brief 绑定具体脚本与站点，
-     这里的 Brief 绑定"角色 + 纪律 + 回传格式"，具体任务由主 agent 按 playbook 菜谱填。 -->
+主 agent 只做编排：提问、派发、收契约 JSON、升级判定、反驳门、FINDINGS/CONCLUSION、
+state/config 更新。重活按名字派 `agents/` 卡片；本文件是索引 + 回环规则。
 
-主 agent 只做编排：提问、升级判定、反驳门、FINDINGS/CONCLUSION、state/config 更新、分片合并。
-重活（大日志解析、批量计算、逐产物事实提取）外包 subagent（general-purpose 即可），派发时把
-brief **照抄进 Agent prompt**（`<...>` 占位换实参）。
+## 卡片索引（playbook → 卡片 · mode · 覆盖）
 
-派发纪律（全部 brief 共用）：
+| playbook | 卡片 | mode | 覆盖 |
+|---|---|---|---|
+| data-setup | `data-setup-compute` | producer | 全程到 setup 产物落盘 |
+| metric-eval | `metric-eval-compute` | producer | 全程到 metric_table 落盘 |
+| model-audit | `model-audit-compute` | producer | 全程到 model_profile 落盘 |
+| training-sufficiency | `training-sufficiency-compute` | compute | Stage 0 到第一个 pause |
+| robustness | `robustness-compute` | compute | 同上 |
+| feature-importance | `feature-importance-compute` | compute | 同上；`on_demand_stages` 用户点名后再派 |
+| model-comparison | `model-comparison-compute` | compute | 同上 |
+| deployment-drift | `deployment-drift-compute` | compute | 同上 |
+| fact-scan | `fact-scan-compute` | compute | 同上 |
+| result-eval | `result-eval-compute` | compute | Stage 0–3；Stage 4 结论归主 agent，eval_report 产物在主 agent 收尾后才算 built |
+| subset-influence | `subset-influence-compute` | compute-fine | 每次一个具名脚本 |
+| architecture-attribution | `architecture-attribution-compute` | compute | Stage 0 |
+| architecture-attribution | `architecture-attribution-worker` | worker | Stage 0 噪声底重训 / Stage 3 单条干预 |
 
-- **并行**：一条消息发多个 Agent 调用（无共享状态才并行；GPU 任务单卡不分片）。
-- **单写者**：`diagnose_config.json` / `diagnose_state.json` / `PROGRESS.md` / `FINDINGS.md`
-  只由主 agent 写。subagent 只写脚本产物与自己的分片文件。
-- **分片防竞态**：并发时各写各的 `--out <name>.<shard>.csv`，主 agent 收齐后合并；
-  绝不让两个 subagent 追加同一个文件。
-- **上下文纪律**：subagent 只读结构化产物（JSON/CSV/样例行），不读 PNG、不逐行读原始日志、
-  不 load 大二进制进上下文（一切在脚本内 load→算→释放）。
-- **无提问权**：缺信息/报错**原样回报**主 agent，不自行假设、不带病继续。
-- **回传要瘦**：只回 brief 规定的固定格式清单（数字+排名+覆盖披露），不回大段正文。
+每张卡的 frontmatter 是契约（name/mode/playbook/compute_stages/tools/model），正文六节：
+你是谁 / 输入 / 步骤 / 红线 / 输出契约 / 停顿；规格见 `agents/_agent-spec.md`。
 
----
+## 派发六步（单 playbook）
 
-## Brief-COMPUTE：计算子 agent（生成/运行分析脚本，产出落盘）
+1. 读该 playbook frontmatter `questions:`，取 `stage ≤` 卡片区间终点的题，同阶段合并一次
+   AskUserQuestion，答案落 `diagnose_config.json`。只取 `questions:`，不取 `evidence_lines`。
+2. 按 `upstream[]` 保证 required 产物 built/linked：缺 → 先派对应 producer 卡（先问齐它自己的题）；
+   optional 缺 → 三分支必须问用户，卡片不替用户拍板。
+3. 把答案、上游目录、`<ENGINE>`、`<workdir>` 填进卡片「输入」节，按名字派发（`subagent_type` = 卡片名）。
+   卡片区间含声明 `charts:` 的阶段 → 主 agent 先在工作目录跑 orient 过图表选择门（四步清单），
+   把选定图集写进「输入」节再派卡。
+   名字不可用 → 回退：卡片全文作 prompt 派 `general-purpose`，PROGRESS.md 记「卡片未注册，走回退」。
+4. 收 final message（契约 JSON）：`NEED_INFO` → 问用户、写 config、重派同一张卡；`BLOCKED` →
+   修材料/脚本后重派同一张卡。
+5. `COMPUTE_DONE` → 只读 `phenomena_file`/`artifacts` 摘要，向用户停顿汇报现象清单，请用户点名深挖。
+6. 主 agent 亲跑：变体解锁判定、结论三道门、`conclusion_gate.py`、CONCLUSION.md 直接呈现。
 
-```
-你是一个计算子 agent，只负责【<任务一句话，如：loss 曲线提取与动力学指标>】，不做归因分析。
+producer 目标：②③坍缩，问齐 → 整体派发 → 产物落盘即 `COMPUTE_DONE, produces_dir`，主 agent 写
+`config.products.<id>` 回填与 PROGRESS 验证记录（这两样卡片无权写）。
 
-工作目录：<绝对路径，含 diagnose_config.json>
-引擎目录 ENGINE：/Users/tqa946816/Documents/华为/光伏预测/结果分析skill/ts-diagnose
-playbook 菜谱：读 <ENGINE>/playbooks/<id>/playbook.md 的「Stage <N>」节，照它的伪代码/公式/产物 schema 写脚本。
+## 派发纪律（全部卡片共用）
 
-任务：
-1. 把脚本写进 analysis_scripts/<name>.py（已存在且本次无 schema 变化 → 直接复用别重写）。
-2. 先跑菜谱声明的**验证步**（对账/合成小样/植入回收），验证不过就修脚本，禁止跳过。
-3. 验证过了再跑真数据，产物落盘：<产物文件名>（按菜谱 schema，带自足 summary）。
-4. 纪律：原始数据流式处理不进上下文；报错原样回传。
-
-只回传（≤12 行）：
-- 验证步结果（哪个验证、数字、过/不过）——主 agent 要把它记进 PROGRESS.md
-- 产物文件名 + 关键 summary 数字（≤5 个）
-- 覆盖披露：处理了多少 series/单元/行，缺口清单
-- 抽样/截断披露（如有）
-禁止：解释机制、下"某成员有害"类结论（升级判定是主 agent 的活）。
-```
-
-## Brief-PRODUCER：生产者 playbook 整体外包（执行段全托）
-
-适用条件（三条全满足才可整体外包；不满足则按该 playbook §5 的细粒度拆分）：
-
-1. playbook 声明 `produces` 且无结论阶段；
-2. 其 questions 已由主 agent 全部收齐（subagent 无提问权）；
-3. 执行段无用户裁决、无 FINDINGS/CONCLUSION 写入——data-setup、metric-eval 满足；
-   model-audit（多候选裁决 + 自检 `subagent_ok: false`）与 fact-scan（图表选择门 +
-   现象清单归主 agent）不满足，走各自 §5。
-
-主 agent 派发前：收齐 questions 答案；内联生产时建好产物子目录并拷入父 config 的
-materials/questions 块。收到回传后：把验证步/闸数字记 PROGRESS.md，写
-`config.products.<id>` 回填（这两样 subagent 无权写）。
-
-```
-你是 ts-diagnose 生产者 playbook【<id>】的执行 subagent，只产产物，不画图不下结论。
-
-工作目录：<产物子目录绝对路径，含 diagnose_config.json>
-引擎目录 ENGINE：<绝对路径>
-先读 <ENGINE>/references/engine-core.md「执行模型」节 + <ENGINE>/playbooks/<id>/playbook.md，
-按其逐阶段菜谱把标（subagent）的步骤从头做到最后一个阶段（含 manifest 落盘）。
-
-已确认参数（不许改、不许再问）：<qid>=<答案>；<qid>=<答案>……
-输入材料：<路径清单>
-
-硬规则：
-1. 菜谱声明的生成闸（gen_gate）与验证步一步不许跳，FAIL → 改脚本不改期望；
-2. 不写 diagnose_config.json / diagnose_state.json / PROGRESS.md / FINDINGS.md
-  （config.products 回填与 PROGRESS 记录由主 agent 做）；
-3. 缺信息/报错原样回报，不自行假设、不带病继续；
-4. 原始数据流式处理不进上下文。
-
-只回传（≤10 行）：该 playbook §4 规定的一句话汇报字段 + 验证步/闸结果数字
-（主 agent 要记进 PROGRESS.md）+ 覆盖/缺口披露。
-```
-
-## Brief-FACT：事实提取子 agent（现象清单，禁机制语言）
-
-```
-你是一个事实提取子 agent，只负责【从分析产物提取现象清单】，不解释机制。
-
-工作目录：<绝对路径>
-输入产物：<json/csv 列表，如 dynamics_metrics.json, composition_effects.json>
-（只读这些产物的 summary 字段；需要画图按 config.questions.fig-style 的答案画进 figures/，
- 每图配自足 stats.json，判读读 json 不读 PNG。）
-
-只回传【现象清单】（≤15 条，每条固定格式）：
-- [现象] <观察一句话> | 数字：<关键数值> | 来源：<产物文件>
-句式约束：只写"是什么"（分布/排名/差异/趋势 + 数字），禁止"因为/说明/导致/可能是"。
-主 agent 会把清单挑选后落 FINDINGS.md（状态=现象）并向用户停顿汇报。
-```
+- 并行：互不共享输出文件的卡片可一条消息多派；GPU 任务单卡不分片。
+- 单写者：`diagnose_config.json` 只由主 agent 写；`diagnose_state.json / PROGRESS.md` 由主 agent 写，
+  卡片在自己的工作目录跑 orient 领阶段是唯一例外（并行派发的卡片必须各有工作目录；分片派发只跑脚本
+  不跑 orient，阶段由主 agent 收齐后推进）；`FINDINGS.md` 卡片只许追加自己阶段的「现象」行，
+  「假设 / 已证实 / 被推翻」与结论行只由主 agent 写。
+- 验证回传：卡片必须在 `verification` 回验证步/闸的名字与数字；主 agent 逐条记入 PROGRESS.md，
+  缺记录的产物不可引用。
+- 分片防竞态：并发各写各的 `--out <name>.<shard>`，主 agent 收齐后合并。
+- 上下文纪律：卡片只读结构化产物，不读 PNG / 逐行原始日志 / 大二进制。
+- 无提问权：卡片没有 AskUserQuestion；缺信息走 `NEED_INFO`；报错原样回传，不自行假设、不带病继续、不重试破坏性操作。
+- 禁嵌套：卡片不得再派 subagent；要拆分由主 agent 派平级卡片。
+- 回传要瘦：只回契约 JSON。
 
 ## Brief-EMBED 提示（嵌入运行其他技能）
 
-playbook 的 context 需要嵌入跑**另一个技能**（如先跑某个专用技能建立上下文）时，
-**由主 agent 亲自编排**（subagent 不能再派 subagent，且被嵌入技能自己的停顿点要问用户）：
-建独立子目录（绝不写其他实验线/已有分析目录）→ 照被嵌入技能的 SKILL.md 走到 playbook
-需要的阶段为止 → 回填本工作目录 config 的 `<workdir_key>` + `<status_key>="linked"` → 重跑 orient 确认。
+playbook 需要先跑另一个技能建立上下文时，**由主 agent 亲自编排**：建独立子目录 → 照被嵌入技能的
+SKILL.md 走到需要的阶段 → 回填本工作目录 config 的 `<workdir_key>` + `<status_key>="linked"` →
+重跑 orient 确认。

@@ -132,7 +132,7 @@ def _print_plan(plan):
               f"{[c['qid'] for c in plan['question_conflicts']]}")
     nxt = {"A": "内联跑生产者进 _shared/，回填 batch_config.products",
            "B": "一次性合并提问，答案写 batch_config.answers",
-           "C": "为每条 pending 派发 Brief-BATCH-COMPUTE 子代理（见 references/batch-orchestration.md）",
+           "C": "为每条 pending 按名字派 <id>-compute 卡片（索引与回退见 references/subagent-briefs.md）",
            "D": "合并呈现各 phenomena，请用户点名深挖，逐条跑结论；"
                 "跑完选中结论后写 BATCH_REPORT.md 进入 E",
            "E": "批量完成（BATCH_REPORT.md 已写）"}

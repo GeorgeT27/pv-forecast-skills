@@ -66,8 +66,8 @@ note 字段，不替下游把问题抹掉。
 
 1. （主 agent）确认两个前置问题已有答案：freq（horizon 步长）和 align-keys（对齐键）。
    orient 报 ✗ 时，先向用户提问，再继续；
-2. 【硬规则】（主 agent）按 `references/subagent-briefs.md` 里的 **Brief-PRODUCER**
-   模板派发一个 subagent，由它执行步 3 起的全部菜谱（含 Stage 1）。派发时传实参：
+2. 【硬规则】（主 agent）派 `data-setup-compute` 卡片整体执行（派发六步与回退见
+   `references/subagent-briefs.md`），由它执行步 3 起的全部菜谱（含 Stage 1）。派发时传实参：
    `<ENGINE>`、工作目录、predict/truth 路径、freq 与 align-keys 的答案。主 agent
    不得自己写适配器；发现自己在写 adapter.py，就说明本步被跳过了，停下补派发；
 3. （subagent）现场写薄适配器 `analysis_scripts/adapter.py`：用户格式 → 规范长表
@@ -89,7 +89,7 @@ note 字段，不替下游把问题抹掉。
    `adapter_report.json` 的 schema：
    `{"rows_wide":int, "rows_long":int, "spot_checks":[...], "ok":bool}`。
 
-验证步：步 4 的过闸结果与对账数字随 Brief-PRODUCER 回传，主 agent 记入 PROGRESS.md。
+验证步：步 4 的过闸结果与对账数字随 `data-setup-compute` 的契约 JSON 回传，主 agent 记入 PROGRESS.md。
 done：predictions.csv、alignment_report.json、adapter_report.json 三个产物落盘。
 
 ### Stage 1 产物清单落盘（subagent 承接）
@@ -122,8 +122,8 @@ setup_manifest.json 与 alignment_report.json 补充细节（如 dropped 不对�
 ## 5. subagent 拆分建议
 
 **整体外包（硬规则）**：Stage 0 的步 3 起连同 Stage 1，整体交给同一个 subagent
-串行执行，不再细拆。模板与派发纪律见 `references/subagent-briefs.md` 的
-Brief-PRODUCER。只能由主 agent 做的三件事：向用户提问（freq/align-keys）、
+串行执行，不再细拆。派发纪律见 `references/subagent-briefs.md`，按名字派
+`data-setup-compute` 卡片。只能由主 agent 做的三件事：向用户提问（freq/align-keys）、
 记录 PROGRESS、回填 config.products。
 
 ## 6. 结论模板与反驳门

@@ -111,7 +111,7 @@ def test_layer0_routes_every_playbook():
 
 
 # model-audit 是跨 playbook 共享的档案供应方（upstream[] 分层机制 +
-# engine_common.modelmap_blocker 全局阻塞，见 3b0ed11；旧的迁移期兼容机制
+# modelmap_blocker 仅对 required model_code 生效；optional 不阻塞事实分析。
 # 已全面退役）：一个 playbook 若在自己的 frontmatter
 # `upstream[]` 里声明某产物、其生产者恰好是 model-audit，它以该 id 引用对方
 # 触发内联生产提示——这不是方法内容内联，是引擎既定的 provider 接线，按共享库豁免，

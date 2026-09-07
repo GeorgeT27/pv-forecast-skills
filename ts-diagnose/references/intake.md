@@ -25,11 +25,11 @@ orient 会报盘点状态。主 agent 按本文件流程收集，答案落 `diag
    <材料> 吗？」，用户确认后才能写 present。多个候选时按恒问五类第⑤条照问。
    路径确认了也**免不了 schema 追问**——列名语义猜错会污染全部下游（恒问五类第①条）。
 
-## 引擎级恒问五件套
+## 引擎级材料规则
 
-不管进哪个 playbook，`training_log / truth / train_y / checkpoint / model_code`
-五类必须全部问到 present 或 absent-confirmed(source=user)，否则 orient 直接
-BLOCKED（不输出任何阶段菜单）。playbook 声明的 required/optional 照旧叠加。
+入口只阻塞 playbook frontmatter 声明的 `required` 材料。`optional` 材料、未声明材料和
+未激活变体的材料不阻塞；它们在对应变体或图表真正启用时再盘点。`truth` 等材料若同时
+是 required，仍按上面的 absent-confirmed + `degraded_ok` 规则处理。
 
 ## config.materials 条目格式
 
@@ -68,7 +68,7 @@ BLOCKED（不输出任何阶段菜单）。playbook 声明的 required/optional 
 
 模型实现代码仓库/目录。
 **追问**：路径？里面有几个模型、名字分别是什么？哪个是产线版本（多版本必问，不许自行裁决）？
-（present 时 orient 会强制先跑 playbook `model-audit` 生成档案回执，见 modelmap_blocker。）
+（optional 时不阻塞事实分析；需要机制归因时再走 `model_profile` 的 built/linked/declined 三分支。）
 
 ## `training_log`
 
@@ -119,4 +119,5 @@ BLOCKED（不输出任何阶段菜单）。playbook 声明的 required/optional 
 
 1. 行数守恒：转换前后样本数对得上（窗口展开的按 `窗口数 × horizon` 核对）；
 2. 抽 3 个窗口人工核对数值（原文件 vs 长表，逐点相等）；
-3. 结果记 PROGRESS.md 一行（没对账记录的长表不可引用——同脚本验证纪律）。
+3. 不得把 window/horizon/channel 等分析轴压成 run-level 汇总；保留所需数值列，记录 `rows_expected` 及公式；
+4. 结果记 PROGRESS.md 一行（没对账记录的长表不可引用）。适配器 note 不构成豁免。

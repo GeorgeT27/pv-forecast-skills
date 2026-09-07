@@ -376,7 +376,8 @@ def test_modelmap_blocker_accepts_product(pbdir, tmp_path, monkeypatch):
               .replace("marker_files: [predictions.csv]",
                        "marker_files: [MODELMAP_RECEIPT.json]")
               .replace("id: freq", "id: audit-q"))
-    fm = {"id": "cons-b"}
+    fm = {"id": "cons-b",
+          "materials": {"required": ["model_code"], "optional": []}}
     cfg = {"materials": {"model_code": {"status": "present", "paths": ["m/"]}}}
     assert ec.modelmap_blocker(cfg, fm)          # 无 receipt、无产物 → 阻塞
     d = tmp_path / "model_profile"
@@ -397,7 +398,7 @@ def test_modelmap_blocker_skips_playbooks_not_declaring_model_code(pbdir):
     assert ec.modelmap_blocker(cfg, fm_no_mc) is None
     fm_with_mc = {"id": "consumer-like",
                   "materials": {"required": [], "optional": ["model_code"]}}
-    assert ec.modelmap_blocker(cfg, fm_with_mc)  # 声明了就仍要档案
+    assert ec.modelmap_blocker(cfg, fm_with_mc) is None  # optional 不阻塞
 
 
 # ------------------------------------------------------------ 真实 playbook 转换守卫

@@ -74,7 +74,7 @@ done：charts/*.json ≥1 + FINDINGS.md 含「现象」→ 停顿汇报，**流�
 
 ## 5. subagent 拆分建议
 
-各图相互独立，可以并发：每图一个子代理，各写各的输出文件，互不冲突。FINDINGS 的汇总由主 agent 做。
+各图相互独立，可以并发：每图重复派一次 `fact-scan-compute` 卡，「输入」节给图名与输出文件，各写各的文件；图集范围由主 agent 过图表选择门后给定；FINDINGS 的汇总由主 agent 做。
 
 ## 6. 结论模板与反驳门
 

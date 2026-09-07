@@ -39,9 +39,7 @@ def run_orient(workdir, *args):
     return r.stdout
 
 
-# 入口闸（五件套）恒问：training_log/truth/train_y/checkpoint/model_code——
-# 本 PB 用两阶段测 --goto 校验，truth 同时是 required 材料，故用 present-完整记录覆盖，
-# 其余四件走 absent-confirmed+source=user。
+# 本 PB 用两阶段测 --goto 校验；额外材料记录仅作兼容夹具。
 FIVE_OK = {mid: {"status": "absent-confirmed", "source": "user"}
            for mid in ("training_log", "train_y", "checkpoint", "model_code")}
 

@@ -71,9 +71,9 @@
 
 触发时机：分析进入机制层（Stage 4 / Playbook B），需要"模型看得见/看不见什么"这类事实时。
 
-1. 读固定 pointer 文件：`references/model-ref.pointer`。
+1. 读消费方运行时生成的 pointer 文件：`references/model-ref.pointer`。
    - 若它存在、且 `path` 指向的 `.modelmap/models.md` 在盘上 → 直接读它作为模型参考。
      - 额外检查：`git -C <pointer.repo> rev-parse HEAD` 与 `pointer.commit` 不一致时，提示"模型档案可能已过时，建议重跑 model-audit playbook"，但先用现有档案继续（不阻塞分析）。
    - 若 pointer 不存在、或 `path` 不在盘上 → 向用户要模型代码目录路径，在该目录嵌入执行 **model-audit** playbook（orient 的 modelmap 档案闸会提示「先嵌入执行 playbook「model-audit」」，见 `engine_common.modelmap_blocker`）；产出 `.modelmap/` 与 pointer 后，再读 models.md。
 2. 消费纪律：只引用带 ✅/📊/📐 标记且前提清晰的字段；带 ⚠️/待确认/缺失 的一律按未知处理，不编造。
-3. 桥接假设里的 H-ID 直接对应 `references/hypotheses.md`；落 FINDINGS 前照常过 H-ID 门。
+3. 桥接假设里的 H-ID 直接对应档案中的假设登记；落 FINDINGS 前照常过 H-ID 门。

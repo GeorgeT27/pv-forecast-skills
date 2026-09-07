@@ -305,7 +305,8 @@ def test_cf_decomposition(cf_data, fake_infer):
     assert d.loc["c1", "cf_status"] == "ok" and d.loc["c2", "cf_status"] == "ok"
     assert d.loc["c1", "power_nrmse_localbase"] == pytest.approx(8.0)      # 4 / cap50 ×100
     assert d.loc["c1", "power_nrmse_cf"] == pytest.approx(0.0, abs=1e-9)
-    assert d.loc["c1", "frac_explained"] == pytest.approx(100.0)
+    # delta_nrmse / frac_explained 不再落 CSV（可由 localbase 与 cf 两列一步算回）
+    assert "delta_nrmse" not in d.columns and "frac_explained" not in d.columns
     assert d.loc["c2", "power_nrmse_localbase"] == pytest.approx(10.0 / 3, abs=1e-3)  # 2 / cap60 ×100
     assert float(d.loc["c1", "base_vs_parquet_pct"]) == pytest.approx(0.0, abs=1e-9)
     assert int(d.loc["c1", "coadapt"]) == 0
@@ -476,6 +477,36 @@ def test_cf_empty_truth_series_no_crash(tmp_path, fake_infer):
     assert d.loc["c3", "cf_status"] == "no_overlap"
 
 
+def test_cf_nan_inside_valid_length_filled_with_zero(tmp_path, fake_infer):
+    """GHI_real_future 长度和 predict 对得上、cell 本身不是空的，但里面夹了一个 NaN（缺测点，不是整段
+    缺测）-> 填 0 后保留该行送去推理，不当空值丢掉、也不会让 NaN 混进模型输入。"""
+    def ghi(v0):
+        return [float(v0 + 100 * k) for k in range(4)]
+
+    gt = ghi(100)                                   # 真实 GHI，干净
+    truth_with_gap = list(gt)
+    truth_with_gap[1] = float("nan")                 # 长度不变，第 2 个点缺测
+    rows = [{"station": "c1", "timestamp_win": pd.Timestamp("2026-07-16 10:00:00"),
+             "observe_power": 1.0, "observe_power_future": [g / 10.0 for g in gt],
+             "GHI_SOLARGIS_predict": [g + 40.0 for g in gt],    # predict 列本身干净
+             "GHI_real_future": truth_with_gap}]
+    pd.DataFrame(rows).to_parquet(tmp_path / "input.parquet")
+
+    dt = pd.date_range("2026-07-16 10:15:00", "2026-07-16 11:00:00", freq="15min")
+    pred = pd.DataFrame({"dtime": dt})
+    pred["c1"] = [(g + 40.0) / 10.0 for g in gt]
+    pred.to_parquet(tmp_path / "predict.parquet")
+
+    r = _run(tmp_path, _cf_args(fake_infer, tmp_path, ["--no-station-plots"]))
+    assert "filled NaN points with 0.0" in r["out"]
+    d = r["fleet"].set_index("station")
+    assert d.loc["c1", "cf_status"] == "ok"            # 保留了，不是 missing/no_overlap
+
+    swap_call = fake_infer.calls[-1]                   # 单窗口：baseline 在前、swap 在后
+    assert swap_call["window"] == "2026-07-16 10:00:00"
+    assert swap_call["ghi"]["c1"] == [100.0, 0.0, 300.0, 400.0]   # 换真值后，NaN 那一点是 0，不是 NaN
+
+
 # ---------------------------------------------------------------- 南网 nanwang_official 指标测试
 def _write_info(wd, mapping):
     pd.DataFrame([{"station": s, "GCCAPCITY": g} for s, g in mapping.items()]).to_csv(wd / "info.csv", index=False)
@@ -565,6 +596,32 @@ def test_nanwang_factor_column_order(cf_data):
     info = _write_info(cf_data, {"c1": 100.0, "c2": 200.0})
     cols = list(_run(cf_data, ["--no-plots", "--info-csv", info])["fleet"].columns)
     assert [c for c in cols if c.startswith("nanwang_official_power")] == FACTOR_COLS
+
+
+# ---------------------------------------------------------------- fleet_ranking.csv 的行序与列序
+def test_fleet_sorted_by_nanwang_ascending(cf_data):
+    """有 nanwang_official_power 就恒按它升序，压过原来的 power_nrmse 降序。
+    --capacity 只动 nRMSE 的分母、不动南网口径的 GCCAPCITY，故两种排法在这里方向相反：
+    c1 nRMSE 4/1000=0.4% 、c2 2/10=20% → 旧排法 c2 在前；南网 c1 84.9% 、c2 95.2% → 新排法 c1 在前。"""
+    info = _write_info(cf_data, {"c1": 100.0, "c2": 200.0})
+    fr = _run(cf_data, ["--no-plots", "--info-csv", info,
+                        "--capacity", "c1:1000,c2:10"])["fleet"]
+    assert fr["nanwang_official_power"].tolist() == sorted(fr["nanwang_official_power"])
+    assert fr["station"].tolist() == ["c1", "c2"]
+    assert fr["power_nrmse"].iloc[0] < fr["power_nrmse"].iloc[1]      # 确非 power_nrmse 降序
+
+
+def test_fleet_sort_falls_back_to_power_nrmse(cf_data):
+    """没有 nanwang_official_power（没给 --info-csv）时退回 power_nrmse 降序，与改动前一致。"""
+    fr = _run(cf_data, ["--no-plots", "--capacity", "c1:1000,c2:10"])["fleet"]
+    assert "nanwang_official_power" not in fr.columns
+    assert fr["station"].tolist() == ["c2", "c1"]
+
+
+def test_fleet_nanwang_sort_puts_blank_stations_last(cf_data):
+    """缺 GCCAPCITY 的站南网列为空，升序排时压到最后而不是当成最小值排到最前。"""
+    fr = _run(cf_data, ["--no-plots", "--info-csv", _write_info(cf_data, {"c2": 200.0})])["fleet"]
+    assert fr["station"].tolist() == ["c2", "c1"] and pd.isna(fr["nanwang_official_power"].iloc[-1])
 
 
 def test_nanwang_factor_not_in_station_power_csv(cf_data):
@@ -781,11 +838,13 @@ def test_short_end_to_end_with_plots(short_data):
     for sub in ("D+1", "D+4"):
         d = _rep(short_data) / sub
         assert (d / "fleet_overview.png").exists()
-        assert (d / "theil_decomposition.png").exists()
+        assert not (d / "theil_decomposition.png").exists()  # Theil/scatter 校准功能已整体下线
         assert (d / "fleet_ranking.csv").exists()
         assert (d / "station_s1.png").exists()              # 每站一张 2x2 组合图，直接落在切片目录
         assert (d / "station_s2.png").exists()
         assert not (d / "stations").exists()                # 旧版逐图目录已随 API 反事实一并删除
+        fr = pd.read_csv(d / "fleet_ranking.csv")
+        assert not {"theil_u_bias", "theil_u_var", "theil_u_cov", "slope", "r2", "high_bias_pct"} & set(fr.columns)
 
 
 def test_short_counterfactual_per_window(short_cf_data, fake_infer):
@@ -929,7 +988,7 @@ def test_hist_span_spans_the_whole_flattened_history_line(hist_data):
 
 
 def _write_raw_history(root, day, plant, value):
-    import history_avail_power as hap
+    from pvcore import history_raw as hap
     d = root / day / "IN" / plant
     d.mkdir(parents=True, exist_ok=True)
     vcols = [f"V{h:02d}{m:02d}" for h in range(24) for m in (0, 15, 30, 45)]
@@ -1037,3 +1096,220 @@ def test_hist_root_and_counterfactual_coexist(hist_raw_cf_data, fake_infer):
     pw = pd.read_csv(_rep(hist_raw_cf_data) / "D+1" / "station_power_rmse.csv")
     assert set(pw["cf_status"]) == {"ok"}
     assert (_rep(hist_raw_cf_data) / "D+1" / "station_c1.png").exists()
+
+
+# ================================================================ K_t 乘性反事实扫描
+# 数据模型：GHI 预报 = 真值 x1.25 的纯乘性偏差；假模型 power = GHI/10 也是纯乘性，
+# 所以 k=0.8 那一趟恰好把预报缩回真值 -> 误差归零、最优 k 必须正好是 0.8。
+# 坐标用南宁（108.32E, 22.82N）：该经度真太阳正午 12:48；十点半前后 GHI_cs≈820-950，
+# 1.2 倍天花板在 985 以上，而最大喂进去的是 500x1.25x1.2=750，故整个端到端测试不触发截断。
+KT_LAT, KT_LON = 22.82, 108.32
+KT_BIAS = 1.25
+KT_TRUE = {"2026-07-16 10:15": 100.0, "2026-07-16 10:30": 200.0, "2026-07-16 10:45": 300.0,
+           "2026-07-16 11:00": 400.0, "2026-07-16 11:15": 500.0}
+
+
+def _write_info_geo(wd, mapping, lat=KT_LAT, lon=KT_LON, name="info_geo.csv"):
+    pd.DataFrame([{"station": s, "GCCAPCITY": g, "LATITUDE": lat, "LONGITUDE": lon}
+                  for s, g in mapping.items()]).to_csv(wd / name, index=False)
+    return str(wd / name)
+
+
+def _kt_hist_list(win):
+    """从 07-15 00:00 反向排到起报时刻的历史 GHI：三角形日峰，峰顶落在 07-15 12:45（index 51）。
+    给 [kt] geometry check 一条有日峰形状的曲线去比对真太阳正午。"""
+    L = int((pd.Timestamp(win) - pd.Timestamp("2026-07-15 00:00")) / pd.Timedelta("15min")) + 1
+    return [max(0.0, 1000.0 - 40.0 * abs(j - 51)) for j in range(L)]
+
+
+@pytest.fixture
+def kt_data(tmp_path):
+    rows = []
+    for T, gt in (("2026-07-16 10:00:00", [100., 200, 300, 400]),
+                  ("2026-07-16 10:15:00", [200., 300, 400, 500])):
+        rows.append({"station": "k1", "timestamp_win": pd.Timestamp(T),
+                     "observe_power": [1.0] * 4, "GHI_SOLARGIS": _kt_hist_list(T),
+                     "observe_power_future": [g / 10.0 for g in gt],
+                     "GHI_SOLARGIS_predict": [g * KT_BIAS for g in gt],
+                     "GHI_real_future": gt})
+    pd.DataFrame(rows).to_parquet(tmp_path / "input.parquet")
+    dt = pd.DatetimeIndex(list(KT_TRUE))
+    pd.DataFrame({"dtime": dt,
+                  "k1": [v * KT_BIAS / 10.0 for v in KT_TRUE.values()]}).to_parquet(
+        tmp_path / "predict.parquet")
+    return tmp_path
+
+
+def _kt_run(wd, fi, extra=()):
+    return _run(wd, ["--no-plots", "--info-csv", _write_info_geo(wd, {"k1": 100.0}),
+                     "--inference-dir", fi.dir, "--checkpoints-dir", str(wd / "ckpt"),
+                     "--config", str(wd / "config.yaml")] + list(extra))
+
+
+def test_kt_columns_are_last(kt_data, fake_infer):
+    """--cf-kt-scale 产的列全部排在 fleet_ranking.csv 末尾；
+    power_nrmse_localbase 不算 K_t 列（反事实块也用它作参照），留在原位。"""
+    cols = list(_kt_run(kt_data, fake_infer, ["--cf-kt-scale", "0.8,1.2"])["fleet"].columns)
+    is_kt = [c.startswith(("power_nrmse_kt", "nanwang_official_power_kt", "kt_best_")) for c in cols]
+    assert any(is_kt)
+    assert is_kt == sorted(is_kt)                                # 没有非 K_t 列排在 K_t 列后面
+    assert cols[-2:] == ["kt_best_factor", "kt_best_gain"]
+    assert cols.index("power_nrmse_localbase") < is_kt.index(True)
+
+
+# ---------------------------------------------------------------- solar 单元
+def test_clear_sky_zero_at_night_and_peaks_at_solar_noon():
+    from pvcore import solar
+    t = pd.date_range("2026-06-21 00:00", periods=96, freq="15min")
+    cs = solar.clear_sky_ghi(t, KT_LAT, KT_LON)
+    assert cs[0] == 0.0 and cs[-1] == 0.0                       # 夜间是 0，不是 NaN
+    peak = t[int(np.argmax(cs))]
+    noon = solar.solar_noon_hour("2026-06-21", KT_LON)           # 108.32E 北京时约 12.80h
+    assert abs((peak.hour + peak.minute / 60.0) - noon) <= 0.25
+    assert 950 <= cs.max() <= 1100                               # 夏至 22.8N 正午量级
+    assert solar.clear_sky_ghi(t, KT_LAT, KT_LON).max() > \
+           solar.clear_sky_ghi(pd.date_range("2026-12-21 00:00", periods=96, freq="15min"),
+                               KT_LAT, KT_LON).max()             # 夏至比冬至亮
+
+
+def test_scale_in_kt_clips_only_above_the_ceiling():
+    from pvcore import solar
+    cs = np.array([0.0, 500.0, 900.0])                           # 夜 / 白天 / 白天
+    ghi = np.array([5.0, 400.0, 1000.0])                         # K_t = nan / 0.8 / 1.111
+    out, n_clip, n_day = solar.scale_in_kt(ghi, cs, 1.2, kt_max=1.2)
+    assert n_day == 2
+    assert out[0] == pytest.approx(6.0)                          # 夜间无天花板，纯缩放
+    assert out[1] == pytest.approx(480.0)                        # K_t 0.8*1.2=0.96 < 1.2，放行
+    assert out[2] == pytest.approx(1080.0) and n_clip == 1       # K_t 1.111*1.2=1.33 -> 截到 1.2*900
+    assert solar.scale_in_kt(np.array([-3.0]), np.array([500.0]), 1.0)[0][0] == 0.0   # 负值夹到 0
+
+
+def test_clearness_index_is_nan_at_night():
+    from pvcore import solar
+    kt = solar.clearness_index([0.0, 400.0], [0.0, 500.0])
+    assert np.isnan(kt[0]) and kt[1] == pytest.approx(0.8)
+
+
+# ---------------------------------------------------------------- 端到端
+def test_kt_scan_finds_the_multiplicative_bias(kt_data, fake_infer):
+    """预报整体偏高 25% → 扫描必须挑中 k=0.8 并把误差打到 0，且 1.2 那一趟更差。"""
+    fr = _kt_run(kt_data, fake_infer, ["--cf-kt-scale", "0.8,1.2"])["fleet"].set_index("station")
+    r = fr.loc["k1"]
+    assert r["kt_best_factor"] == pytest.approx(0.8)
+    assert r["power_nrmse_kt0.8"] == pytest.approx(0.0, abs=1e-6)     # 缩回真值，误差归零
+    base = r["power_nrmse_localbase"]                                # delta_nrmse_kt<k> 已不落 CSV
+    assert r["power_nrmse_kt0.8"] < base < r["power_nrmse_kt1.2"]    # 0.8 变好、1.2 变坏
+    assert not [c for c in fr.columns if c.startswith("delta_nrmse_kt")]
+    assert r["kt_best_gain"] == pytest.approx(r["power_nrmse_localbase"], abs=1e-6)
+    assert r["power_nrmse_kt1.2"] > r["power_nrmse_localbase"]
+
+
+def test_kt_scan_feeds_the_model_exactly_k_times_the_forecast(kt_data, fake_infer):
+    """喂进模型的确实是 K_t 缩放后的 GHI；本例不触天花板，故就是逐点 x k。
+    只开 --cf-kt-scale（不开 --counterfactual）→ 只有基线 + 1 趟缩放，不推换真值那趟。"""
+    _kt_run(kt_data, fake_infer, ["--cf-kt-scale", "0.8"])
+    calls = fake_infer.calls
+    assert len(calls) == 4                                    # (基线 + k=0.8) x 2 个起报窗
+    for base, kt in ((calls[0], calls[2]), (calls[1], calls[3])):
+        assert base["window"] == kt["window"]
+        assert kt["ghi"]["k1"] == pytest.approx([v * 0.8 for v in base["ghi"]["k1"]])
+
+
+def test_kt_scan_alongside_oracle_swap(kt_data, fake_infer):
+    """两种反事实同开：4 趟 x 2 窗 = 8 次推理，两套列各自都在。"""
+    fr = _kt_run(kt_data, fake_infer,
+                 ["--counterfactual", "--cf-kt-scale", "0.8,1.2"])["fleet"].set_index("station")
+    assert fake_infer.count == 8                              # 基线 + 换真值 + 0.8 + 1.2
+    assert fr.loc["k1", "cf_status"] == "ok"
+    assert np.isfinite(fr.loc["k1", "power_nrmse_cf"])         # oracle 那套
+    assert np.isfinite(fr.loc["k1", "power_nrmse_kt0.8"])      # 扫描那套
+
+
+def test_kt_factor_one_is_dropped(kt_data, fake_infer):
+    """k=1.0 就是基线，不该白推一趟。"""
+    out = _kt_run(kt_data, fake_infer, ["--cf-kt-scale", "1.0,0.8"])["out"]
+    assert "factor 1.0 dropped" in out
+    assert fake_infer.count == 4                              # 基线 + 0.8，没有第三趟
+
+
+def test_kt_nanwang_column_present(kt_data, fake_infer):
+    """给了 GCCAPCITY 就该有每个 k 的南网口径列。"""
+    fr = _kt_run(kt_data, fake_infer, ["--cf-kt-scale", "0.8"])["fleet"].set_index("station")
+    assert fr.loc["k1", "nanwang_official_power_kt0.8"] == pytest.approx(100.0, abs=1e-6)
+
+
+def test_kt_cache_is_per_pass(kt_data, fake_infer):
+    """逐趟缓存：补一个新的 k 只推那一趟，已有的基线/旧 k 不重推。"""
+    _kt_run(kt_data, fake_infer, ["--cf-kt-scale", "0.8"])
+    assert fake_infer.count == 4                              # 基线 + 0.8
+    _kt_run(kt_data, fake_infer, ["--cf-kt-scale", "0.8,1.2"])
+    assert fake_infer.count == 6                              # 只补了 1.2 的两窗
+
+
+def test_kt_geometry_check_flags_a_wrong_timezone(kt_data, fake_infer):
+    """历史 GHI 日峰在 12:45、南宁真太阳正午 12:48 → 默认 UTC+8 判「looks right」；
+    谎报 UTC+0 就该被当场标成 SUSPECT，而不是安静地把晴空曲线算到凌晨。"""
+    ok = _kt_run(kt_data, fake_infer, ["--cf-kt-scale", "0.8"])["out"]
+    assert "looks right" in ok
+    bad = _kt_run(kt_data, fake_infer,
+                  ["--cf-kt-scale", "0.9", "--cf-kt-tz-offset", "0"])["out"]
+    assert "SUSPECT" in bad
+
+
+def test_kt_warns_when_ceiling_never_fires(kt_data, fake_infer):
+    out = _kt_run(kt_data, fake_infer, ["--cf-kt-scale", "0.8"])["out"]
+    assert "ceiling never fired" in out
+
+
+# ---------------------------------------------------------------- 前置条件
+def _kt_fail(wd, extra):
+    r = subprocess.run(
+        [sys.executable, SCRIPT, "--input", str(wd / "input.parquet"),
+         "--predict", str(wd / "predict.parquet"), "--out-dir", str(wd / "out"),
+         "--date", "2026-07-15", "--pred-col-template", "{station}", "--no-plots"] + list(extra),
+        cwd=str(wd), capture_output=True, text=True)
+    assert r.returncode != 0
+    return r.stdout + r.stderr
+
+
+def test_kt_requires_info_csv(kt_data):
+    assert "needs --info-csv" in _kt_fail(kt_data, ["--cf-kt-scale", "0.8"])
+
+
+def test_kt_requires_coordinates_in_info_csv(kt_data, fake_infer):
+    """info.csv 有装机没经纬度 → 明确报错，而不是安静地一个站都不缩放。"""
+    msg = _kt_fail(kt_data, ["--cf-kt-scale", "0.8", "--info-csv", _write_info(kt_data, {"k1": 100.0}),
+                             "--inference-dir", fake_infer.dir,
+                             "--checkpoints-dir", str(kt_data / "ckpt"),
+                             "--config", str(kt_data / "config.yaml")])
+    assert "no station has usable LATITUDE/LONGITUDE" in msg
+
+
+def test_kt_rejects_nonpositive_factor(kt_data, fake_infer):
+    msg = _kt_fail(kt_data, ["--cf-kt-scale", "0.8,0", "--info-csv", _write_info_geo(kt_data, {"k1": 100.0}),
+                             "--inference-dir", fake_infer.dir,
+                             "--checkpoints-dir", str(kt_data / "ckpt"),
+                             "--config", str(kt_data / "config.yaml")])
+    assert "must be positive" in msg
+
+
+def test_kt_out_of_china_coordinates_warn(kt_data, fake_infer):
+    """经纬度串行/错列是真发生过的事，落在国境外必须告警（但不拦，用户可能真在境外）。"""
+    info = _write_info_geo(kt_data, {"k1": 100.0}, lat=22.82, lon=-70.0, name="info_bad.csv")
+    out = _kt_run(kt_data, fake_infer, ["--cf-kt-scale", "0.8", "--info-csv", info])["out"]
+    assert "falls outside China" in out
+
+
+def test_kt_scan_plot_is_produced(kt_data, fake_infer):
+    info = _write_info_geo(kt_data, {"k1": 100.0})
+    r = subprocess.run(
+        [sys.executable, SCRIPT, "--input", str(kt_data / "input.parquet"),
+         "--predict", str(kt_data / "predict.parquet"), "--out-dir", str(kt_data / "out"),
+         "--date", "2026-07-15", "--pred-col-template", "{station}",
+         "--info-csv", info, "--cf-kt-scale", "0.8,1.2", "--cf-kt-lines",
+         "--inference-dir", fake_infer.dir, "--checkpoints-dir", str(kt_data / "ckpt"),
+         "--config", str(kt_data / "config.yaml")],
+        cwd=str(kt_data), capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (_rep(kt_data, "20260715") / "D+1" / "counterfactual_kt_scan.png").exists()
+    assert (_rep(kt_data, "20260715") / "D+1" / "station_k1.png").exists()

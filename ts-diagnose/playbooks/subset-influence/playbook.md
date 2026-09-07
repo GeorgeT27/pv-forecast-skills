@@ -3,8 +3,8 @@ id: subset-influence
 name: 训练条目/数据子集影响力归因
 goal: 找出联合训练的 N 个训练条目（数据子集）里哪些拖累了留出单元的零样本预测（负迁移），并解释训练动力学（为什么不同 iteration/chunk 的 training loss 不同）
 materials:
-  required: [training_log, predict, truth]
-  optional: [checkpoint, experiment_config, model_code]
+  required: [predict, truth]
+  optional: [training_log, checkpoint, experiment_config, model_code]
 upstream:
   - product: setup
     required: true
@@ -33,8 +33,6 @@ stages:
     prereqs:
       - desc: 回放已完成（Stage 0）
         check: "stage:0"
-      - desc: loss 记录源已定位（loss_records.csv / probe 报 loss_found / Mode B 可 --from-ckpt）
-        check: "material:training_log"
   - id: 2
     name: 影响力回归（Mode A 主证据 → influence_coefs.json）
     done_when:
@@ -183,9 +181,9 @@ done：`assignments.csv` 落盘。
 回归设计——"中心化指示 + 岭回归 + 控制变量"（直接 import 复用
 `influence_regression` 的实现），只是因变量从 RMSE 换成 loss 指标。
 
-**没有任何 loss 记录源时，本阶段跳过，不阻塞。** 这个逃逸没有声明成 frontmatter 的
-variant，由 `probe_logs.py` 的 `loss_found` 判定驱动：orient 发现 Stage 1 的
-`done_when.artifacts` 反复缺产物时，主 agent 依据本节文字放行，不算失败。
+**没有任何 loss 记录源时，本阶段仍需落盘一个带 `status: "skipped"` 和
+`reason: "no_loss_source"` 的 `chunk_loss_dynamics.json`，然后继续主线；Mode B 可从
+checkpoint 提取，training_log 则在材料 present 时解析。**
 
 解读：拿到 `highest_final_loss_entries`/`slowest_converging_entries` 两个排名后，连接
 project-context 的条目档案与 event-log：高 loss + 分布远 = 预期内的难拟合，不是问题；
@@ -317,9 +315,8 @@ Stage 1（probe → 解析 loss → loss_dynamics，只回数字排名）、Stag
 
 ## 10. 材料降级说明
 
-- `training_log`/`predict`/`truth` 缺：不可做。这三样构成本 playbook 归因的最小闭环
-  （留出单元 RMSE 序列 + loss 记录源），没有降级路径。须先补齐，或与用户明确降级范围
-  （例如只做 Stage 2、放弃 Stage 1 动力学）。
+- `predict`/`truth` 缺：不可做。`training_log` 缺：Stage 1 可从 checkpoint 提取；
+  两者都缺时写入 skipped 产物并继续 Stage 2，结论声明未做训练动力学。
 - `checkpoint` 缺：走 Mode A。Stage 3/5 结构性不适用（`mode-b` variant 不激活），归因
   停在"现象/假设"，不可升"已证实"。若仍需产出 `CONCLUSION.md`，须显式标注"未做
   因果确认，仅观测归因"。

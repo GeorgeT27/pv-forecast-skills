@@ -22,6 +22,8 @@ def validate_ledger(obj):
                 errs.append(f"{hid}: 缺字段 {k}")
         if h.get("status") not in STATUSES:
             errs.append(f"{hid}: status 非法")
+        if h.get("provenance") == "no_candidate" and h.get("status") != "undecided":
+            errs.append(f"{hid}: no_candidate 必须保持 undecided")
         if h.get("status") == "refuted" and not h.get("kill_receipt"):
             errs.append(f"{hid}: refuted 必须带 kill_receipt")
         if h.get("provenance") == "post-hoc" and h.get("status") == "confirmed" \

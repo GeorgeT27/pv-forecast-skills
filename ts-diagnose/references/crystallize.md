@@ -147,9 +147,7 @@ provenance.json 的 `data.combined`）：
 
 ## 4. 收尾
 
-- README.md 技能表加一行 + 安装节加 `ln -s` 命令（用户决定入库时才提交 git）；
-- 仓库 CHANGELOG / 记忆更新；
-- 提醒用户：`ln -s <仓库>/<new-skill> ~/.claude/skills/<new-skill>`（或对应技能目录）。
+- 按当前运行时的技能目录安装或登记新技能，并更新仓库 CHANGELOG；
 
 ## 5. 维护约定
 

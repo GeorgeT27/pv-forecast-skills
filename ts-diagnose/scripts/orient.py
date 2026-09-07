@@ -61,6 +61,38 @@ def stage_tag(st, fm, ctx, cur, actives):
     return "待做"
 
 
+RECIPE_FAIL_HINT = "⚠ 菜谱抽取失败：{}；本回合直接读 playbook.md 对应 Stage 节"
+
+
+def _print_preamble(pb_path):
+    """菜谱通则（生成闸等硬规则所在）——只有标题、没有正文时不打空表头。"""
+    pre = ec.recipe_preamble(pb_path)
+    if len([ln for ln in pre.splitlines() if ln.strip()]) <= 1:
+        return
+    print("📖 菜谱通则（playbook.md 该节开头原文）")
+    print(pre)
+
+
+def _print_recipe(pb_path, stage):
+    try:
+        secs = ec.recipe_sections(pb_path)
+    except ValueError as e:
+        print(RECIPE_FAIL_HINT.format(e))
+        return
+    text = secs.get(stage["id"])
+    if not text:
+        return
+    done = (stage.get("done_when") or {})
+    done_s = ", ".join(done.get("artifacts") or []) or ("manual" if done.get("manual") else "")
+    if done.get("findings_marker"):
+        done_s += f"；FINDINGS 含「{done['findings_marker']}」"
+    print("-" * 62)
+    _print_preamble(pb_path)
+    print(f"📖 本阶段菜谱（playbook.md §Stage {stage['id']} 原文；done：{done_s}）——照此做，"
+          "标【硬规则】的步骤不得合并或跳过；整份 playbook 只在需要跨阶段判断时再读：")
+    print(text)
+
+
 def main():
     ap = argparse.ArgumentParser(description="ts-diagnose Step 0 Orient")
     ap.add_argument("--playbook", default=None, help="playbook id（首次进入绑定）")
@@ -68,6 +100,9 @@ def main():
     ap.add_argument("--goto", type=int, default=None, help="直达目标阶段 id：校验前置")
     ap.add_argument("--force", action="store_true",
                      help="用户明确要求跳过前置时才可用；PROGRESS 留痕")
+    ap.add_argument("--no-recipe", action="store_true", help="不打印当前阶段菜谱原文")
+    ap.add_argument("--recipe", type=int, default=None, metavar="N",
+                     help="只打印 Stage N 的菜谱原文并退出（复核用，不写 state/PROGRESS）")
     args = ap.parse_args()
 
     today = dt.date.today().isoformat()
@@ -103,7 +138,20 @@ def main():
             notes.append(f"实验线补缺：{', '.join(merged)}")
             ec.save_config(cfg)
 
-    fm = ec.load_frontmatter(ec.find_playbook(cfg["playbook"]))
+    pb_path = ec.find_playbook(cfg["playbook"])
+    fm = ec.load_frontmatter(pb_path)
+    if args.recipe is not None:
+        try:
+            secs = ec.recipe_sections(pb_path)
+        except ValueError as e:
+            print(RECIPE_FAIL_HINT.format(e))
+            return 0
+        if args.recipe not in secs:
+            print(f"→ 无 Stage {args.recipe}（本 playbook 阶段：{sorted(secs)}）")
+        else:
+            _print_preamble(pb_path)
+            print(secs[args.recipe])
+        return
     state = ec.read_json(ec.STATE_PATH) or {}
     ctx = {"cfg": cfg, "fm": fm, "state": state}
     actives = ec.variant_active(fm, ctx)
@@ -114,7 +162,8 @@ def main():
         print("=" * 62)
         print(f"BLOCKED: 材料盘点未完成（入口闸）    playbook: {fm['id']}")
         print("-" * 62)
-        print("以下材料过闸前，orient 不输出任何阶段菜单与菜谱入口。")
+        print("以下材料过闸前，orient 不输出任何阶段菜单与菜谱入口"
+              "（`--recipe N` 只读复核除外）。")
         print("主 agent 现在只做一件事：AskUserQuestion 盘点（一次多选列 checklist，")
         print("末尾带『还有别的吗』开放项；再按追问模板逐项补齐，答案落")
         print("diagnose_config.json 的 materials 块——格式见 references/intake.md）。")
@@ -141,11 +190,14 @@ def main():
     for n in notes:
         print(f"  {n}")
     if fm.get("produces"):
-        print("  🤝 生产者 playbook：提问/用户裁决只在主 agent；questions 收齐后的机械")
-        print("     执行段按本 playbook §5 派发 subagent（references/subagent-briefs.md，")
-        print("     纯机械生产者用 Brief-PRODUCER 整体外包），产物落盘后主 agent 写")
-        print("     config.products 回填——主 agent 不要自己埋头执行。")
+        print("  🤝 生产者 playbook：提问/用户裁决只在主 agent；questions 收齐后按名字派")
+        print(f"     卡片 agents/{fm['id']}-compute.md，跑到卡片区间终点交回主 agent（名字不可用则")
+        print("     卡片全文作 prompt 派 general-purpose）；产物落盘后主 agent 写 config.products")
+        print("     回填——主 agent 不要自己埋头执行。")
     print("-" * 62)
+    example = os.path.join(os.path.dirname(pb_path), "EXAMPLE-RUN.md")
+    if os.path.exists(example) and not any(ec.stage_done(st, ctx) for st in fm["stages"]):
+        print(f"  📎 首次进入：示例轨迹 {example}（golden 数据的完整一遍，读一次即可）")
     for st in fm["stages"]:
         pause = " ⏸" if st.get("pause_after") else ""
         print(f"  Stage {st['id']} {st['name']}{pause}  [{stage_tag(st, fm, ctx, cur, actives)}]")
@@ -304,8 +356,8 @@ def main():
             print(f"  [✗] {mm}")
         for u, s in up_blocked:
             print(f"  [✗] 必需上游产物未就绪：{u['product']}（{s['status']}）")
-        print("  ⚑ 引擎级恒问五类·开工前自检（命中任一必停 AskUserQuestion，"
-              "orient 不替你判，playbook 没声明也照问）：")
+        print("  ⚑ 引擎级恒问五类·开工前自检（任务用到且信息不明时必停 AskUserQuestion，"
+              "orient 不替你判）：")
         print("    ① schema/单位/口径不明 ② 成功判据未定义 "
               "③ 证据不足以升级（问降级 or 补证据并列成本）")
         print("    ④ 破坏性/昂贵操作（重训/覆盖产物/写外部目录） ⑤ 多候选文件或版本选哪个")
@@ -313,7 +365,7 @@ def main():
             print("  🚪 结论阶段·三道门自检（三门全过才可在 FINDINGS.md 标「已证实」；"
                   "细则 mechanisms.md）——逐条办：")
             print("    门1 稳健性：配对检验过 + 剔除最极端 10% 方向不变；")
-            print("    门2 假设登记：先在 HYPOTHESES.md 写下预测，再看数（禁事后编故事）；")
+            print("    门2 假设登记：先在 playbook 的假设账本写下预测与 provenance，再看数；")
             print("    门3 反驳门：替代解释逐条排除，排不掉就显式降级"
                   "（含 playbook 特有反驳门条目）；")
             print("    另：≥2 证据线按 upgrade_rule 一致才升『假设』；样本<阈值只报排名不报显著；")
@@ -324,6 +376,8 @@ def main():
         if ec.prereqs_ok(pr) and not blocked_qs and not mat_blocked and not mm \
                 and not up_blocked:
             print(f"→ 前置齐，可开工 Stage {target['id']}。")
+            if not args.no_recipe:
+                _print_recipe(pb_path, target)
         else:
             print("→ 有 ✗ 先补：缺答案 AskUserQuestion；缺产物回上一阶段；缺路径问用户后写 config。")
     print("=" * 62)
@@ -382,7 +436,13 @@ def _write_state_progress(fm, cur, args, ctx=None, actives=None, state=None, blo
     # 评测模式轨迹事件(SKILL_EVOLVE_TRAJECTORY_AGENT 未设置时零行为);任何异常不许影响诊断
     try:
         import eval_trajectory
-        eval_trajectory.maybe_emit(old_state, new_state)
+        n_ev = eval_trajectory.maybe_emit(old_state, new_state)
+        # 开了埋点就回一行确认:让「轨迹在写」可见。不猜评测语境、不在未设时出声,
+        # 日常仍是零行为改变;评测方据此判断埋点是否真的生效(静默失败是 2026-08-24
+        # 四场盲跑轨迹全丢的直接原因)。
+        traj_path = os.environ.get(eval_trajectory.ENV_VAR)
+        if traj_path:
+            print(f"  📈 轨迹埋点已开 → {traj_path}(本次 +{n_ev} 事件)")
     except Exception as e:  # noqa: BLE001 —— 埋点故障只降级轨迹完整性,不降级诊断
         print(f"[orient] 评测埋点异常(已忽略):{e}", file=sys.stderr)
 

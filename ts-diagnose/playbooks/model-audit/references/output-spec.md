@@ -3,11 +3,11 @@
 产物放两处：
 
 - **档案本体**：全部写到模型仓库的 `<model-repo>/.modelmap/` 目录下。
-- **pointer**：写到消费方 playbook 的固定相对路径 `references/model-ref.pointer`——
+- **pointer**：由运行中的消费方 playbook 按需生成到其工作目录的 `references/model-ref.pointer`——
   哪个 playbook 内联执行 model-audit，pointer 就写到该 playbook 自己的 `references/`
   下。例如 result-eval playbook 消费时，完整路径是
   `ts-diagnose/playbooks/result-eval/references/model-ref.pointer`（各 playbook 的
-  subagent-briefs.md 写作「读固定 pointer：`references/model-ref.pointer`」）。
+  subagent-briefs.md 写作「读运行时 pointer：`references/model-ref.pointer`」）。
 
 ## 文件清单
 | 文件 | 读者 | 内容 |

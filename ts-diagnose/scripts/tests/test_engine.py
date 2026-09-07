@@ -233,10 +233,7 @@ def test_merge_profile_version_gate(fm, workdir):
 # ---------------------------------------------------------------- orient 冒烟（子进程）
 ORIENT = os.path.join(SCRIPTS_DIR, "orient.py")
 
-# 入口闸（五件套）恒问：training_log/truth/train_y/checkpoint/model_code。
-# training-sufficiency 未声明 required materials，故 absent-confirmed+source=user
-# 即可过闸，无需 degraded_ok。这些 e2e 冒烟测试只关心 playbook 阶段/问题机制，不是
-# 材料盘点本身——预先落盘五件套让它们越过入口闸，回到闸后行为。
+# 这些 e2e 冒烟测试只关心 playbook 阶段/问题机制；保留的材料记录仅作兼容夹具。
 FIVE_OK = {mid: {"status": "absent-confirmed", "source": "user"}
            for mid in ("training_log", "truth", "train_y", "checkpoint", "model_code")}
 
@@ -337,3 +334,22 @@ def test_orient_profile_version_mismatch_degrades(workdir):
     r = run_orient(workdir, "--profile", str(prof))
     assert "profile_version" in r.stdout and "降级" in r.stdout
     assert "✗未答" in r.stdout  # loss-source 未被合并，仍必问
+
+
+# ------------------------------------------------- 评测轨迹埋点的可见性（回执行）
+# 2026-08-24：四场盲跑轨迹全丢，因为埋点靠 env 开、没开时完全静默。orient 现在
+# 开了就回一行确认；没开仍保持日常零行为改变（不猜评测语境，避免误报打扰）。
+def test_orient_prints_trajectory_receipt_when_enabled(workdir, monkeypatch):
+    _seed_five_ok(workdir)
+    log = workdir / "traj.jsonl"
+    monkeypatch.setenv("SKILL_EVOLVE_TRAJECTORY_AGENT", str(log))
+    r = run_orient(workdir, "--playbook", "training-sufficiency")
+    assert "轨迹埋点已开" in r.stdout and str(log) in r.stdout
+    assert log.exists() and log.read_text(encoding="utf-8").strip()
+
+
+def test_orient_silent_about_trajectory_when_disabled(workdir, monkeypatch):
+    _seed_five_ok(workdir)
+    monkeypatch.delenv("SKILL_EVOLVE_TRAJECTORY_AGENT", raising=False)
+    r = run_orient(workdir, "--playbook", "training-sufficiency")
+    assert "轨迹埋点" not in r.stdout

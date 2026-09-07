@@ -58,11 +58,13 @@ def test_engine_routes_deployment_drift():
     assert "退化" in text
 
 
-def test_engine_description_enumerates_all_playbooks():
-    """单入口化后 description 必须正面枚举全部 playbook id（Phase1 起含 data-setup 共 10 个）。"""
-    d = description_of(ENGINE_DIR)
-    missing = [pid for pid in ALL_PLAYBOOK_IDS if pid not in d]
-    assert not missing, f"引擎 description 缺 playbook id：{missing}"
+def test_description_is_triggers_only_and_short():
+    """description 只留触发短语：≤350 字符、不含 playbook id、不含括号枚举——skill 列表预算 = 上下文 1%，
+    超出时最少使用的 skill 会被丢出列表；路由表在正文（test_skill_md_line_budget_and_full_playbook_coverage 守）。"""
+    d = description_of(ENGINE_DIR).strip()
+    assert len(d) <= 350, f"description {len(d)} 字符 > 350"
+    leaked = [pid for pid in ALL_PLAYBOOK_IDS if pid in d]
+    assert not leaked, f"description 不应枚举 playbook id：{leaked}"
 
 
 def test_engine_description_has_no_negative_list_or_pvstar_deferral():
@@ -81,7 +83,7 @@ def test_routing_priority_is_two_level():
 
 
 def test_skill_md_line_budget_and_full_playbook_coverage():
-    """SKILL.md ≤60 行（与 test_layering 的预算口径一致），且路由表覆盖全部 10 个 playbook。"""
+    """SKILL.md ≤60 行（与 test_layering 的预算口径一致），且路由表覆盖全部 12 个 playbook。"""
     path = os.path.join(ENGINE_DIR, "SKILL.md")
     lines = open(path, encoding="utf-8").read().splitlines()
     assert len(lines) <= 60, f"SKILL.md {len(lines)} 行 > 60 行预算"
