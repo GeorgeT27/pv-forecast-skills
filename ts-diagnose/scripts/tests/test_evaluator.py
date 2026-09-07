@@ -64,6 +64,13 @@ def test_run_one_missing_slice_is_crash(tmp_path):
     assert m["status"] == "crash" and "horizon:bogus" in (m.get("error") or "")
 
 
+def test_run_one_bad_adapter_path_is_crash_not_exception(tmp_path):
+    d = _ev(adapter=str(tmp_path / "no_such_adapter.py"))
+    m = ev.run_one(d, d["base_config"], 7, str(tmp_path / "launch_fail"))
+    assert m["status"] == "crash" and m["primary"] is None
+    assert (tmp_path / "launch_fail" / "metrics.json").exists()
+
+
 def test_run_seeds_summary(tmp_path):
     s = ev.run_seeds(_ev(), {"dropout": 0.05}, [7, 1337, 2021], str(tmp_path / "root"))
     assert s["run_status"] == ["ok", "ok", "ok"] and len(s["per_seed"]) == 3

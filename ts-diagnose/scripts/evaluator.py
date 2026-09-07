@@ -85,6 +85,8 @@ def run_one(ev, config, seed, out_dir):
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=tl + int(ev.get("kill_grace_s", 60)))
     except subprocess.TimeoutExpired:
         return _write_metrics(out_dir, "timeout", f"超过 time_limit_s={tl}", mid, t_start, config)
+    except OSError as e:
+        return _write_metrics(out_dir, "crash", f"launch failed: {e}", mid, t_start, config)
     mp = os.path.join(out_dir, "metrics.json")
     m = None
     if os.path.exists(mp):
