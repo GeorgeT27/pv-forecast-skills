@@ -42,16 +42,34 @@ def remove(settings):
     return settings
 
 
+def load_settings(path):
+    """读 settings.json；坏文件给一句人话再退出，不甩 traceback（第二台机器上最常见的坑）。"""
+    if not os.path.exists(path):
+        return {}
+    with open(path, encoding="utf-8") as f:
+        try:
+            settings = json.load(f)
+        except json.JSONDecodeError:
+            print(f"settings.json 解析失败：{path}，先修好再装")
+            raise SystemExit(1)
+    hooks = settings.get("hooks")
+    if hooks is not None and not isinstance(hooks, dict):
+        print("settings.json hooks 不是对象，先修好再装")
+        raise SystemExit(1)
+    for event, entries in (hooks or {}).items():
+        if not isinstance(entries, list):
+            print(f"settings.json hooks.{event} 不是列表，先修好再装")
+            raise SystemExit(1)
+    return settings
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--settings", default=os.path.expanduser("~/.claude/settings.json"))
     ap.add_argument("--uninstall", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
-    settings = {}
-    if os.path.exists(a.settings):
-        with open(a.settings, encoding="utf-8") as f:
-            settings = json.load(f)
+    settings = load_settings(a.settings)
     settings = remove(settings) if a.uninstall else merge(settings, load_hooks_json())
     out = json.dumps(settings, ensure_ascii=False, indent=2)
     if a.dry_run:

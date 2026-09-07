@@ -33,6 +33,12 @@ place() {  # place <src> <dst>
 case "$MODE" in
   install)
     mkdir -p "$CLAUDE/skills" "$CLAUDE/agents" "$CLAUDE/workflows"
+    # 实目录不是链接：ln -sfn 会把链接套进目录里、rm -f 会失败中断安装。宁可报错也不删用户数据。
+    for p in "$CLAUDE/skills/ts-diagnose" "$CLAUDE/skills/ts-diagnose-v2"; do
+      if [ -e "$p" ] && [ ! -L "$p" ]; then
+        echo "$p 是实目录不是链接，先手动移走" >&2; exit 1
+      fi
+    done
     ln -sfn "$PKG" "$CLAUDE/skills/ts-diagnose"
     rm -f "$CLAUDE/skills/ts-diagnose-v2"
     for f in ${cards[@]+"${cards[@]}"}; do place "$f" "$CLAUDE/agents/$(basename "$f")"; done
@@ -51,6 +57,14 @@ case "$MODE" in
     ok=1
     chk() { if [ -e "$1" ]; then echo "  ✓ $1"; else echo "  ✗ $1"; ok=0; fi; }
     echo "skill:";     chk "$CLAUDE/skills/ts-diagnose/SKILL.md"
+    # 存在还不够：链接必须指向本包，否则装的是另一份 checkout。
+    actual="<不存在>"
+    if [ -d "$CLAUDE/skills/ts-diagnose" ]; then
+      actual="$(cd -P "$CLAUDE/skills/ts-diagnose" && pwd)"
+    fi
+    if [ "$actual" != "$(cd -P "$PKG" && pwd)" ]; then
+      echo "CHECK FAILED: skills/ts-diagnose 指向 ${actual}，不是本包"; exit 1
+    fi
     echo "agents:";    for f in ${cards[@]+"${cards[@]}"}; do chk "$CLAUDE/agents/$(basename "$f")"; done
     echo "workflows:"; for f in ${flows[@]+"${flows[@]}"}; do chk "$CLAUDE/workflows/$(basename "$f")"; done
     echo "hooks in $CLAUDE/settings.json:"

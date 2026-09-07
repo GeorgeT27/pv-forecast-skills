@@ -21,7 +21,9 @@ try:
 except ImportError:  # 明确报错好过神秘 ImportError 栈
     raise SystemExit("缺 pyyaml：pip install -r <仓库根>/requirements.txt")
 
-ENGINE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# realpath 而非 abspath：symlink 安装（~/.claude/skills/ts-diagnose → 真包）下必须解析到
+# 物理包目录，否则 detect_project_context() 找不到同级 project-context/，静默失效。
+ENGINE_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 PLAYBOOKS_DIR = os.environ.get("TSD_PLAYBOOKS_DIR") \
     or os.path.join(ENGINE_DIR, "playbooks")
 
@@ -837,3 +839,20 @@ def recipe_sections(playbook_path):
             buf.append(ln)
     flush()
     return out
+
+
+def recipe_preamble(playbook_path):
+    """菜谱通则原文：紧邻第一个 '### Stage N' 之前的那个 '## ' 小节，从标题行起到该
+    Stage 标题止（不含）。生成闸等【硬规则】写在这里，orient 要连同阶段菜谱一起打印。
+    没有这样的 '## ' 标题 → 返回 ''。"""
+    with open(playbook_path, encoding="utf-8") as f:
+        body = f.read().split("---", 2)[2]
+    buf = []
+    for ln in body.splitlines():
+        if STAGE_HEADING_RE.match(ln):
+            break
+        if ln.startswith("## "):
+            buf = [ln]
+        elif buf:
+            buf.append(ln)
+    return "\n".join(buf).rstrip()

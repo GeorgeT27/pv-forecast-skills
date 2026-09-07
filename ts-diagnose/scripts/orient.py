@@ -61,8 +61,24 @@ def stage_tag(st, fm, ctx, cur, actives):
     return "待做"
 
 
+RECIPE_FAIL_HINT = "⚠ 菜谱抽取失败：{}；本回合直接读 playbook.md 对应 Stage 节"
+
+
+def _print_preamble(pb_path):
+    """菜谱通则（生成闸等硬规则所在）——只有标题、没有正文时不打空表头。"""
+    pre = ec.recipe_preamble(pb_path)
+    if len([ln for ln in pre.splitlines() if ln.strip()]) <= 1:
+        return
+    print("📖 菜谱通则（playbook.md 该节开头原文）")
+    print(pre)
+
+
 def _print_recipe(pb_path, stage):
-    secs = ec.recipe_sections(pb_path)
+    try:
+        secs = ec.recipe_sections(pb_path)
+    except ValueError as e:
+        print(RECIPE_FAIL_HINT.format(e))
+        return
     text = secs.get(stage["id"])
     if not text:
         return
@@ -71,6 +87,7 @@ def _print_recipe(pb_path, stage):
     if done.get("findings_marker"):
         done_s += f"；FINDINGS 含「{done['findings_marker']}」"
     print("-" * 62)
+    _print_preamble(pb_path)
     print(f"📖 本阶段菜谱（playbook.md §Stage {stage['id']} 原文；done：{done_s}）——照此做，"
           "标【硬规则】的步骤不得合并或跳过；整份 playbook 只在需要跨阶段判断时再读：")
     print(text)
@@ -124,10 +141,15 @@ def main():
     pb_path = ec.find_playbook(cfg["playbook"])
     fm = ec.load_frontmatter(pb_path)
     if args.recipe is not None:
-        secs = ec.recipe_sections(pb_path)
+        try:
+            secs = ec.recipe_sections(pb_path)
+        except ValueError as e:
+            print(RECIPE_FAIL_HINT.format(e))
+            return 0
         if args.recipe not in secs:
             print(f"→ 无 Stage {args.recipe}（本 playbook 阶段：{sorted(secs)}）")
         else:
+            _print_preamble(pb_path)
             print(secs[args.recipe])
         return
     state = ec.read_json(ec.STATE_PATH) or {}
@@ -140,7 +162,8 @@ def main():
         print("=" * 62)
         print(f"BLOCKED: 材料盘点未完成（入口闸）    playbook: {fm['id']}")
         print("-" * 62)
-        print("以下材料过闸前，orient 不输出任何阶段菜单与菜谱入口。")
+        print("以下材料过闸前，orient 不输出任何阶段菜单与菜谱入口"
+              "（`--recipe N` 只读复核除外）。")
         print("主 agent 现在只做一件事：AskUserQuestion 盘点（一次多选列 checklist，")
         print("末尾带『还有别的吗』开放项；再按追问模板逐项补齐，答案落")
         print("diagnose_config.json 的 materials 块——格式见 references/intake.md）。")

@@ -39,3 +39,22 @@ def test_duplicate_stage_heading_raises():
     p = _write(FM + "\n### Stage 0 甲\nx\n\n### Stage 0 又来\ny\n")
     with pytest.raises(ValueError):
         ec.recipe_sections(p)
+
+
+def test_recipe_preamble_carries_gen_gate_hard_rule():
+    """`## 2.` 节开头到第一个 `### Stage` 之间的通则（含生成闸硬规则）必须能单独取出。"""
+    p = os.path.join(ENGINE_DIR, "playbooks", "robustness", "playbook.md")
+    pre = ec.recipe_preamble(p)
+    assert pre.startswith("## 2. 逐阶段菜谱")
+    assert "gen_gate.py" in pre and "--playbook robustness --stage 1" in pre
+
+
+def test_recipe_preamble_heading_only_when_no_general_rules():
+    p = os.path.join(ENGINE_DIR, "playbooks", "fact-scan", "playbook.md")
+    pre = ec.recipe_preamble(p)
+    assert len([ln for ln in pre.splitlines() if ln.strip()]) <= 1
+
+
+def test_recipe_preamble_empty_without_section_heading():
+    p = _write(FM + "\n### Stage 0 甲\nx\n")
+    assert ec.recipe_preamble(p) == ""

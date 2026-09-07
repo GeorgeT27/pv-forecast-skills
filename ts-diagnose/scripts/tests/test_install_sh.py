@@ -48,3 +48,38 @@ def test_copy_mode_copies_cards(tmp_path):
     for c in _cards():
         p = home / "agents" / c
         assert p.is_file() and not p.is_symlink(), c
+
+
+def test_check_fails_when_skill_link_points_elsewhere(tmp_path):
+    """--check 不只看存在：链接指向别的 checkout 必须判失败（否则旧包被当成本包）。"""
+    home = tmp_path / "claude"
+    assert _run([], home).returncode == 0
+    other = tmp_path / "other-checkout"
+    (other / "scripts").mkdir(parents=True)
+    (other / "SKILL.md").write_text("x", encoding="utf-8")
+    link = home / "skills" / "ts-diagnose"
+    link.unlink()
+    link.symlink_to(other)
+    r = _run(["--check"], home)
+    assert r.returncode == 1
+    assert "CHECK FAILED" in r.stdout + r.stderr
+    assert "不是本包" in r.stdout + r.stderr
+
+
+def test_install_refuses_real_directory_at_skill_path(tmp_path):
+    """实目录不是链接：报错退出，绝不 rm -rf 用户数据。"""
+    home = tmp_path / "claude"
+    (home / "skills" / "ts-diagnose").mkdir(parents=True)
+    (home / "skills" / "ts-diagnose" / "keep.txt").write_text("user data", encoding="utf-8")
+    r = _run([], home)
+    assert r.returncode == 1
+    assert "是实目录不是链接，先手动移走" in r.stdout + r.stderr
+    assert (home / "skills" / "ts-diagnose" / "keep.txt").exists()
+
+
+def test_install_refuses_real_directory_at_v2_path(tmp_path):
+    home = tmp_path / "claude"
+    (home / "skills" / "ts-diagnose-v2").mkdir(parents=True)
+    r = _run([], home)
+    assert r.returncode == 1
+    assert "是实目录不是链接，先手动移走" in r.stdout + r.stderr

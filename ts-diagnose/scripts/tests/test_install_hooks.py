@@ -53,3 +53,23 @@ def test_dry_run_writes_nothing(tmp_path, capsys):
     ih.main(["--settings", str(s), "--dry-run"])
     assert not s.exists()
     assert "gate_guard.py" in capsys.readouterr().out
+
+
+def test_broken_settings_json_exits_with_friendly_error(tmp_path, capsys):
+    import pytest
+    s = tmp_path / "settings.json"
+    s.write_text("{not json", encoding="utf-8")
+    with pytest.raises(SystemExit) as e:
+        ih.main(["--settings", str(s)])
+    assert e.value.code == 1
+    assert "settings.json 解析失败" in capsys.readouterr().out
+
+
+def test_non_list_hooks_event_exits_with_friendly_error(tmp_path, capsys):
+    import pytest
+    s = tmp_path / "settings.json"
+    s.write_text(json.dumps({"hooks": {"Stop": {}}}), encoding="utf-8")
+    with pytest.raises(SystemExit) as e:
+        ih.main(["--settings", str(s)])
+    assert e.value.code == 1
+    assert "hooks.Stop 不是列表" in capsys.readouterr().out
