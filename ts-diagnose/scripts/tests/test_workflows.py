@@ -29,6 +29,15 @@ def test_meta_literal_and_bans(path):
     assert "schema: CONTRACT" in src
 
 
+def test_train_batch_prompt_only_card_input_fields():
+    # 候选对象（experiment_log.py cmd_candidates 产出）还带 source/predicted_gain 等字段；
+    # prompt 只能带卡片「输入」四个字段，不能把整个候选对象原样喂给 worker。
+    src = open(os.path.join(WF_DIR, "ts-train-batch.js"), encoding="utf-8").read()
+    for field in ("exp_id", "hypothesis_id", "config_diff", "guard_slices"):
+        assert field in src, f"prompt 取值需覆盖卡片输入字段 {field!r}"
+    assert "JSON.stringify(c)" not in src, "prompt 不得把候选对象整体（含 source/predicted_gain 等）原样传给 worker"
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="无 node")
 @pytest.mark.parametrize("path", FILES, ids=[os.path.basename(p) for p in FILES])
 def test_node_syntax(path, tmp_path):

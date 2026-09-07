@@ -40,13 +40,21 @@ function idOf(c) {
   return c.exp_id || c.hypothesis_id || 'unknown'
 }
 
+function pickInputFields(c) {
+  const picked = {}
+  for (const k of ['exp_id', 'hypothesis_id', 'config_diff', 'guard_slices']) {
+    if (c[k] !== undefined) picked[k] = c[k]
+  }
+  return picked
+}
+
 function prompt(c) {
   return [
     `任务类型 task：${task}`,
     `工作目录：${a.workdir}`,
     `引擎目录：${a.engine}`,
     '按你的卡片执行下面这一条任务；final message 只回卡片「输出契约」的 JSON，不回其他文字：',
-    JSON.stringify(c),
+    JSON.stringify(pickInputFields(c)),
   ].join('\n')
 }
 
