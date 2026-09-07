@@ -1,0 +1,17 @@
+{
+  "code": {
+    "files": {
+      "../adapters/lsf_mini_adapter.py": "492ed55402c098e0036f9035e4ea66ce5eeb8791b755ec168b35b22c5f6b7a82"
+    },
+    "combined": "5cce87d0527446c62f7421cc9d9574137e1f3cd2c50c7279514b3d2acfccce13"
+  },
+  "data": {
+    "files": {
+      "evaluator.json": "8c9b0e87e47d8df34b25e4caf4ba341d1e8d79a3157a95efef13ca9a28659ca8",
+      "experiment_log.jsonl": "4dba9704862f2125c1bde64f4ab572975ba9ea25a2686ff241b49d7e87224114"
+    },
+    "combined": "6b962af36a723d83393a74e0b891c2ddc339e6587163a5648975875ac9d68700"
+  },
+  "golden_selfcheck": {},
+  "all_gates_passed": false
+}

@@ -1,0 +1,44 @@
+[
+  {
+    "exp_id": "E002",
+    "hypothesis_id": "",
+    "per_seed": [
+      0.38830679655075073,
+      0.39091160893440247,
+      0.3893807828426361
+    ],
+    "mean": 0.38953306277592975,
+    "std": 0.0013090659922514593,
+    "champion_mean": 0.3889119823773702,
+    "delta": 0.0006210803985595703,
+    "noise_floor_3sigma": 0.006739609136061824,
+    "seeds": 3,
+    "guard": {
+      "horizon:near": {
+        "delta": 0.0023637612660725726,
+        "noise_floor": 0.02358068654778099,
+        "regress": false
+      },
+      "horizon:mid": {
+        "delta": -0.0006484488646189557,
+        "noise_floor": 0.008337233851416496,
+        "regress": false
+      },
+      "horizon:far": {
+        "delta": 0.0001476903756459369,
+        "noise_floor": 0.0061403182027204226,
+        "regress": false
+      }
+    },
+    "verdict": "undecided",
+    "line": "- E002 undecided: hyp= delta=+0.0006 noise_floor=0.0067 seeds=3 guard=ok",
+    "config_diff": {
+      "dropout": 0.2
+    },
+    "produced_by": "/private/tmp/improve-loop-phase4/eval-cases/adapters/lsf_mini_adapter.py",
+    "script_sha256": "492ed55402c098e0036f9035e4ea66ce5eeb8791b755ec168b35b22c5f6b7a82",
+    "t_start": "2026-09-08T00:25:27",
+    "t_end": "2026-09-08T00:28:42",
+    "script_selftest": "seeds=3==3"
+  }
+]
