@@ -141,10 +141,10 @@ def main():
     for n in notes:
         print(f"  {n}")
     if fm.get("produces"):
-        print("  🤝 生产者 playbook：提问/用户裁决只在主 agent；questions 收齐后整体派")
-        print(f"     卡片 agents/{fm['id']}-compute.md（名字不可用则卡片全文作 prompt 派")
-        print("     general-purpose），产物落盘后主 agent 写 config.products 回填——")
-        print("     主 agent 不要自己埋头执行。")
+        print("  🤝 生产者 playbook：提问/用户裁决只在主 agent；questions 收齐后按名字派")
+        print(f"     卡片 agents/{fm['id']}-compute.md，跑到卡片区间终点交回主 agent（名字不可用则")
+        print("     卡片全文作 prompt 派 general-purpose）；产物落盘后主 agent 写 config.products")
+        print("     回填——主 agent 不要自己埋头执行。")
     print("-" * 62)
     for st in fm["stages"]:
         pause = " ⏸" if st.get("pause_after") else ""

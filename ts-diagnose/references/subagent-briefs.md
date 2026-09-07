@@ -46,7 +46,7 @@ producer 目标：②③坍缩，问齐 → 整体派发 → 产物落盘即 `CO
 - 单写者：`diagnose_config.json / diagnose_state.json / PROGRESS.md / FINDINGS.md` 只由主 agent 写。
 - 分片防竞态：并发各写各的 `--out <name>.<shard>`，主 agent 收齐后合并。
 - 上下文纪律：卡片只读结构化产物，不读 PNG / 逐行原始日志 / 大二进制。
-- 无提问权：卡片没有 AskUserQuestion；缺信息走 `NEED_INFO`。
+- 无提问权：卡片没有 AskUserQuestion；缺信息走 `NEED_INFO`；报错原样回传，不自行假设、不带病继续、不重试破坏性操作。
 - 禁嵌套：卡片不得再派 subagent；要拆分由主 agent 派平级卡片。
 - 回传要瘦：只回契约 JSON。
 
