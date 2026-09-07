@@ -71,6 +71,10 @@ crystallize_min_cases: 5          # 可选。固化需要几个互异的成功 c
 - `findings_marker`：FINDINGS.md 出现指定状态词（只能用 §3 的四个保留字）；
 - `manual: true`：主 agent 人工判定后写 state——机器判不了的阶段才用。
 
+`done_when.artifacts` 与 `prereqs.check` 里的 `json:` 路径可以写 `{round}` 占位，orient 用
+`diagnose_state.json.round`（缺省 1）替换。按轮重复的阶段把产物放 `rounds/round_{round}/`，
+`experiment_log.py new-round` 把 round 加一，这些阶段就自动回到未完成。
+
 **prereqs**：每条 = 一句人话 `desc` + 一个机器可判的 `check`（DSL 见 §2）。
 `desc` 以"（可选）"开头的不阻塞推进，只作提示。
 
@@ -144,6 +148,7 @@ playbook 之间唯一合法的协作方式：一方声明 `produces`，另一方
 | `stage:<id>` | 该阶段已完成（按 done_when 判定） |
 | `question:<qid>` | 该问题已答（用户答的、profile 带的、默认值、实验线、证据自答都算） |
 | `material:<id>` | 该材料状态为 present（id 必须 ∈ `engine_common.MATERIAL_IDS`，拼错报错） |
+| `json:<文件路径>:<点路径>` | 文件存在且该点路径的值为真（`false`/`null`/空 都算假）；路径可含 `{round}` |
 | `product:<id>` | 该产物已就绪（见下；id 必须是某 playbook 的 `produces.id`，拼错报错） |
 | `not <expr>` | 取反（只允许套一层） |
 
