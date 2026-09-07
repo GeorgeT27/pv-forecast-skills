@@ -10,7 +10,7 @@ stages:
   - id: 0
     name: 冻结评估器与冠军基线
     done_when:
-      artifacts: ["evaluator.json", "champion.json"]
+      artifacts: ["evaluator.json", "champion.json", "experiment_log.jsonl"]
     prereqs:
       - desc: 评估器适配器已定
         check: "question:evaluator-adapter"
@@ -111,10 +111,10 @@ questions:
 
 菜谱：
 1. 按答案写 `evaluator.json`（adapter / base_config / knobs / metric / slices / seeds / time_limit_s），然后跑 `python3 "<ENGINE>/scripts/evaluator.py" validate evaluator.json`，不过不往下。
-2. 基线 3 种子：派 `model-improve-worker`（task=baseline，输入：工作目录、引擎目录、`evaluator.json` 路径、`exp_id=E000`）。它跑 `evaluator.py run-seeds --config-diff '{}' --out-root runs/E000`，回 `runs/E000/summary.json` 路径。用户答「用已有产物」时，主 agent 按契约把已有 3 种子产物整理成同结构的 `runs/E000/summary.json`（per_seed / slices_per_seed / metrics_dirs / run_status，metrics_dirs 里必须有 `sealed/test_metrics.json`）。
+2. 基线 3 种子：派 `model-improve-worker`（task=baseline，输入：工作目录、引擎目录、`evaluator.json` 路径、`exp_id=E000`）。它跑 `evaluator.py run-seeds --evaluator evaluator.json --config-diff '{}' --out-root runs/E000`，回 `runs/E000/summary.json` 路径。用户答「用已有产物」时，主 agent 按契约把已有 3 种子产物整理成同结构的 `runs/E000/summary.json`（per_seed / slices_per_seed / metrics_dirs / run_status，metrics_dirs 里必须有 `sealed/test_metrics.json`）。
 3. `python3 "<ENGINE>/scripts/experiment_log.py" init --evaluator evaluator.json --baseline runs/E000/summary.json --max-trainings <N> --max-rounds <R> --max-per-round <K>`。
 
-done：`evaluator.json` + `champion.json` 落盘 → **pause_after 停顿**（§4）。
+done：`evaluator.json` + `champion.json` + `experiment_log.jsonl` 落盘 → **pause_after 停顿**（§4）。
 
 ### Stage 1 候选队列
 

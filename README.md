@@ -1,10 +1,10 @@
 # 光伏功率预测结果分析 —— Claude Code 技能包
 
-单一入口技能 —— 一个泛化时序诊断引擎，12 个可插拔 playbook，**两层结构**（生产者 playbook 产出持久化产物，分析 playbook 声明上游依赖消费之，orient 机器裁决先后）：
+单一入口技能 —— 一个泛化时序诊断引擎，13 个可插拔 playbook，**两层结构**（生产者 playbook 产出持久化产物，分析 playbook 声明上游依赖消费之，orient 机器裁决先后）：
 
 | 技能 | 用途 |
 |------|------|
-| [`ts-diagnose`](ts-diagnose/SKILL.md) | **泛化时序诊断引擎**：同一套已验证 workflow（orient 续跑、事实/解释隔离、结论三道门、多证据线、提问一等公民、生成闸+归因闸）+ 12 个可插拔 playbook（分两层：生产者/分析），覆盖时序/预测任务的全部诊断与评估目标；成熟运行可经 crystallize 固化成薄的已固化代理技能；13 张 agent 卡片（`agents/`）+ 三钩子（`hooks/`），`ts-diagnose/INSTALL.md` 一键装到任意 Claude Code 设备 |
+| [`ts-diagnose`](ts-diagnose/SKILL.md) | **泛化时序诊断引擎**：同一套已验证 workflow（orient 续跑、事实/解释隔离、结论三道门、多证据线、提问一等公民、生成闸+归因闸）+ 13 个可插拔 playbook（分两层：生产者/分析），覆盖时序/预测任务的全部诊断与评估目标；成熟运行可经 crystallize 固化成薄的已固化代理技能；13 张 agent 卡片（`agents/`）+ 三钩子（`hooks/`），`ts-diagnose/INSTALL.md` 一键装到任意 Claude Code 设备 |
 
 ### 13 个 playbook（两层）
 
