@@ -172,3 +172,106 @@ def test_append_rejects_duplicate_exp_id_within_same_batch(wd):
     r = run(wd, "append", "--batch", "rounds/round_1/batch_result.json", ok=False)
     assert r.returncode != 0 and "重复" in r.stdout + r.stderr
     assert (wd / "experiment_log.jsonl").read_text(encoding="utf-8") == before
+
+
+def _round1(wd, keep=True):
+    run(wd, "candidates", "--ledger", "hypothesis_ledger.json", "--target", "TSMixer")
+    run(wd, "confirm-round")
+    guards = {"horizon:far": {"per_seed": [0.30, 0.31, 0.29], "champion_mean": 0.274, "noise_floor": 0.002}}
+    r1 = receipt(wd, "E001", "F1", [0.180, 0.181, 0.179], guards=guards, sealed_seed_vals=(0.19, 0.19, 0.19))
+    r2 = receipt(wd, "E002", "F2", [0.205, 0.206, 0.204] if keep else [0.2109, 0.2114, 0.2106],
+                 sealed_seed_vals=(0.215, 0.216, 0.214))
+    ec.dump_json({"results": [r1, r2]}, str(wd / "rounds" / "round_1" / "batch_result.json"))
+    run(wd, "append", "--batch", "rounds/round_1/batch_result.json")
+
+
+def test_decide_updates_champion_budget_summary_and_refuses_twice(wd):
+    _round1(wd)
+    r = run(wd, "decide")
+    assert "E000 → E002" in r.stdout
+    champ = ec.read_json(str(wd / "champion.json"))
+    assert champ["exp_id"] == "E002" and champ["config"]["dropout"] == 0.05 and champ["since_round"] == 1
+    assert champ["budget"]["used_trainings"] == 9 and champ["converged"] is False
+    s = ec.read_json(str(wd / "rounds" / "round_1" / "summary.json"))
+    assert s["counts"] == {"discard": 1, "keep": 1} and s["guard_regress"] == ["E001"]
+    assert s["new_champion"] == "E002" and len(s["receipt_lines"]) == 2
+    r = run(wd, "decide", ok=False)
+    assert r.returncode != 0 and "已裁决" in r.stdout + r.stderr
+
+
+def test_decide_requires_all_candidates_logged(wd):
+    run(wd, "candidates", "--ledger", "hypothesis_ledger.json", "--target", "TSMixer")
+    run(wd, "confirm-round")
+    r = run(wd, "decide", ok=False)
+    assert r.returncode != 0 and "先 append" in r.stdout + r.stderr
+
+
+def test_new_round_bumps_and_reenters_candidates(wd):
+    _round1(wd)
+    run(wd, "decide")
+    run(wd, "new-round")
+    assert ec.read_json(str(wd / "diagnose_state.json"))["round"] == 2
+    run(wd, "candidates", "--ledger", "hypothesis_ledger.json", "--target", "TSMixer")
+    doc = ec.read_json(str(wd / "rounds" / "round_2" / "candidates.json"))
+    assert doc["candidates"] == [] and doc["round"] == 2      # F1/F2 的 config_diff 已跑过，去重后为空
+
+
+def test_convergence_max_rounds_and_stagnation_and_budget(wd):
+    champ = ec.read_json(str(wd / "champion.json"))
+    champ["budget"].update({"max_rounds": 1})
+    ec.dump_json(champ, str(wd / "champion.json"))
+    _round1(wd)
+    run(wd, "decide")
+    assert ec.read_json(str(wd / "champion.json"))["converged_reason"] == "max_rounds"
+    r = run(wd, "new-round", ok=False)
+    assert r.returncode != 0 and "已收敛" in r.stdout + r.stderr
+
+
+def test_convergence_stagnation_two_rounds_without_keep(wd):
+    champ = ec.read_json(str(wd / "champion.json"))
+    champ["budget"].update({"max_rounds": 5, "max_trainings": 100})
+    ec.dump_json(champ, str(wd / "champion.json"))
+    _round1(wd, keep=False)                       # E001 守护退化 discard，E002 噪声内 undecided
+    run(wd, "decide")
+    assert ec.read_json(str(wd / "champion.json"))["converged"] is False
+    run(wd, "new-round")
+    ec.dump_json({"ablation_switches": [{"component": "h", "switch": "--n_heads=4", "kind": "config-flag"}]},
+                 str(wd / "sw.json"))
+    run(wd, "candidates", "--switches", "sw.json", "--target", "TSMixer")
+    run(wd, "confirm-round")
+    r3 = receipt(wd, "E003", None, [0.2110, 0.2113, 0.2108])
+    ec.dump_json({"results": [r3]}, str(wd / "rounds" / "round_2" / "batch_result.json"))
+    run(wd, "append", "--batch", "rounds/round_2/batch_result.json")
+    run(wd, "decide")
+    assert ec.read_json(str(wd / "champion.json"))["converged_reason"] == "stagnation"
+
+
+def test_convergence_budget_exhausted(wd):
+    champ = ec.read_json(str(wd / "champion.json"))
+    champ["budget"].update({"max_trainings": 9, "max_rounds": 5})
+    ec.dump_json(champ, str(wd / "champion.json"))
+    _round1(wd)
+    run(wd, "decide")
+    assert ec.read_json(str(wd / "champion.json"))["converged_reason"] == "budget_exhausted"
+
+
+def test_stop_then_finalize_reads_sealed_once(wd):
+    _round1(wd)
+    run(wd, "decide")
+    r = run(wd, "finalize", ok=False)
+    assert r.returncode != 0 and "未收敛" in r.stdout + r.stderr
+    run(wd, "stop", "--reason", "够了")
+    assert ec.read_json(str(wd / "champion.json"))["converged_reason"] == "user:够了"
+    r = run(wd, "finalize")
+    doc = ec.read_json(str(wd / "final_test.json"))
+    assert doc["champion"]["exp_id"] == "E002" and abs(doc["baseline"]["mean"] - 0.23) < 1e-12
+    assert doc["verdict"] == "improved" and doc["champion"]["config_diff_vs_baseline"] == {"dropout": 0.05}
+    assert "final_test improved" in r.stdout
+    r = run(wd, "finalize", ok=False)
+    assert r.returncode != 0 and "只评一次" in r.stdout + r.stderr
+
+
+def test_status_prints_json(wd):
+    r = run(wd, "status")
+    doc = json.loads(r.stdout)
+    assert doc["champion"] == "E000" and doc["round"] == 1 and doc["verdicts"] == {"baseline": 1}

@@ -272,25 +272,137 @@ def cmd_append(a):
     print(f"✓ 追加 {len(rows)} 行：" + ", ".join(f"{r['exp_id']}={r['verdict']}" for r in rows))
 
 
-# ---------------------------------------------------------------- Task 6 填充
+# ---------------------------------------------------------------- decide
 def cmd_decide(a):
-    sys.exit("✗ decide 未实现（Task 6）")
+    champ = _champ()
+    rnd = _round()
+    cands = _need(os.path.join(_round_dir(), "candidates.json"), "本轮无 candidates.json")
+    if os.path.exists(os.path.join(_round_dir(), "summary.json")):
+        sys.exit("✗ 本轮已裁决过（summary.json 存在）——要再来一轮先 new-round")
+    all_rows = read_log()
+    rows = [r for r in all_rows if r["round"] == rnd]
+    have = {r["exp_id"] for r in rows}
+    missing = [c["exp_id"] for c in cands["candidates"] if c["exp_id"] not in have]
+    if missing:
+        sys.exit(f"✗ 候选 {missing} 还没有日志行——先 append")
+    keeps = [r for r in rows if r["verdict"] == "keep"]
+    best = min(keeps, key=lambda r: r["mean"]) if keeps else None
+    prev = champ["exp_id"]
+    if best:
+        sps = best.get("slices_per_seed") or []
+        champ.update({"exp_id": best["exp_id"], "config": {**champ["config"], **best["config_diff"]},
+                      "mean": best["mean"], "std": best["std"], "per_seed": best["per_seed"],
+                      "noise_floor_3sigma": _nf(best["per_seed"]),
+                      "slices_mean": _slices_mean(sps) if sps else champ["slices_mean"],
+                      "slices_noise_floor": _slices_nf(sps) if sps else champ["slices_noise_floor"],
+                      "metrics_dirs": best.get("metrics_dirs") or [], "since_round": rnd})
+        champ["history"].append({"round": rnd, "exp_id": best["exp_id"], "mean": best["mean"], "delta": best["delta"]})
+    b = champ["budget"]
+    b["used_trainings"] = int(b["used_trainings"]) + len(cands["candidates"]) * len(cands["seeds"])
+    reason = None
+    if b["used_trainings"] >= int(b["max_trainings"]):
+        reason = "budget_exhausted"
+    elif rnd >= int(b["max_rounds"]):
+        reason = "max_rounds"
+    else:
+        k = int(b["stagnation_rounds"])
+        recent = sorted({r["round"] for r in all_rows if r["round"] >= 1})[-k:]
+        if len(recent) >= k and not any(r["verdict"] == "keep" for r in all_rows if r["round"] in recent):
+            reason = "stagnation"
+    if reason:
+        champ["converged"], champ["converged_reason"] = True, reason
+    champ["round"] = rnd
+    _save_champ(champ)
+    counts = Counter(r["verdict"] for r in rows)
+    summary = {"round": rnd, "n_candidates": len(cands["candidates"]), "counts": dict(counts),
+               "kept": [r["exp_id"] for r in keeps], "new_champion": best["exp_id"] if best else None,
+               "previous_champion": prev, "champion_mean": champ["mean"],
+               "champion_delta_vs_prev": best["delta"] if best else 0.0, "budget": b,
+               "converged": champ["converged"], "converged_reason": champ["converged_reason"],
+               "receipt_lines": [r["receipt_line"] for r in rows if r.get("receipt_line")],
+               "untested": [{"exp_id": r["exp_id"], "reason": r.get("untested_reason")} for r in rows if r["verdict"] == "untested"],
+               "guard_regress": [r["exp_id"] for r in rows
+                                 if any(g.get("regress") for g in (r.get("guard") or {}).values())],
+               "deferred": cands.get("deferred") or [], "t": _now()}
+    ec.dump_json(summary, os.path.join(_round_dir(), "summary.json"))
+    print(f"✓ 第 {rnd} 轮裁决：{dict(counts)}；冠军 {prev} → {champ['exp_id']}（mean={champ['mean']:.6f}）；"
+          f"已用训练 {b['used_trainings']}/{b['max_trainings']}；"
+          + (f"已收敛（{reason}）→ 进结论阶段" if reason else "未收敛 → new-round 或 stop"))
 
 
 def cmd_new_round(a):
-    sys.exit("✗ new-round 未实现（Task 6）")
+    champ = _champ()
+    rnd = _round()
+    if champ.get("converged"):
+        sys.exit(f"✗ 已收敛（{champ['converged_reason']}）——进结论阶段；不许绕过预算再开一轮")
+    if not os.path.exists(os.path.join(_round_dir(), "summary.json")):
+        sys.exit("✗ 本轮还没裁决（先 decide）")
+    _set_round(rnd + 1)
+    champ["round"] = rnd + 1
+    _save_champ(champ)
+    print(f"✓ 进入第 {rnd + 1} 轮——下一步 candidates（回生成器补的候选标 provenance=post-hoc）")
 
 
 def cmd_stop(a):
-    sys.exit("✗ stop 未实现（Task 6）")
+    champ = _champ()
+    champ["converged"], champ["converged_reason"] = True, f"user:{a.reason}"
+    _save_champ(champ)
+    print(f"✓ 用户终止：{a.reason}——进结论阶段")
+
+
+def _sealed_primary(dirs):
+    vals = []
+    for d in dirs:
+        p = os.path.join(d, "sealed", "test_metrics.json")
+        doc = ec.read_json(p)
+        if not isinstance(doc, dict):
+            sys.exit(f"✗ 缺封存终评文件 {p}")
+        v = doc.get("test_primary", doc.get("test_mse"))
+        if not isinstance(v, (int, float)):
+            sys.exit(f"✗ {p} 缺 test_primary / test_mse")
+        vals.append(float(v))
+    return vals
 
 
 def cmd_finalize(a):
-    sys.exit("✗ finalize 未实现（Task 6）")
+    champ = _champ()
+    if not champ.get("converged"):
+        sys.exit("✗ 未收敛不许开封测试集——decide/stop 之后再 finalize")
+    if os.path.exists(FINAL):
+        sys.exit(f"✗ {FINAL} 已存在——封存测试集只评一次")
+    base = next(r for r in read_log() if r["exp_id"] == "E000")
+    b = _sealed_primary(base["metrics_dirs"])
+    c = b if champ["exp_id"] == "E000" else _sealed_primary(champ["metrics_dirs"])
+    bm, cm, nf = statistics.fmean(b), statistics.fmean(c), _nf(b)
+    delta = cm - bm
+    if champ["exp_id"] == "E000":
+        v = "no_change"
+    elif delta < 0 and abs(delta) >= nf:
+        v = "improved"
+    elif delta > 0 and delta >= nf:
+        v = "worse"
+    else:
+        v = "not_distinguishable"
+    doc = {"metric_id_sealed": "test_primary",
+           "baseline": {"exp_id": "E000", "per_seed": b, "mean": bm},
+           "champion": {"exp_id": champ["exp_id"], "per_seed": c, "mean": cm,
+                        "config_diff_vs_baseline": {k: v2 for k, v2 in champ["config"].items()
+                                                    if (champ.get("base_config") or {}).get(k) != v2}},
+           "delta": delta, "noise_floor_3sigma_test": nf, "verdict": v,
+           "converged_reason": champ["converged_reason"],
+           "line": f"- final_test {v}: champion={champ['exp_id']} delta={delta:+.4f} noise_floor={nf:.4f} seeds={len(c)}",
+           "t": _now()}
+    ec.dump_json(doc, FINAL)
+    print(doc["line"])
 
 
 def cmd_status(a):
-    sys.exit("✗ status 未实现（Task 6）")
+    champ = _champ()
+    rows = read_log()
+    print(json.dumps({"round": _round(), "champion": champ["exp_id"], "mean": champ["mean"],
+                      "budget": champ["budget"], "converged": champ["converged"],
+                      "reason": champ["converged_reason"], "rows": len(rows),
+                      "verdicts": dict(Counter(r["verdict"] for r in rows))}, ensure_ascii=False, indent=2))
 
 
 # ---------------------------------------------------------------- CLI
