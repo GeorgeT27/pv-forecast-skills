@@ -21,6 +21,10 @@ CAUSAL_RE = re.compile(r"(导致|因为|归因于|caused by|due to|→\s*优势|
 RECEIPT_LINE_RE = re.compile(r"(confirmed|refuted|undecided).*(switch|delta).*seeds?=\d")
 ABLATION_SECTION = "## 消融证据"
 EVIDENCE_SECTION = "## 证据清单"
+IMPROVE_SECTION = "## 改进证据"
+IMPROVE_RECEIPT_RE = re.compile(r"(keep|discard|undecided).*delta.*seeds?=\d")
+IMPROVE_RECEIPT_REQUIRED = ("exp_id", "delta", "noise_floor_3sigma", "seeds", "verdict",
+                            "produced_by", "script_sha256")
 # ablation_verdict.py --out 写的正典 receipt schema:三态判定四件 + 溯源块。
 # 手搓的薄 receipt(缺 produced_by/逐字段)在此被拦——回执必须由脚本生成。
 RECEIPT_REQUIRED = ("hypothesis_id", "switch", "delta", "noise_floor_3sigma",
@@ -114,6 +118,41 @@ def check_evidence_list(text):
              "与 verdict_summary 都必须列出,不许只列支持结论的")
 
 
+def check_improve(text):
+    """规则 7 改进环:「## 改进证据」节 + 每张 E receipt 溯源 + 封存终评被引用 + 证据清单列全。"""
+    if IMPROVE_SECTION not in text:
+        fail(f"缺「{IMPROVE_SECTION}」节——改进结论必须贴 keep/discard/undecided 的 receipt 行")
+    sec = text.split(IMPROVE_SECTION, 1)[1].split("\n## ", 1)[0]
+    if not IMPROVE_RECEIPT_RE.search(sec):
+        fail(f"「{IMPROVE_SECTION}」节无 receipt 行（须含 keep/discard/undecided + delta + seeds=N）")
+    receipts = sorted(glob.glob("receipts/E*.json"))
+    for rp in receipts:
+        rec = _last_entry(rp)
+        if rec is None:
+            fail(f"{rp} 为空或不是合法 receipt")
+        missing = [k for k in IMPROVE_RECEIPT_REQUIRED if rec.get(k) in (None, "")]
+        if missing:
+            fail(f"{rp} 缺必填字段 {missing}——receipt 必须由 improve_verdict.py --out 生成")
+        if not (isinstance(rec["seeds"], int) and rec["seeds"] >= 3):
+            fail(f"{rp} seeds={rec['seeds']!r}——改进判定必须 ≥3 种子")
+        if not os.path.exists(rec["produced_by"]):
+            fail(f"{rp} 的 produced_by 指向不存在的脚本:{rec['produced_by']}")
+        if sha256_of(rec["produced_by"]) != rec["script_sha256"]:
+            fail(f"{rp} 的 script_sha256 与 {rec['produced_by']} 当前内容不符——适配器在出回执后被改过")
+    if not os.path.exists("final_test.json"):
+        fail("无 final_test.json——写结论前先跑 experiment_log.py finalize（封存测试集只评一次）")
+    if "final_test.json" not in text:
+        fail("结论未引用 final_test.json——封存测试集的终评必须写进结论")
+    if EVIDENCE_SECTION not in text:
+        fail(f"缺「{EVIDENCE_SECTION}」节")
+    esec = text.split(EVIDENCE_SECTION, 1)[1].split("\n## ", 1)[0]
+    cited = re.findall(r"`([^`\s]+)`", esec)
+    must = receipts + [p for p in ("experiment_log.jsonl", "champion.json", "final_test.json") if os.path.exists(p)]
+    unlisted = [p for p in must if p not in cited]
+    if unlisted:
+        fail(f"证据清单漏列:{unlisted}——每张 E receipt(含被弃的)、日志、冠军、终评都必须列出")
+
+
 def fail(msg):
     print(f"✗ 结论闸不过：{msg}")
     sys.exit(1)
@@ -166,6 +205,10 @@ def main():
     if fm.get("produces_ablation_receipts"):
         check_traceability()
         check_evidence_list(text)
+
+    # 规则 7：改进环（只对声明 produces_experiment_log: true 的 playbook 生效——model-improve）
+    if fm.get("produces_experiment_log"):
+        check_improve(text)
 
     os.makedirs("gate_reports", exist_ok=True)
     ec.dump_json({"passed": True,
