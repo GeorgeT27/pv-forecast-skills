@@ -1,0 +1,53 @@
+{
+  "champion_mean": 0.2,
+  "noise_floor_3sigma": 0.006,
+  "candidates": [
+    {
+      "exp_id": "E001",
+      "hypothesis_id": "F1",
+      "per_seed": [
+        0.18,
+        0.181,
+        0.179
+      ]
+    },
+    {
+      "exp_id": "E002",
+      "hypothesis_id": "F2",
+      "per_seed": [
+        0.221,
+        0.22,
+        0.219
+      ]
+    },
+    {
+      "exp_id": "E003",
+      "hypothesis_id": "F3",
+      "per_seed": [
+        0.199,
+        0.198,
+        0.2
+      ]
+    },
+    {
+      "exp_id": "E004",
+      "hypothesis_id": "F4",
+      "per_seed": [
+        0.178,
+        0.179,
+        0.18
+      ],
+      "guards": {
+        "horizon:far": {
+          "per_seed": [
+            0.3,
+            0.31,
+            0.29
+          ],
+          "champion_mean": 0.26,
+          "noise_floor": 0.006
+        }
+      }
+    }
+  ]
+}

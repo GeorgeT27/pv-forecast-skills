@@ -54,7 +54,7 @@ GOOD = """# 结论
 
 def setup(tmp_path, conclusion, with_chart=True, pb_text=PB):
     pb = tmp_path / "pb" / "playbook.md"
-    pb.parent.mkdir()
+    pb.parent.mkdir(exist_ok=True)
     pb.write_text(pb_text, encoding="utf-8")
     ec.dump_json({"playbook": str(pb)}, str(tmp_path / "diagnose_config.json"))
     if with_chart:
@@ -293,3 +293,93 @@ def test_pass_non_ablation_playbook_causal_wording_without_receipt(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
     rec = json.load(open(tmp_path / "gate_reports" / "conclusion_gate.json"))
     assert rec["passed"] is True
+
+
+# ---- 规则 7 改进环（produces_experiment_log） ----
+
+PB_IMPROVE = """---
+id: improve-demo
+name: i
+goal: i
+produces_experiment_log: true
+stages:
+  - id: 0
+    name: 环
+    done_when: {artifacts: ['champion.json']}
+  - id: 1
+    name: 结论
+    done_when: {artifacts: ['CONCLUSION.md', 'gate_reports/conclusion_gate.json']}
+---
+"""
+
+IMPROVE_GOOD = """# 结论
+冠军 E002（dropout 0.1→0.05）在验证集上超基线（见 receipts/E002.json）；封存测试集终评见 final_test.json。
+## 模型结构依据
+absent-confirmed：无模型档案，降级为配置级改进结论。
+## 改进证据
+- E001 discard: hyp=F1 delta=-0.0300 noise_floor=0.0012 seeds=3 guard=regress:horizon:far
+- E002 keep: hyp=F2 delta=-0.0050 noise_floor=0.0012 seeds=3 guard=ok
+- final_test improved: champion=E002 delta=-0.0150 noise_floor=0.0010 seeds=3
+## 证据清单
+- `receipts/E001.json` — 守护退化被弃
+- `receipts/E002.json` — 留下的冠军
+- `experiment_log.jsonl` — 全部候选
+- `champion.json` — 冠军状态
+- `final_test.json` — 封存终评
+"""
+
+
+def _improve_receipt(tmp_path, exp_id, verdict):
+    adapter = tmp_path / "adapter.py"
+    adapter.write_text("print(1)\n", encoding="utf-8")
+    import hashlib
+    sha = hashlib.sha256(adapter.read_bytes()).hexdigest()
+    (tmp_path / "receipts").mkdir(exist_ok=True)
+    (tmp_path / "receipts" / f"{exp_id}.json").write_text(json.dumps([{
+        "exp_id": exp_id, "hypothesis_id": "F", "delta": -0.01, "noise_floor_3sigma": 0.001, "seeds": 3,
+        "verdict": verdict, "line": f"- {exp_id} {verdict}: hyp=F delta=-0.0100 noise_floor=0.0010 seeds=3 guard=ok",
+        "produced_by": str(adapter), "script_sha256": sha}]), encoding="utf-8")
+
+
+def _improve_setup(tmp_path, text):
+    setup(tmp_path, text, with_chart=False, pb_text=PB_IMPROVE)
+    _improve_receipt(tmp_path, "E001", "discard")
+    _improve_receipt(tmp_path, "E002", "keep")
+    for name in ("experiment_log.jsonl", "champion.json", "final_test.json"):
+        (tmp_path / name).write_text("{}\n", encoding="utf-8")
+
+
+def test_rule7_passes_with_full_improve_evidence(tmp_path):
+    _improve_setup(tmp_path, IMPROVE_GOOD)
+    r = run_gate(tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (tmp_path / "gate_reports" / "conclusion_gate.json").exists()
+
+
+def test_rule7_missing_section_or_receipt_line_fails(tmp_path):
+    _improve_setup(tmp_path, IMPROVE_GOOD.replace("## 改进证据", "## 改进"))
+    r = run_gate(tmp_path)
+    assert r.returncode != 0 and "改进证据" in r.stdout
+
+
+def test_rule7_unlisted_receipt_or_missing_final_fails(tmp_path):
+    _improve_setup(tmp_path, IMPROVE_GOOD.replace("- `receipts/E001.json` — 守护退化被弃\n", ""))
+    r = run_gate(tmp_path)
+    assert r.returncode != 0 and "E001" in r.stdout
+    _improve_setup(tmp_path, IMPROVE_GOOD)
+    (tmp_path / "final_test.json").unlink()
+    r = run_gate(tmp_path)
+    assert r.returncode != 0 and "final_test.json" in r.stdout
+
+
+def test_rule7_receipt_hash_mismatch_fails(tmp_path):
+    _improve_setup(tmp_path, IMPROVE_GOOD)
+    (tmp_path / "adapter.py").write_text("print(2)\n", encoding="utf-8")
+    r = run_gate(tmp_path)
+    assert r.returncode != 0 and "sha256" in r.stdout
+
+
+def test_rule7_not_applied_to_other_playbooks(tmp_path):
+    setup(tmp_path, GOOD, with_chart=True, pb_text=PB_NON_ABLATION)   # 无改进证据节也过闸
+    r = run_gate(tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr

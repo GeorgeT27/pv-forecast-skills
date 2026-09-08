@@ -30,6 +30,7 @@ model: sonnet
 - noise-floor：每种子一行落 `baseline_seed_metrics.csv`（seed,metric）；算 mean、std(ddof=1)、noise_floor_3sigma = std×3。
 - intervention：delta 逻辑写成 `analysis_scripts/eval_<hypothesis_id>.py`（带自检），记起止时刻，然后
   `python3 "<ENGINE>/scripts/ablation_verdict.py" --hypothesis-id <id> --switch=<switch> --delta <delta> --noise-floor <nf> --direction <pred_direction> --seeds <N> --script analysis_scripts/eval_<id>.py --t-start <ISO> --t-end <ISO> --selftest "<一句话>" --out receipts/<id>.json`
+  每个种子的产物目录记进 metrics_dirs，种子状态记 run_status（ok|crash|timeout）；某种子非 ok → 回 BLOCKED。
 阶段与 prereq 由主 agent 掌握；本卡不跑 `python3 "<ENGINE>/scripts/orient.py"`（阶段状态单写者是主 agent）。
 
 ## 红线
@@ -56,6 +57,8 @@ model: sonnet
   "per_seed": [0.812, 0.799, 0.826],
   "mean": 0.812, "std": 0.0135, "noise_floor_3sigma": 0.0405,
   "instability_note": "",
+  "run_status": ["ok", "ok", "ok"],
+  "metrics_dirs": ["runs/H3/seed_7", "runs/H3/seed_1337", "runs/H3/seed_2021"],
   "need_info": [],
   "blocked_reason": ""
 }

@@ -23,7 +23,7 @@ ALL_PLAYBOOK_IDS = (
     "training-sufficiency", "robustness", "feature-importance",
     "model-comparison", "architecture-attribution", "deployment-drift", "fact-scan",
     "model-audit", "result-eval", "subset-influence", "data-setup",
-    "metric-eval",
+    "metric-eval", "model-improve",
 )
 
 

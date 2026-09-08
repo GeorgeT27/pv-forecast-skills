@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""假设账本校验：字段纪律 = component 必填 / 可否证 / provenance / 状态一致性。"""
+"""假设账本校验：字段纪律 = component 必填 / 可否证 / provenance / 状态一致性；kind=improvement 条目另查 fix 四字段与 receipt。"""
 import json, sys
 
 REQUIRED = ["id", "claim", "component", "falsifiable_pred", "status", "provenance"]
-STATUSES = {"pending", "confirmed", "refuted", "undecided"}
+STATUSES = {"pending", "confirmed", "refuted", "undecided", "untested"}
+KINDS = {"mechanism", "improvement"}
+FIX_REQUIRED = ["target_model", "config_diff", "predicted_gain", "guard_slices"]
 
 def validate_ledger(obj):
     errs = []
@@ -29,6 +31,26 @@ def validate_ledger(obj):
         if h.get("provenance") == "post-hoc" and h.get("status") == "confirmed" \
                 and not h.get("kill_receipt"):
             errs.append(f"{hid}: post-hoc 假设升级为 confirmed 需新干预 receipt")
+        kind = h.get("kind", "mechanism")
+        if kind not in KINDS:
+            errs.append(f"{hid}: kind 非法（{kind}），只许 mechanism / improvement")
+        if kind == "improvement":
+            fix = h.get("fix")
+            if not isinstance(fix, dict):
+                errs.append(f"{hid}: improvement 假设必须带 fix 对象")
+            else:
+                for k in FIX_REQUIRED:
+                    # 空 list / 空 dict 是合法取值（如无守护切片），只有键不在或值为 null 才算缺
+                    if k not in fix or fix[k] is None:
+                        errs.append(f"{hid}: fix 缺 {k}")
+                if fix.get("config_diff") is not None and not isinstance(fix["config_diff"], dict):
+                    errs.append(f"{hid}: fix.config_diff 须为 dict（键=knob 名）")
+                if fix.get("guard_slices") is not None and not isinstance(fix["guard_slices"], list):
+                    errs.append(f"{hid}: fix.guard_slices 须为 list")
+            if h.get("status") == "confirmed" and not h.get("receipt"):
+                errs.append(f"{hid}: improvement 假设升 confirmed 必须带 receipt（receipts/E*.json 路径）")
+        if h.get("status") == "untested" and not h.get("untested_reason"):
+            errs.append(f"{hid}: untested 必须带 untested_reason（crash/timeout 与一句原因）")
     return errs
 
 def main():

@@ -1,0 +1,101 @@
+{
+  "round": 1,
+  "confirmed": true,
+  "target_model": "TSMixer",
+  "champion_exp_id": "E000",
+  "champion_mean": 0.3889119823773702,
+  "noise_floor_3sigma": 0.006739609136061824,
+  "seeds": [
+    7,
+    1337,
+    2021
+  ],
+  "candidates": [
+    {
+      "hypothesis_id": null,
+      "source": "switches",
+      "config_diff": {
+        "batch_size": 64
+      },
+      "predicted_gain": "未预登记（素版）",
+      "guard_slices": [
+        "horizon:near",
+        "horizon:mid",
+        "horizon:far"
+      ],
+      "exp_id": "E001"
+    },
+    {
+      "hypothesis_id": null,
+      "source": "switches",
+      "config_diff": {
+        "dropout": 0.2
+      },
+      "predicted_gain": "未预登记（素版）",
+      "guard_slices": [
+        "horizon:near",
+        "horizon:mid",
+        "horizon:far"
+      ],
+      "exp_id": "E002"
+    },
+    {
+      "hypothesis_id": null,
+      "source": "switches",
+      "config_diff": {
+        "learning_rate": 0.0005
+      },
+      "predicted_gain": "未预登记（素版）",
+      "guard_slices": [
+        "horizon:near",
+        "horizon:mid",
+        "horizon:far"
+      ],
+      "exp_id": "E003"
+    },
+    {
+      "hypothesis_id": null,
+      "source": "switches",
+      "config_diff": {
+        "tsmixer_no_channel_mix": true
+      },
+      "predicted_gain": "未预登记（素版）",
+      "guard_slices": [
+        "horizon:near",
+        "horizon:mid",
+        "horizon:far"
+      ],
+      "exp_id": "E004"
+    }
+  ],
+  "deferred": [
+    {
+      "hypothesis_id": null,
+      "source": "switches",
+      "config_diff": {
+        "d_model": 256
+      },
+      "predicted_gain": "未预登记（素版）",
+      "guard_slices": [
+        "horizon:near",
+        "horizon:mid",
+        "horizon:far"
+      ]
+    },
+    {
+      "hypothesis_id": null,
+      "source": "switches",
+      "config_diff": {
+        "e_layers": 3
+      },
+      "predicted_gain": "未预登记（素版）",
+      "guard_slices": [
+        "horizon:near",
+        "horizon:mid",
+        "horizon:far"
+      ]
+    }
+  ],
+  "t": "2026-09-08T00:21:52",
+  "confirmed_at": "2026-09-08T00:22:03"
+}

@@ -391,6 +391,13 @@ def check(expr, ctx):
         if mid not in MATERIAL_IDS:
             raise ValueError(f"DSL 引用了未知材料 id '{mid}'（合法集见 MATERIAL_IDS）")
         return material_status(ctx["cfg"], mid) == "present"
+    if expr.startswith("json:"):
+        body = expr[len("json:"):]
+        if ":" not in body:
+            raise ValueError(f"json: 表达式须写成 json:<文件路径>:<点路径>，实际 {expr!r}")
+        path, dotted = body.rsplit(":", 1)
+        doc = read_json(expand_round(path, ctx))
+        return bool(_value_at(doc, dotted)) if isinstance(doc, dict) else False
     if expr.startswith("product:"):
         pid = expr[len("product:"):]
         return product_status(ctx["cfg"], pid)["status"] in ("built", "linked")
@@ -412,12 +419,20 @@ def _question_by_id(fm, qid):
 
 
 # ---------------------------------------------------------------- 阶段判定
+def expand_round(s, ctx):
+    """`{round}` 占位 → state.round（缺省 1）。改进环用它让 Stage 1–3 的产物按轮分目录。"""
+    if "{round}" not in s:
+        return s
+    rnd = ((ctx.get("state") or {}).get("round")) or 1
+    return s.replace("{round}", str(rnd))
+
+
 def stage_done(st, ctx):
     """真相以产物为准；manual 阶段例外——由主 agent 写进 state.manual_done。"""
     dw = st.get("done_when") or {}
     if dw.get("manual"):
         return st["id"] in ((ctx.get("state") or {}).get("manual_done") or [])
-    arts = dw.get("artifacts") or []
+    arts = [expand_round(a, ctx) for a in (dw.get("artifacts") or [])]
     if arts and not all(glob.glob(a, recursive=True) for a in arts):
         return False
     marker = dw.get("findings_marker")

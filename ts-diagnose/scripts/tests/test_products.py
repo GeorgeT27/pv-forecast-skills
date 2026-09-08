@@ -415,6 +415,7 @@ REAL_UPSTREAM = {
     "subset-influence": {"setup": True, "model_profile": False, "eval_report": False},
     "training-sufficiency": {"setup": False},
     "metric-eval": {"setup": True},
+    "model-improve": {"model_profile": False},
 }
 REAL_PRODUCES = {
     "data-setup": "setup",

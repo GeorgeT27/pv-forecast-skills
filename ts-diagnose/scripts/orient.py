@@ -399,11 +399,14 @@ def _write_state_progress(fm, cur, args, ctx=None, actives=None, state=None, blo
                 old_state = json.load(f)
         except (OSError, json.JSONDecodeError):
             old_state = None
+    # round 永不倒退：intake-blocked 分支不传 state，此处退回落盘的 old_state 取真值
+    rnd = int(((state or old_state) or {}).get("round") or 1)
     if blocked is not None:
         new_state = {"playbook": fm["id"],
                      "updated": dt.datetime.now().isoformat(timespec="seconds"),
                      "current_stage": "intake-blocked", "stages": {},
-                     "manual_done": [], "variants": {}}
+                     "manual_done": [], "variants": {},
+                     "round": rnd}
         line = f"orient：playbook={fm['id']}，BLOCKED 材料盘点未完成：{','.join(blocked)}"
     else:
         new_state = {
@@ -415,11 +418,15 @@ def _write_state_progress(fm, cur, args, ctx=None, actives=None, state=None, blo
                        for st in fm["stages"]},
             "manual_done": (state or {}).get("manual_done") or [],
             "variants": actives,
+            "round": rnd,
         }
         line = (f"orient：playbook={fm['id']}，当前 Stage "
                 f"{cur['id'] if cur is not None else '收尾'}"
                 f"{f'（--goto {args.goto}）' if args.goto is not None else ''}"
                 f"{'（--force：用户要求跳过前置，Stage 前置未齐）' if force_skipped_prereqs else ''}")
+    if any("{round}" in a for st in fm["stages"]
+           for a in ((st.get("done_when") or {}).get("artifacts") or [])):
+        print(f"  改进环：第 {new_state['round']} 轮（产物路径里的 {{round}} 占位按此展开）")
     ec.dump_json(new_state, ec.STATE_PATH)
     # PROGRESS.md 只建头，是 agent 的叙事文档；机器审计线单独进 .orient_audit.jsonl
     # ——此前审计行写进 PROGRESS.md，agent 整篇重写叙事时会把它清掉（C1 实测 5→1 行）

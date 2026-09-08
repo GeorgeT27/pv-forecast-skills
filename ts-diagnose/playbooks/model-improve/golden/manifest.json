@@ -1,0 +1,23 @@
+{
+  "playbook": "model-improve",
+  "note": "本 playbook 的 Stage 0/2 依赖真实训练入口（评估器适配器）与 subagent，Stage 1/3/4 是 experiment_log.py 的状态机（scripts/tests/test_experiment_log.py 直接覆盖 init/candidates/append/decide/new-round/stop/finalize 与四条停止规则）。可确定性验证、且是每条候选留弃核心的是改进判定：fake_round.json 植入四条候选——E001 整体变好超噪声底（keep）、E002 变差（discard）、E003 落噪声底内（undecided）、E004 整体变好但守护切片 far 退化 +0.04 ≥ 切片噪声底（discard, guard=regress）。改期望先改 make_golden.py 并重跑 pytest。",
+  "planted": {"champion_mean": 0.2, "noise_floor_3sigma": 0.006,
+              "E001_delta": -0.02, "E002_delta": 0.02, "E003_delta": -0.001, "E004_far_delta": 0.04},
+  "stages": {
+    "2": {
+      "desc": "改进判定四态：keep / discard(更差) / undecided(噪声内) / discard(守护退化)",
+      "inputs": ["fake_round.json"],
+      "args": ["--round", "fake_round.json", "--out", "verdicts.json"],
+      "expect": [
+        {"file": "verdicts.json", "path": "verdicts.E001.verdict", "op": "eq", "value": "keep"},
+        {"file": "verdicts.json", "path": "verdicts.E001.delta", "op": "between", "value": [-0.0201, -0.0199]},
+        {"file": "verdicts.json", "path": "verdicts.E002.verdict", "op": "eq", "value": "discard"},
+        {"file": "verdicts.json", "path": "verdicts.E003.verdict", "op": "eq", "value": "undecided"},
+        {"file": "verdicts.json", "path": "verdicts.E004.verdict", "op": "eq", "value": "discard"},
+        {"file": "verdicts.json", "path": "verdicts.E004.guard.horizon:far.regress", "op": "eq", "value": true},
+        {"file": "verdicts.json", "path": "verdicts.E004.line", "op": "contains", "value": "guard=regress:horizon:far"}
+      ],
+      "reference": "reference/improve_verdict_ref.py"
+    }
+  }
+}

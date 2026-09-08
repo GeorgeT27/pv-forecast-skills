@@ -54,3 +54,51 @@ def test_non_list_hypotheses_rejected():
 def test_non_dict_hypothesis_entry_rejected_without_crash():
     errs = hl.validate_ledger({"hypotheses": [1]})
     assert errs != []
+
+
+IMPROVE = {"id": "F1", "kind": "improvement", "derived_from": "H1",
+           "claim": "关闭通道混合能降 val_mse", "component": "tsmixer.channel_mix",
+           "falsifiable_pred": "关闭后 val_mse 下降超噪声底且 far 不退化",
+           "fix": {"target_model": "TSMixer", "config_diff": {"tsmixer_no_channel_mix": True},
+                   "predicted_gain": "val_mse 下降 ≥ 0.0154", "guard_slices": ["horizon:far"]},
+           "status": "pending", "provenance": "pre-registered", "kill_receipt": None, "receipt": None}
+
+
+def test_improvement_entry_valid():
+    assert hl.validate_ledger({"slice_map": [], "hypotheses": [IMPROVE]}) == []
+
+
+def test_kind_default_mechanism_and_illegal_kind_rejected():
+    assert hl.validate_ledger(VALID) == []                      # 无 kind = mechanism
+    h = dict(VALID["hypotheses"][0], kind="magic")
+    assert any("kind" in e for e in hl.validate_ledger({"slice_map": [], "hypotheses": [h]}))
+
+
+def test_improvement_allows_empty_guard_slices():
+    """守护切片可以一个都没有：空 list 是合法取值，不是「缺字段」。"""
+    h = dict(IMPROVE, fix=dict(IMPROVE["fix"], guard_slices=[]))
+    assert hl.validate_ledger({"slice_map": [], "hypotheses": [h]}) == []
+
+
+def test_improvement_requires_fix_fields():
+    h = dict(IMPROVE, fix={"target_model": "TSMixer"})
+    errs = hl.validate_ledger({"slice_map": [], "hypotheses": [h]})
+    assert any("config_diff" in e for e in errs) and any("guard_slices" in e for e in errs)
+    h2 = dict(IMPROVE); del h2["fix"]
+    assert any("fix" in e for e in hl.validate_ledger({"slice_map": [], "hypotheses": [h2]}))
+    h3 = dict(IMPROVE, fix=dict(IMPROVE["fix"], config_diff="--flag"))
+    assert any("config_diff" in e for e in hl.validate_ledger({"slice_map": [], "hypotheses": [h3]}))
+
+
+def test_untested_requires_reason():
+    h = dict(IMPROVE, status="untested")
+    assert any("untested_reason" in e for e in hl.validate_ledger({"slice_map": [], "hypotheses": [h]}))
+    ok = dict(IMPROVE, status="untested", untested_reason="seed 1337 crash: NaN loss")
+    assert hl.validate_ledger({"slice_map": [], "hypotheses": [ok]}) == []
+
+
+def test_improvement_confirmed_requires_receipt():
+    h = dict(IMPROVE, status="confirmed")
+    assert any("receipt" in e for e in hl.validate_ledger({"slice_map": [], "hypotheses": [h]}))
+    ok = dict(IMPROVE, status="confirmed", receipt="receipts/E003.json")
+    assert hl.validate_ledger({"slice_map": [], "hypotheses": [ok]}) == []

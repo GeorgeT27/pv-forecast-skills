@@ -1,0 +1,32 @@
+{
+  "round": 2,
+  "n_candidates": 2,
+  "counts": {
+    "discard": 2
+  },
+  "kept": [],
+  "new_champion": null,
+  "previous_champion": "E000",
+  "champion_mean": 0.3889119823773702,
+  "champion_delta_vs_prev": 0.0,
+  "budget": {
+    "max_trainings": 30,
+    "max_rounds": 2,
+    "max_per_round": 4,
+    "stagnation_rounds": 2,
+    "used_trainings": 21
+  },
+  "converged": true,
+  "converged_reason": "max_rounds",
+  "receipt_lines": [
+    "- E005 discard: hyp= delta=+0.0143 noise_floor=0.0067 seeds=3 guard=regress:horizon:far,horizon:mid",
+    "- E006 discard: hyp= delta=+0.0172 noise_floor=0.0067 seeds=3 guard=regress:horizon:far,horizon:mid"
+  ],
+  "untested": [],
+  "guard_regress": [
+    "E005",
+    "E006"
+  ],
+  "deferred": [],
+  "t": "2026-09-08T02:53:06"
+}

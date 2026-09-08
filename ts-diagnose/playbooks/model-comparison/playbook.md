@@ -151,6 +151,8 @@ done：charts/*.json 至少一个 + INDEX.md + FINDINGS.md 含「现象」→ **
 
 **切片认领规则（硬规则）**：`slice_map` 必须收录 Stage 1 全部超噪声底的显著切片，覆盖每个已切维度（时段、波动分位、lead、单元/通道、时间段），不得只保留单一维度。其中方向与总差距相反（对照模型显著占优）的每个切片，必须被至少一条假设的 `falsifiable_pred` 显式认领——写明干预后该切片 delta 的预期方向；无假设可认领的，逐条写进顶层 `uncovered` 列表并注明「无假设认领」——未认领切片只用 `uncovered` 这一个字段名表达，不得另造同义字段（如 `not_registered`），下游验证按此字段核对。每条押注方向的假设，登记时同步登记互补假设（编号 `H<n>b`）：同 component、同干预，`falsifiable_pred` 为原方向取反——组件移除使对手模型的劣势切片追平或反超，即确认「该组件损害这些切片」。互补假设的 confirm/kill 判据各自独立成文，`provenance` 同标 `"pre-registered"`，判定共用同一次干预的 receipt，不占新预算。
 
+**改进假设（可选，`kind: "improvement"`）**：对每条 component 的 switch 是 `config-flag` 或 `code-stub` 的机理假设，若它的 `falsifiable_pred` 蕴含「改该组件能让某个模型的口径指标变好」，同步登记一条 `F<n>`：`kind: "improvement"`、`derived_from: "H<n>"`、`fix: {target_model, config_diff, predicted_gain, guard_slices}`——`config_diff` 是评估器 knob 名到取值的对象（如 `{"tsmixer_no_channel_mix": true}`），`predicted_gain` 写方向与相对噪声底的幅度，`guard_slices` 默认取 `slice_map` 里 `target_model` 占优的全部切片；其余字段同机理假设，`status: "pending"`、`provenance: "pre-registered"`、`kill_receipt: null`、`receipt: null`。F 条目不进验证主脊的判别力排序，由改进环消费；账本仍须过 `hypothesis_ledger.py`。
+
 Stage 2 已因 `model_code` 解锁、但 `model_profile` declined 时：不能产出源码锚定的机制账本。若已有真实输入上的单开关 receipt，最小账本只登记其机制解释为 `component="unknown"`、`status="undecided"`、`provenance="switch-label-only"` 的待验假设，并附 switch、逐种子 delta、适用域与 receipt；receipt 本身仅作为限该域/配置的实现级干预事实，不升级为源码组件机制或跨域结论。没有 receipt 的架构先验同样停在待验假设。若 `model_code` 与 `model_profile` 均缺，Stage 2 不解锁；receipt 只在 Stage 1 的事实清单中记录。
 
 按 `discriminating_power` 降序排列。产出写回 FINDINGS.md：登记选中假设的 id/claim/component/falsifiable_pred/discriminating_power——状态只用「假设」保留字，不写"已验证"类字样。

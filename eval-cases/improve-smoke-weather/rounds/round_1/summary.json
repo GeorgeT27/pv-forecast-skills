@@ -1,0 +1,60 @@
+{
+  "round": 1,
+  "n_candidates": 4,
+  "counts": {
+    "undecided": 4
+  },
+  "kept": [],
+  "new_champion": null,
+  "previous_champion": "E000",
+  "champion_mean": 0.3889119823773702,
+  "champion_delta_vs_prev": 0.0,
+  "budget": {
+    "max_trainings": 30,
+    "max_rounds": 2,
+    "max_per_round": 4,
+    "stagnation_rounds": 2,
+    "used_trainings": 15
+  },
+  "converged": false,
+  "converged_reason": null,
+  "receipt_lines": [
+    "- E001 undecided: hyp= delta=-0.0049 noise_floor=0.0067 seeds=3 guard=ok",
+    "- E002 undecided: hyp= delta=+0.0006 noise_floor=0.0067 seeds=3 guard=ok",
+    "- E003 undecided: hyp= delta=-0.0052 noise_floor=0.0067 seeds=3 guard=ok",
+    "- E004 undecided: hyp= delta=+0.0027 noise_floor=0.0067 seeds=3 guard=regress:horizon:far,horizon:mid"
+  ],
+  "untested": [],
+  "guard_regress": [
+    "E004"
+  ],
+  "deferred": [
+    {
+      "hypothesis_id": null,
+      "source": "switches",
+      "config_diff": {
+        "d_model": 256
+      },
+      "predicted_gain": "未预登记（素版）",
+      "guard_slices": [
+        "horizon:near",
+        "horizon:mid",
+        "horizon:far"
+      ]
+    },
+    {
+      "hypothesis_id": null,
+      "source": "switches",
+      "config_diff": {
+        "e_layers": 3
+      },
+      "predicted_gain": "未预登记（素版）",
+      "guard_slices": [
+        "horizon:near",
+        "horizon:mid",
+        "horizon:far"
+      ]
+    }
+  ],
+  "t": "2026-09-08T02:37:15"
+}

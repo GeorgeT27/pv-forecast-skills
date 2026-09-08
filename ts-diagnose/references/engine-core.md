@@ -74,6 +74,11 @@ receipt 是结论阶段唯一完成判据）。
 「## 消融证据」receipt）。**预算阶梯**：单轮干预 ~10 次训练，总轮数 ≤3。
 无 `trainable_framework`（checkpoint/experiment_config absent-confirmed）→ 跳过验证主脊，结论标未经干预验证。
 
+**改进环**（`model-improve`）：账本 `kind: improvement` 条目 → 候选按轮批跑（每条派 `model-improve-worker`，
+≥3 种子）→ `improve_verdict` 判 keep/discard/undecided（超冠军且守护切片不退化）→ `experiment_log.py decide`
+更新冠军并判收敛（预算耗尽 / 轮数封顶 / 连续两轮无 keep / 用户 stop）→ 收敛后 `finalize` 开封测试集一次
+→ 结论过 `conclusion_gate` 规则 7。crash/timeout 记 `untested`，不算 refuted。
+
 ## 结论纪律（细则 `mechanisms.md`）
 
 1. 三道门（orient 在结论阶段打印清单）：门 1 稳健性 · 门 2 假设登记先于看数 · 门 3 反驳门逐条排除，
