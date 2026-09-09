@@ -57,6 +57,8 @@ stages:
     prereqs:
       - desc: 现象清单已有（Stage 3）
         check: "stage:3"
+      - desc: 用户已点名待深挖现象
+        check: "question:robustness-focus"
     pause_after: false
     subagent_ok: false
 variants:
@@ -86,6 +88,12 @@ questions:
     why: "切片能暴露『整体稳但某类内翻向』的隐患；没有就跳过 Stage 2"
     default: "无（Stage 2 跳过）"
     skip_if: "config:group_columns"
+  - id: robustness-focus
+    stage: 4
+    ask: "Stage 3 的现象清单已汇报。稳定性结论深挖哪几条？（切片翻向的组必须单独成条，别平均掉）"
+    why: "哪条结论值得逐条判稳/不稳由用户点名；agent 自己挑等于替用户决定哪个结论重要"
+    options: ["点名要深挖的现象（可多条）", "全部结论都判级", "先补扰动族再判"]
+    default: null
 evidence_lines:
   - id: perturbation
     stage: 1
@@ -94,6 +102,7 @@ evidence_lines:
     stage: 2
     output: group_slices.json
 upgrade_rule: "结论要升「假设」：≥2 个独立扰动族下方向不变；要升「已证实」：另过配对检验（Wilcoxon 显著）且切片无翻向（或翻向组已解释并注明）"
+
 ---
 
 # Playbook：鲁棒性分析
@@ -158,7 +167,8 @@ CLI 契约见 `golden/manifest.json`，参考实现见 `golden/reference/`。脚
   "[现象] 结论 C1 在 4/4 个扰动族方向不变 | stability_score=1.0"；
   "[现象] C2 剔最差 3 天后差异从 +0.8% 变 -0.1%（方向翻转）"。
   禁机制语言——"因为/导致/说明模型…"一律不许出现。产出后停顿，
-  等用户点名要深入哪条。
+  用 AskUserQuestion 问 `robustness-focus`：要深入哪条——没拿到答复进不了 Stage 4，
+  orient 会把它标成阻塞。
 
 ### Stage 4：稳定性结论（主 agent）
 - 逐条结论按 frontmatter 的 upgrade_rule 判级，三档：稳（已证实级）/ 条件稳（假设级，

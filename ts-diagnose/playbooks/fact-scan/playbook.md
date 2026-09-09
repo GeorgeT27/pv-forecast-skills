@@ -50,8 +50,12 @@ materials:
 - orient 已按材料与模型数标好"可画集"。
 - 逐图跑 chartbook 的预写脚本，命令模板与 chartbook 各 recipe 的 CLI 节相同；产物写进 `charts/`。
 - 对比类图在单模型数据上会抛 ValueError——捕获它，在清单里记「因模型数 <2 未画」，这不算失败。
+**口径对齐（硬规则）**：本次分析的主口径不是逐行 RMSE 时（例如逐行 MSE），所有按逐行指标聚合的图都要加 `--metric mse`，口径写进各图 JSON 的 `metric` 字段。逐行 RMSE 与逐行 MSE 的模型排名可以相反——图不跟着切，判读就是在用另一个口径回答本次问题，而且不会报错。
+
 - 判读每张图 JSON 里的描述符，写成 FINDINGS.md 现象清单。每条的格式：图 id + 描述符数字 + 一句现象陈述，禁机制词。
 - 跳过的图逐条注明原因（缺材料 / 模型数不够）。
+- 画完建索引（阶段闸判的是工作目录**根部**的 `INDEX.md`）：
+  `python3 <ENGINE>/chartbook/scripts/build_index.py --charts-dir charts/ --out INDEX.md`
 - 画完、建好索引后，跑：
 
 ```

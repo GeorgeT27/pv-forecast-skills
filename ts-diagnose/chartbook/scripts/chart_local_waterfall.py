@@ -20,14 +20,14 @@ except ImportError as e:  # pragma: no cover
 
 def compute(pred_df, feats, adapter, k: int = 20, model=None, seed: int = 0,
             max_calls: int = 5000, background_k: int = 5,
-            cache_path=None) -> dict:
+            cache_path=None, metric: str = "rmse") -> dict:
     if not adapter.CAPABILITIES.get("perturb_features"):
         raise ValueError("适配器 perturb_features=False,本图不可画(§6)")
     models = sorted(pred_df["model"].unique())
     focal = model or models[0]
     if focal not in models:
         raise ValueError(f"焦点模型 '{focal}' 不在数据中:{models}")
-    rr = cc.row_rmse(pred_df[pred_df["model"] == focal])
+    rr = cc.row_metric(pred_df[pred_df["model"] == focal], metric)
     worst = rr.sort_values("rmse").tail(k).iloc[::-1]
     fq = feats.copy()
     has_true_by_f = (fq.groupby("feature")["f_true"]
@@ -90,7 +90,7 @@ def compute(pred_df, feats, adapter, k: int = 20, model=None, seed: int = 0,
             "basis": basis})
     if not rows_out:
         raise ValueError("预算不足以拆任何一行——调大 --max-calls")
-    return {"recipe": RECIPE_ID, "k": k, "model": str(focal),
+    return {"recipe": RECIPE_ID, "k": k, "model": str(focal), "metric": metric,
             "rows": rows_out, "background_meta": bg_meta,
             "explainer": "kernel", "seed": seed,
             "coverage": {"rows_evaluated": len(rows_out),
@@ -117,7 +117,9 @@ def render(stats: dict):
         ax.axhline(row["rmse_actual"], color="k", lw=0.6, ls="--")
         ax.set_xticks(range(len(names)))
         ax.set_xticklabels(names, fontsize=7, rotation=45)
-        ax.set_title(f"{row['window_ts'][:10]} rmse={row['rmse_actual']:.2f}",
+        ax.set_title(f"{row['window_ts'][:10]} "
+                     f"{cc.metric_label(stats.get('metric', 'rmse')).lower()}="
+                     f"{row['rmse_actual']:.2f}",
                      fontsize=8)
     fig.suptitle(f"local-waterfall worst-{stats['k']}({stats['model']})")
     return fig
@@ -134,13 +136,16 @@ def main(argv=None):
     ap.add_argument("--background-k", type=int, default=5)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--max-calls", type=int, default=5000)
+    ap.add_argument("--metric", default="rmse", choices=("rmse", "mse"),
+                    help="逐行口径；分析主口径是逐行 MSE 时传 mse")
     a = ap.parse_args(argv)
     from pathlib import Path
     stats = compute(cc.load_predictions(a.pred), cc.load_features(a.features),
                     ac.load_adapter(a.adapter), k=a.k, model=a.model,
                     seed=a.seed, max_calls=a.max_calls,
                     background_k=a.background_k,
-                    cache_path=Path(a.out_dir) / "attribution_cache.jsonl")
+                    cache_path=Path(a.out_dir) / "attribution_cache.jsonl",
+                    metric=a.metric)
     cc.save_outputs(render(stats), a.out_dir, RECIPE_ID, stats)
 
 

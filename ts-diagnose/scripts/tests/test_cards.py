@@ -116,3 +116,14 @@ def test_card_conforms(card):
     assert f"playbooks/{pid}/playbook.md" in body, "步骤须指向对应 playbook.md"
     assert '"<ENGINE>/scripts/orient.py"' in body, "步骤须用 <ENGINE> 绝对路径调 orient"
     assert "引擎目录：`<ENGINE>`" in body, "输入节须有引擎目录字段"
+
+
+def test_producer_cards_close_the_stage():
+    """全链路联调 F2：生产者卡片跑完必须把 diagnose_state 推到 done，
+    否则工作目录的阶段状态永远停在 Stage 0 todo（卡片正文与实际行为不一致）。"""
+    for card in _card_paths():
+        fm, body = _split(card)
+        if fm.get("mode") != "producer":
+            continue
+        assert "current_stage" in body and "orient.py" in body, (
+            f"{os.path.basename(card)} 缺收尾推进 stage 的指令")

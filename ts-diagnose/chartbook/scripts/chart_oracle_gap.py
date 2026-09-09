@@ -12,8 +12,9 @@ import chart_common as cc
 RECIPE_ID = "oracle-gap"
 
 
-def compute(df: pd.DataFrame, ensemble_key: str | None = None) -> dict:
-    rr = cc.row_rmse(df)
+def compute(df: pd.DataFrame, ensemble_key: str | None = None,
+            metric: str = "rmse") -> dict:
+    rr = cc.row_metric(df, metric)
     piv = rr.pivot_table(index=["unit_id", "window_ts"], columns="model",
                          values="rmse").dropna()
     singles = [c for c in piv.columns if c != ensemble_key]
@@ -26,7 +27,7 @@ def compute(df: pd.DataFrame, ensemble_key: str | None = None) -> dict:
     dates = piv.index.get_level_values("window_ts").strftime("%Y-%m-%d")
     daily = piv.assign(oracle=oracle).groupby(dates).mean()
     return {
-        "recipe": RECIPE_ID, "ensemble_key": ensemble_key,
+        "recipe": RECIPE_ID, "ensemble_key": ensemble_key, "metric": metric,
         "n_samples": int(len(piv)),
         "mean_rmse": {**{str(m): round(float(v), 4)
                          for m, v in means.items()},
@@ -56,7 +57,8 @@ def render(stats: dict):
                 label=col, **style)
     gap = stats["best_single_minus_oracle"]
     ax.set_title(f"oracle-gap(best-single-model−oracle, daily mean = {gap:.3f})")
-    ax.set_ylabel("daily-mean row RMSE"), ax.legend(ncol=len(stats["daily_rmse"]))
+    ax.set_ylabel(f"daily-mean row {cc.metric_label(stats.get('metric', 'rmse'))}")
+    ax.legend(ncol=len(stats["daily_rmse"]))
     fig.autofmt_xdate()
     return fig
 
@@ -66,8 +68,11 @@ def main(argv=None):
     ap.add_argument("--pred", required=True)
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--ensemble-key", default=None)
+    ap.add_argument("--metric", default="rmse", choices=("rmse", "mse"),
+                    help="逐行口径；分析主口径是逐行 MSE 时传 mse")
     a = ap.parse_args(argv)
-    stats = compute(cc.load_predictions(a.pred), ensemble_key=a.ensemble_key)
+    stats = compute(cc.load_predictions(a.pred), ensemble_key=a.ensemble_key,
+                    metric=a.metric)
     cc.save_outputs(render(stats), a.out_dir, RECIPE_ID, stats)
 
 

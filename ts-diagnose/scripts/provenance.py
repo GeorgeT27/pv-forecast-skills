@@ -59,8 +59,10 @@ def main():
     ap.add_argument("--code", nargs="+", required=True, help="生成的分析脚本（可 glob）")
     ap.add_argument("--data", nargs="+", required=True, help="本次消费的输入数据文件")
     ap.add_argument("--serves", nargs="*", default=[],
-                    help="脚本挂回假设/段：<脚本名>=<episode_id>[@<segment_id>]，"
+                    help="脚本挂回假设/段：<脚本名>=<episode_id>[,<episode_id>...][@<segment_id>]，"
                          "如 eval_H1.py=H1@07-architecture-attribution-stage-3；"
+                         "一个脚本服务多个假设（互补假设共用同一支脚本）写逗号分隔，"
+                         "或对同一脚本重复给 --serves，两种写法都合并不覆盖；"
                          "脚本名须在 --code 展开结果里，写错当场报错")
     ap.add_argument("--out", default="provenance.json")
     args = ap.parse_args()
@@ -77,13 +79,26 @@ def main():
         name, _, target = item.partition("=")
         if not target or name not in code_names:
             raise SystemExit(f"--serves 无效或脚本不在 --code 里：{item!r}")
-        episode, _, segment = target.partition("@")
-        serves[name] = {"episode_id": episode, "segment_id": segment or None}
+        episodes, _, segment = target.partition("@")
+        ids = [e for e in (x.strip() for x in episodes.split(",")) if e]
+        if not ids:
+            raise SystemExit(f"--serves 没写 episode_id：{item!r}")
+        prev = serves.get(name)
+        if prev is None:
+            serves[name] = {"episode_id": ids[0], "episode_ids": list(ids),
+                            "segment_id": segment or None}
+            continue
+        for e in ids:  # 同一脚本服务多个假设：合并，后来的不覆盖先前的
+            if e not in prev["episode_ids"]:
+                prev["episode_ids"].append(e)
+        prev["segment_id"] = prev["segment_id"] or (segment or None)
 
     prov = {"code": hash_group(code_files), "data": hash_group(data_files),
             "golden_selfcheck": gate_summary(code_files)}
     if serves:
-        prov["code"]["serves"] = serves  # 逐脚本挂回 episode/segment，孤儿脚本清零
+        # 逐脚本挂回 episode/segment，孤儿脚本清零；episode_ids 是全集，
+        # episode_id 保留首个供旧读者使用。
+        prov["code"]["serves"] = serves
     gates = prov["golden_selfcheck"]
     prov["all_gates_passed"] = bool(gates) and all(
         g["passed"] and not g["stale"] for g in gates.values())

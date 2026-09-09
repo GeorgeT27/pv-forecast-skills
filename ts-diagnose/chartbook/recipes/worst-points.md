@@ -26,8 +26,10 @@ bridge_hooks: >
 ```bash
 python3 chartbook/scripts/chart_worst_points.py \
   --pred predictions.parquet --out-dir <workdir>/charts \
-  [--top-n 20] [--freq 15min] [--pct 0.95] [--vol-window 5]
+  [--top-n 20] [--freq <步长>] [--pct 0.95] [--vol-window 5]
 ```
+`--freq`：horizon 步长（目标时刻 = window_ts + step×freq）。**不给就从长表同目录的 `setup_manifest.json` 读**（data-setup 实测值）；两者都没有才回落 15min 并告警——步长与数据不符时，按物理时刻聚合的结果会整体错位且不报错。
+
 
 ## JSON schema
 见 frontmatter。标签阈值均为**单元自身分布**的 pct 分位（跨单元不 pool）；

@@ -146,6 +146,12 @@ def _validate_frontmatter(fm, md_path):
                     f"{md_path} stage {st.get('id')} 声明了 charts 但 done_when."
                     f"artifacts 缺 'INDEX.md'——画完必须跑 build_index.py 建索引"
                     "才算阶段完成（阶段闸，_playbook-spec §charts）")
+            if chart_gate_mode(fm) == "plan-first" and CHART_PLAN_PATH not in arts:
+                raise ValueError(
+                    f"{md_path} stage {st.get('id')} 是 chart_gate: plan-first 的画图"
+                    f"阶段，done_when.artifacts 必须含 '{CHART_PLAN_PATH}'——取证计划是"
+                    "画图前的阶段闸判据，缺了这条闸就拦不住「跳过想证据、直接开画」"
+                    "（engine-core §图表选择门）")
         concl_arts = (st.get("done_when") or {}).get("artifacts") or []
         if "CONCLUSION.md" in concl_arts and "gate_reports/conclusion_gate.json" not in concl_arts:
             raise ValueError(
@@ -284,10 +290,51 @@ SAMPLE_BYTES = 1 << 20           # 采样块：头 1MB + 尾 1MB（尾部覆盖 
 FINGERPRINT_ALGO = "v1"          # 算法版本前缀——未来换算法不至于全体产物 stale
 
 
+DIR_FULL_MAX_FILES = 200         # 目录内文件数超过它就退化成清单指纹，不逐个读内容
+
+
+def dir_fingerprint(path):
+    """目录型材料的指纹（materials/ 整块、model_code 快照这类）。
+    文件数 ≤DIR_FULL_MAX_FILES 时逐个算 file_fingerprint（模式 dir-full）；
+    更多时只哈希「相对路径 + 字节数」清单（模式 dir-list，改内容不改大小检测不到，
+    与超大单文件的 ht 模式同属显式接受的残余风险）。遍历顺序排序，指纹可复现。"""
+    entries = []
+    for root, dirs, files in os.walk(path):
+        dirs.sort()
+        for name in sorted(files):
+            fp = os.path.join(root, name)
+            if os.path.islink(fp) and not os.path.exists(fp):
+                continue          # 断链不参与，否则指纹随环境漂
+            entries.append((os.path.relpath(fp, path), fp))
+    entries.sort()
+    h = hashlib.sha256()
+    mode = "dir-full" if len(entries) <= DIR_FULL_MAX_FILES else "dir-list"
+    for rel, fp in entries:
+        try:
+            size = os.path.getsize(fp)
+        except OSError:
+            continue
+        h.update(rel.encode("utf-8"))
+        h.update(str(size).encode())
+        if mode == "dir-full":
+            h.update(file_fingerprint(fp).encode())
+    return f"{FINGERPRINT_ALGO}:{mode}:{len(entries)}:{h.hexdigest()}"
+
+
+def path_fingerprint(path):
+    """按路径实际形态选指纹算法——目录走 dir_fingerprint，文件走 file_fingerprint。
+    材料可以是整个目录（orient 的入场指引就叫用户整块拷 materials/），调用方别再
+    假定它一定是文件。"""
+    return dir_fingerprint(path) if os.path.isdir(path) else file_fingerprint(path)
+
+
 def file_fingerprint(path):
     """产物过期检测用指纹。≤FULL_HASH_MAX_BYTES 全量 sha256；更大取 头+尾 各 1MB
     ——头部单独哈希对列式格式不安全（footer 在 EOF）。同尺寸只改中段的超大文件
-    检测不到：显式接受的残余风险（spec §2）。"""
+    检测不到：显式接受的残余风险（spec §2）。目录请走 path_fingerprint。"""
+    if os.path.isdir(path):
+        raise IsADirectoryError(
+            f"file_fingerprint 收到目录 {path}——目录型材料请用 path_fingerprint()")
     size = os.path.getsize(path)
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -332,7 +379,7 @@ def product_status(cfg, pid):
             path = os.path.join(workdir, path)
         if not os.path.exists(path):
             stale.append(mid)      # 输入文件消失也算过期（redo/apenwarr 教训）
-        elif file_fingerprint(path) != fp.get("fingerprint"):
+        elif path_fingerprint(path) != fp.get("fingerprint"):
             stale.append(mid)
     if stale and not rec.get("accept_stale"):
         return {"status": "stale", "workdir": workdir, "stale_inputs": sorted(stale)}
@@ -693,6 +740,40 @@ def addable_recipes(fm, cfg):
 def has_chart_stage(fm):
     """本 playbook 是否存在声明了 charts: 的阶段（图表选择门是否适用）。"""
     return any(st.get("charts") for st in fm.get("stages") or [])
+
+
+CHART_PLAN_PATH = "chart_plan.json"
+
+
+def produces_conclusion(fm):
+    """本 playbook 有没有产 CONCLUSION.md 的阶段。生成器剧本（只产账本/图集/产物，
+    结论交下游）与生产者剧本一样不产结论——Stop 钩子据此决定要不要拦「阶段全完成
+    却无结论 receipt」，硬编码 playbook 名单会漏掉新剧本。"""
+    for st in (fm or {}).get("stages") or []:
+        if "CONCLUSION.md" in ((st.get("done_when") or {}).get("artifacts") or []):
+            return True
+    return False
+
+
+def chart_gate_mode(fm):
+    """图表选择门的模式。plan-first = 先答疑问再看图池（归因类）；
+    sweep = 默认全画（体检类，fact-scan）。frontmatter 不写按 sweep，旧剧本行为不变。"""
+    mode = str((fm or {}).get("chart_gate") or "sweep")
+    return mode if mode in ("plan-first", "sweep") else "sweep"
+
+
+def chart_plan_entries(path=None):
+    """读工作目录的 chart_plan.json → entries 列表；文件缺失/坏/无 entries 返回 []。"""
+    obj = read_json(path or CHART_PLAN_PATH)
+    if not isinstance(obj, dict):
+        return []
+    ent = obj.get("entries")
+    return ent if isinstance(ent, list) else []
+
+
+def chart_plan_ready(path=None):
+    """取证计划是否已落盘且非空——plan-first 剧本据此决定要不要打印图池。"""
+    return bool(chart_plan_entries(path))
 
 
 def modelmap_blocker(cfg, fm):

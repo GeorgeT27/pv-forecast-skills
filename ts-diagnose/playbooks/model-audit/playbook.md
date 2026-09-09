@@ -113,7 +113,7 @@ done：`data-profile-receipt.json` 落盘（跳过时该 done_when 不适用，o
   具体用了哪些方法要从代码里读出来，不预设产线用了哪些技法。
 - **桥接层**（架构 → 结果分析含义）：把架构事实翻译成对结果分析的预期，链条是：
   架构事实 → 预期误差形态 → 哪张图能检验 → H-ID（桥接假设编号，供下游引用）。桥接
-  必须遵守 `references/cross-skill-contract.md` 的契约：读消费端的 hypotheses.md 与
+  必须遵守 `references/cross-skill-contract.md` 的契约（H-ID 写工作目录的 `references/hypotheses.md`，引擎包那份只读）：读消费端的 hypotheses.md 与
   图谱目录，H-ID 写回登记表。
 
 核验的优先级排序：损失函数 > 输入特征 > 训练窗口 > 其余结构。上下文策略见

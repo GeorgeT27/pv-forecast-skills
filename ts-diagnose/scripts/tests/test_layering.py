@@ -209,3 +209,42 @@ def test_chartbook_recipes_have_scripts():
         script = os.path.join(ENGINE_DIR, "chartbook", "scripts",
                               f"chart_{rid.replace('-', '_')}.py")
         assert os.path.exists(script), f"recipe {rid} 缺预写脚本"
+
+
+# ------------------------------------------- 停顿点必须有机器闸（r2 后续：软停顿盘点）
+# 「⏸ 完成即停向用户汇报」只是正文散文，orient 印一个 ⏸ 就没了；真正拦住 agent 的是
+# 下一阶段的前置。这条守卫钉住：每个后面还有阶段的 pause_after，其下一阶段必须有一条
+# question:/json: 前置——前者要用户答，后者要代码判，都不是 agent 自己说了算。
+PAUSE_GATE_EXEMPT = {
+    # 剧本正文明写「用户不点名，则按 orient 推荐推进」——有意为之的软停顿。
+    ("model-comparison", 1),
+}
+
+
+def test_every_pause_after_has_a_machine_gate():
+    import glob
+    from pathlib import Path
+    engine = Path(__file__).resolve().parents[2]
+    soft = []
+    for path in sorted(glob.glob(str(engine / "playbooks" / "*" / "playbook.md"))):
+        fm = ec.load_frontmatter(path)
+        stages = fm["stages"]
+        for i, st in enumerate(stages):
+            if not st.get("pause_after") or i + 1 >= len(stages):
+                continue          # 末阶段的「停顿」= 交付前汇报，后面没有阶段可跳
+            if (fm["id"], st["id"]) in PAUSE_GATE_EXEMPT:
+                continue
+            checks = [pr["check"] for pr in (stages[i + 1].get("prereqs") or [])]
+            if not any(c.startswith(("question:", "json:")) for c in checks):
+                soft.append(f"{fm['id']} Stage {st['id']} → Stage {stages[i+1]['id']}：{checks}")
+    assert not soft, ("这些 pause_after 只有散文没有闸，agent 可以直接走过去：\n  "
+                      + "\n  ".join(soft))
+
+
+def test_pause_gate_exemptions_are_real():
+    """豁免名单不许留僵尸条目：名单里的剧本/阶段必须真存在且真的 pause_after。"""
+    for pb_id, stage_id in PAUSE_GATE_EXEMPT:
+        fm = ec.load_frontmatter(ec.find_playbook(pb_id))
+        st = ec._stage_by_id(fm, stage_id)
+        assert st is not None, f"豁免名单里的 {pb_id} Stage {stage_id} 不存在"
+        assert st.get("pause_after"), f"{pb_id} Stage {stage_id} 已不是 pause_after，删掉豁免"

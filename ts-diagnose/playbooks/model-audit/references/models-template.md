@@ -22,9 +22,14 @@
 ### M1 组件 → 可干预开关映射（ablation_switches）
 > 覆盖范围含 `__init__`/初始化/默认参数，不能只看 forward。
 
-| 组件 | 开关 | kind | 锚点/理由 |
-|---|---|---|---|
-| <组件名> | <--flag，或"无"> | config-flag／code-stub／not-intervenable | <file:line；或需加代码的理由；或不可干预的原因> |
+| 组件 | 开关 | kind | 候选取值 | 锚点/理由 |
+|---|---|---|---|---|
+| <组件名> | <--flag，或"无"> | config-flag／code-stub／not-intervenable | <值得一试的取值，逗号分隔；布尔开关写 true；不可干预写"—"> | <file:line；或需加代码的理由；或不可干预的原因> |
+
+**候选取值**这一列不是可选的：`config-flag` 与 `code-stub` 必须给出取值（来源写进锚点列——
+代码默认值、README/论文的推荐区间、或本仓库其他配置里出现过的值）。少了它，下游
+model-improve 的素版候选只有开关名没有值，取值就只能靠人临时拍——那正是「素版」要消除的
+不可复现环节。
 
 ## M2 —— 类名 PatchRegForecast
 （同上骨架，含 ablation_switches 小节）

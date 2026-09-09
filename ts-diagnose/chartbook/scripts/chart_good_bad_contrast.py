@@ -25,9 +25,10 @@ def _contrast(worst: np.ndarray, best: np.ndarray) -> dict:
             "direction": int(np.sign(d)) if abs(d) > 1e-12 else 0}
 
 
-def compute(df: pd.DataFrame, feats: pd.DataFrame, k: int = None) -> dict:
-    rr = cc.row_rmse(df)
-    out = {"recipe": RECIPE_ID, "models": {},
+def compute(df: pd.DataFrame, feats: pd.DataFrame, k: int = None,
+            metric: str = "rmse") -> dict:
+    rr = cc.row_metric(df, metric)
+    out = {"recipe": RECIPE_ID, "metric": metric, "models": {},
            "note": "level=窗内 f_pred 均值;quality=窗内|f_pred−f_true|均值"
                    "(f_true 全缺时 basis 降级 level);d=(worst−best)/pooled_std。"}
     fq = feats.copy()
@@ -94,9 +95,11 @@ def main(argv=None):
     ap.add_argument("--features", required=True)
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--k", type=int, default=None)
+    ap.add_argument("--metric", default="rmse", choices=("rmse", "mse"),
+                    help="逐行口径；分析主口径是逐行 MSE 时传 mse")
     a = ap.parse_args(argv)
     stats = compute(cc.load_predictions(a.pred), cc.load_features(a.features),
-                    k=a.k)
+                    k=a.k, metric=a.metric)
     cc.save_outputs(render(stats), a.out_dir, RECIPE_ID, stats)
 
 

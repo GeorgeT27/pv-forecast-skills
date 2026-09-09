@@ -86,11 +86,19 @@ crystallize_min_cases: 5          # 可选。固化需要几个互异的成功 c
 **charts**：本阶段要画的图，值是 chartbook recipe id（必须存在于 `chartbook/recipes/`，
 拼错加载期报错）。orient 按各 recipe 声明的材料需求逐图报告"可画 / 缺材料跳过"。
 
+**chart_gate**（顶层，可选，缺省 `sweep`）：图表选择门的模式。`sweep` = 默认全勾画全套，
+体检类用（fact-scan）。`plan-first` = 先落 `chart_plan.json` 写清「要弄清什么 + 需要什么
+证据」，orient 在计划落盘前不打印图池，归因类用。两种模式的完整流程见 engine-core
+「图表选择门」。
+
 加载期硬校验（`_validate_frontmatter` 强制，违反则加载失败）：
 
 1. **阶段闸**：声明了 `charts:` 的阶段，`done_when.artifacts` 必须含 `"INDEX.md"`
    （`build_index.py` 产物）——画完图必须建索引才算阶段完成。
-2. **结论闸**：`done_when.artifacts` 含 `"CONCLUSION.md"` 的阶段必须同时含
+2. **取证计划闸**：`chart_gate: plan-first` 的 playbook，声明了 `charts:` 的阶段
+   `done_when.artifacts` 必须含 `"chart_plan.json"`——没有取证计划就不算完成，
+   拦的是「跳过想证据、直接开画」。
+3. **结论闸**：`done_when.artifacts` 含 `"CONCLUSION.md"` 的阶段必须同时含
    `"gate_reports/conclusion_gate.json"`（`conclusion_gate.py` 通过后生成）——没过闸就没有结论。
 
 ### produces / upstream —— 生产者与消费者
@@ -214,8 +222,9 @@ frontmatter 声明 = 意图；orient 解析出的状态 = 观测事实。agent �
      验证结果记 PROGRESS.md（crystallize 只快照有验证记录的脚本）；
    - golden 覆盖的阶段另有**生成闸**：脚本先过 `scripts/gen_gate.py`（在结果已知的
      金标准上算对）才许碰真实数据（§5）。正文里写出闸命令；
-   - 声明 `charts:` 的阶段，正文写清每张图的调用命令与参数——图一律调 chartbook
-     预写脚本，禁止现场重写（见 engine-core 的 chartbook 豁免条款）；
+   - 声明 `charts:` 的阶段，正文写清每张图的调用命令与参数——chartbook 已覆盖的图一律调
+     预写脚本，禁止现场重写；chartbook 给不了的证据现场写进 `analysis_scripts/` 并按三档
+     声明 `verification`（见 engine-core 的 chartbook 豁免与验证路径条款）；
    - 结论阶段菜谱必须含**归因闸**：写 CONCLUSION.md 前跑 `scripts/provenance.py`，
      末尾附 Provenance 块（代码 hash + 数据 hash + 金标准自检），
      细则见 `references/conclusion-reporting.md`。

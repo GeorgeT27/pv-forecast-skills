@@ -101,11 +101,13 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--pred", required=True)
     ap.add_argument("--out-dir", required=True)
-    ap.add_argument("--freq", default="15min")
+    ap.add_argument("--freq", default=None,
+                    help="horizon 步长；缺省从长表同目录的 setup_manifest.json 读，"
+                         "都没有才回落 15min")
     ap.add_argument("--top-k", type=int, default=10)
     a = ap.parse_args(argv)
     df = cc.load_predictions(a.pred)
-    stats = compute(df, freq=a.freq, top_k=a.top_k)
+    stats = compute(df, freq=cc.resolve_freq(a.pred, a.freq), top_k=a.top_k)
     cc.save_outputs(render(stats), a.out_dir, RECIPE_ID, stats)
 
 

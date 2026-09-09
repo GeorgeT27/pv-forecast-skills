@@ -29,7 +29,10 @@ model: sonnet
 FINDINGS.md 现象清单（只写 real/~noise 与数字）。
 用 `python3 "<ENGINE>/scripts/orient.py" --playbook architecture-attribution` 领阶段与 prereq；
 现场脚本先过 `python3 "<ENGINE>/scripts/gen_gate.py" --script <path> --playbook architecture-attribution --stage 0`
-（在 `<workdir>` 下运行；`<ENGINE>` = 主 agent 派发时填入的引擎绝对路径；golden 由脚本按 playbook 目录自动引用）。
+（在 `<workdir>` 下运行；`<ENGINE>` = 主 agent 派发时填入的引擎绝对路径）。本阶段 golden 只钉
+`slice_zcheck.py` 的 CLI，所以 `build_slice_metrics.py` 会得到退出码 3「无 golden 覆盖」——
+那不是失败：改按 playbook Stage 0 的对账验证（行数守恒 / (slice,seed) 唯一 / 抽 2 行核对）
+把数字验住，逐条写进 verification。
 
 ## 红线
 

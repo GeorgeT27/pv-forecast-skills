@@ -31,8 +31,10 @@ bridge_hooks: >
 ```bash
 python3 chartbook/scripts/chart_worst_slice_compare.py \
   --pred predictions.parquet --out-dir <workdir>/charts \
-  --focal-model <模型名> [--slice-by month] [--n-perm 200] [--perm-seed 0]
+  --focal-model <模型名> [--slice-by month] [--n-perm 200] [--perm-seed 0] [--metric rmse|mse]
 ```
+`--metric`：逐行口径，`rmse`（默认）或 `mse`。**分析主口径不是逐行 RMSE 时必须跟着切**——逐行 RMSE 与逐行 MSE 的模型排名可以相反，不切就等于用另一个口径的图去支撑本次结论。口径写进 JSON 的 `metric` 字段。
+
 v1 仅支持按月切片；焦点模型必须在数据里（typo 直接抛错）。置换基线默认开
 （200 次、种子 0，两者均落盘进 JSON）；`--n-perm 0` 显式关闭。
 

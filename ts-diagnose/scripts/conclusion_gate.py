@@ -22,6 +22,8 @@ RECEIPT_LINE_RE = re.compile(r"(confirmed|refuted|undecided).*(switch|delta).*se
 ABLATION_SECTION = "## 消融证据"
 EVIDENCE_SECTION = "## 证据清单"
 IMPROVE_SECTION = "## 改进证据"
+UNEXPLAINED_SECTION = "## 已知缺口"
+NO_ATTRIBUTION_DECL = "本轮未能归因到任何组件"
 IMPROVE_RECEIPT_RE = re.compile(r"(keep|discard|undecided).*delta.*seeds?=\d")
 IMPROVE_RECEIPT_REQUIRED = ("exp_id", "delta", "noise_floor_3sigma", "seeds", "verdict",
                             "produced_by", "script_sha256")
@@ -67,8 +69,18 @@ def _check_receipt_fields(rp, rec, required, missing_hint, seeds_hint, sha_hint)
 
 
 def check_traceability():
-    """规则 5 溯源闭环:回执→脚本→假设的链条逐环机检,断一环不放行。"""
+    """规则 5 溯源闭环:回执→脚本→假设的链条逐环机检,断一环不放行。
+    附带判据②闸:脚本判 undecided、账本却升级为 refuted 的,必须有保守第二口径同判。"""
     receipts = sorted(glob.glob("receipts/H*.json"))
+    ledger_status = {}
+    if os.path.exists("hypothesis_ledger.json"):
+        try:
+            led = json.load(open("hypothesis_ledger.json", encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            fail("hypothesis_ledger.json 存在但解析失败")
+        for h in (led.get("hypotheses") or []) if isinstance(led, dict) else []:
+            if isinstance(h, dict) and h.get("id"):
+                ledger_status[h["id"]] = h.get("status")
     prov = None
     if os.path.exists("provenance.json"):
         try:
@@ -87,9 +99,25 @@ def check_traceability():
                  "(带 --serves)再过闸")
         serves = (prov.get("code") or {}).get("serves") or {}
         entry = serves.get(os.path.basename(script))
-        if not entry or entry.get("episode_id") != rec["hypothesis_id"]:
+        # 一支脚本可服务多个假设(互补假设 H<n>b 与母假设共用 receipt/脚本):
+        # episode_ids 是全集,episode_id 是首个(旧形态只有它)。
+        served = (entry or {}).get("episode_ids") or (
+            [entry["episode_id"]] if entry and entry.get("episode_id") else [])
+        if rec["hypothesis_id"] not in served:
             fail(f"孤儿脚本:{script} 未在 provenance --serves 里挂回 "
-                 f"{rec['hypothesis_id']}(现挂:{entry})")
+                 f"{rec['hypothesis_id']}(现挂:{served or entry})——"
+                 "一支脚本服务多个假设时写 --serves <脚本>=H1,H1b")
+        # 判据②(预测落空)的机检:脚本判 undecided 而账本写 refuted,只可能走判据②,
+        # 而判据②要求保守第二口径同判。第二口径缺席=复核做不了=只能停在 undecided。
+        if (rec.get("verdict") == "undecided"
+                and ledger_status.get(rec["hypothesis_id"]) == "refuted"):
+            pm = rec.get("pred_miss") or {}
+            if not pm.get("eligible"):
+                fail(f"{rp}: 脚本判定 undecided、账本却升级为 refuted(判据②预测落空),"
+                     f"但 receipt 的 pred_miss.eligible 非真"
+                     f"({pm.get('note') or '回执里没有 pred_miss 字段——早于第二口径契约'})。"
+                     "判据②必须两口径同判:带 --delta2/--noise-floor2/--caliber2 重跑 "
+                     "ablation_verdict;拿不到第二口径,该假设只能停在 undecided。")
     if os.path.exists("intervention_plan.json"):
         plan = json.load(open("intervention_plan.json", encoding="utf-8"))
         items = plan.get("interventions", plan) if isinstance(plan, dict) else plan
@@ -118,12 +146,49 @@ def check_evidence_list(text):
     dead = [p for p in cited if not os.path.exists(p)]
     if dead:
         fail(f"证据清单引用了不存在的文件:{dead}")
+    # 历轮归档的 verdict_summary 同样必列——解释环跑了两轮却只列最后一轮的汇总,
+    # 就是跨轮摘樱桃(receipts/ 按假设 id 命名不归档,本来就全在)。
     must = sorted(glob.glob("receipts/H*.json")) \
-        + [p for p in ("verdict_summary.json",) if os.path.exists(p)]
+        + sorted(glob.glob("rounds/round_*/verdict_summary.json")) \
+        + [p for p in ("verdict_summary.json", "harvest.json") if os.path.exists(p)]
     unlisted = [p for p in must if p not in cited]
     if unlisted:
         fail(f"证据清单漏列:{unlisted}——盘上每张假设 receipt(含被否证的)"
-             "与 verdict_summary 都必须列出,不许只列支持结论的")
+             "、verdict_summary 与 harvest 都必须列出,不许只列支持结论的")
+
+
+def check_harvest(text, sec):
+    """规则 8 收成收口:一轮干预验证解释了多少现象,必须如实进结论。
+    harvest.json 由 harvest_check.py 生成(数组,取最新一条),记录未解释的 real 切片。
+    未解释切片非空 → 结论必须有「已知缺口」节且逐条列名;confirmed 为零 →
+    「模型结构依据」节必须写明本轮没归因成功,不许拿 undecided 的假设编成像结论的说法。"""
+    if not os.path.exists("harvest.json"):
+        fail("有 verdict_summary.json 却无 harvest.json——"
+             "写结论前先跑 harvest_check.py 收口(它同时校验未解释清单的一致性)")
+    h = _last_entry("harvest.json")
+    if h is None:
+        fail("harvest.json 为空或不是合法收成记录——重跑 harvest_check.py")
+    cur = sha256_of("verdict_summary.json")
+    if h.get("verdict_summary_sha256") != cur:
+        fail("harvest.json 记录的 verdict_summary_sha256 与当前 verdict_summary.json 不符"
+             "——判定改过之后收成没重算,重跑 harvest_check.py")
+    unexplained = [u.get("slice") for u in (h.get("unexplained") or [])
+                   if isinstance(u, dict) and u.get("slice")]
+    if unexplained:
+        if UNEXPLAINED_SECTION not in text:
+            fail(f"收成里有 {len(unexplained)} 个未解释的 real 切片,结论却无"
+                 f"「{UNEXPLAINED_SECTION}」节——没解释掉的现象必须逐条写进结论,"
+                 "不许只报解释了的")
+        usec = text.split(UNEXPLAINED_SECTION, 1)[1].split("\n## ", 1)[0]
+        absent = [u for u in unexplained if u not in usec]
+        if absent:
+            fail(f"「{UNEXPLAINED_SECTION}」节漏列:{absent}——切片名照 harvest.json 的 "
+                 "unexplained 原样抄(含 channel:/month: 前缀),不许只写后缀或"
+                 "合并成一句概括")
+    if h.get("n_confirmed") == 0 and NO_ATTRIBUTION_DECL not in sec:
+        fail(f"本轮 confirmed=0,「{SECTION}」节却没写「{NO_ATTRIBUTION_DECL}」——"
+             "一条机制都没证实时,结论必须先说明这件事,不得把 undecided 的假设"
+             "写成读起来像发现的说法")
 
 
 def check_improve(text):
@@ -205,6 +270,9 @@ def main():
     # produces_ablation_receipts 的 playbook 生效，6 个非 pilot playbook 零破坏。
     if fm.get("produces_ablation_receipts"):
         check_traceability()
+        # 规则 8:有 Stage 3 汇总才谈得上收成——降级路径(无 verdict_summary)不受本规则约束。
+        if os.path.exists("verdict_summary.json"):
+            check_harvest(text, sec)
         check_evidence_list(text)
 
     # 规则 7：改进环（只对声明 produces_experiment_log: true 的 playbook 生效——model-improve）

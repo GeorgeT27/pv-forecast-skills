@@ -28,9 +28,10 @@ def _curve(y: np.ndarray):
     return z
 
 
-def compute(df: pd.DataFrame, top_n: int = 50, seed: int = 0) -> dict:
-    rr = cc.row_rmse(df)
-    out = {"recipe": RECIPE_ID, "top_n": top_n, "models": {},
+def compute(df: pd.DataFrame, top_n: int = 50, seed: int = 0,
+            metric: str = "rmse") -> dict:
+    rr = cc.row_metric(df, metric)
+    out = {"recipe": RECIPE_ID, "top_n": top_n, "metric": metric, "models": {},
            "note": "每窗 y_true z 归一化后 k-means;k∈2..4 由轮廓系数选;"
                    "σ≈0 平坦窗跳过(skipped_flat);簇命名交判读层。"}
     truth = df[df["model"] == df["model"].iloc[0]]
@@ -99,8 +100,11 @@ def main(argv=None):
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--top-n", type=int, default=50)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--metric", default="rmse", choices=("rmse", "mse"),
+                    help="逐行口径；分析主口径是逐行 MSE 时传 mse")
     a = ap.parse_args(argv)
-    stats = compute(cc.load_predictions(a.pred), top_n=a.top_n, seed=a.seed)
+    stats = compute(cc.load_predictions(a.pred), top_n=a.top_n, seed=a.seed,
+                    metric=a.metric)
     cc.save_outputs(render(stats), a.out_dir, RECIPE_ID, stats)
 
 

@@ -51,6 +51,7 @@ def test_marginals_and_topk():
 def test_main_writes_json_and_png(tmp_path):
     p = tmp_path / "pred.csv"
     _df().drop(columns=["err"]).to_csv(p, index=False)
-    ceb.main(["--pred", str(p), "--out-dir", str(tmp_path)])
+    ceb.main(["--pred", str(p), "--out-dir", str(tmp_path),
+              "--freq", "15min"])  # 显式给步长：不给会按 F6 的回落告警
     assert (tmp_path / "error-breakdown.json").exists()
     assert (tmp_path / "error-breakdown.png").exists()

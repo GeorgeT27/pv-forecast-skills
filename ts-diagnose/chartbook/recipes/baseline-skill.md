@@ -31,8 +31,10 @@ bridge_hooks: >
 ```bash
 python3 chartbook/scripts/chart_baseline_skill.py \
   --pred predictions.parquet --out-dir <workdir>/charts \
-  [--period-steps 96] [--freq 15min]
+  [--period-steps 96] [--freq <步长>]
 ```
+`--freq`：horizon 步长（目标时刻 = window_ts + step×freq）。**不给就从长表同目录的 `setup_manifest.json` 读**（data-setup 实测值）；两者都没有才回落 15min 并告警——步长与数据不符时，按物理时刻聚合的结果会整体错位且不报错。
+
 period 未给时用 detect_period_steps 对真值序列自动检测；检测不到 →
 seasonal 基线缺省（JSON 记 null），只算 persistence 与 climatology。
 

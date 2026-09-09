@@ -32,7 +32,8 @@ state/config 更新。重活按名字派 `agents/` 卡片；本文件是索引 +
 2. 按 `upstream[]` 保证 required 产物 built/linked：缺 → 先派对应 producer 卡（先问齐它自己的题）；
    optional 缺 → 三分支必须问用户，卡片不替用户拍板。
 3. 把答案、上游目录、`<ENGINE>`、`<workdir>` 填进卡片「输入」节，按名字派发（`subagent_type` = 卡片名）。
-   卡片区间含声明 `charts:` 的阶段 → 主 agent 先在工作目录跑 orient 过图表选择门（四步清单），
+   卡片区间含声明 `charts:` 的阶段 → 主 agent 先在工作目录跑 orient 过图表选择门（照 orient
+   当场打印的清单办；`chart_gate: plan-first` 的剧本要先落 `chart_plan.json` 再拿到图池），
    把选定图集写进「输入」节再派卡。
    名字不可用 → 回退：卡片全文作 prompt 派 `general-purpose`，PROGRESS.md 记「卡片未注册，走回退」。
 4. 收 final message（契约 JSON）：`NEED_INFO` → 问用户、写 config、重派同一张卡；`BLOCKED` →

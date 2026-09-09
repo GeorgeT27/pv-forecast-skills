@@ -1,4 +1,4 @@
-"""model-error-correlation：模型间逐样本 RMSE 相关——高相关=同质化
+"""model-error-correlation：模型间逐样本误差相关（口径由 --metric 定，默认 RMSE）——高相关=同质化
 （组合增益有限），低相关=互补（动态选模/加权有空间）。"""
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ import chart_common as cc
 RECIPE_ID = "model-error-correlation"
 
 
-def _pivot(df: pd.DataFrame) -> pd.DataFrame:
-    rr = cc.row_rmse(df)
+def _pivot(df: pd.DataFrame, metric: str = "rmse") -> pd.DataFrame:
+    rr = cc.row_metric(df, metric)
     piv = rr.pivot_table(index=["unit_id", "window_ts"], columns="model",
                          values="rmse").dropna()
     if piv.shape[1] < 2:
@@ -22,14 +22,15 @@ def _pivot(df: pd.DataFrame) -> pd.DataFrame:
     return piv
 
 
-def compute(df: pd.DataFrame, by_month: bool = False) -> dict:
-    piv = _pivot(df)
+def compute(df: pd.DataFrame, by_month: bool = False,
+            metric: str = "rmse") -> dict:
+    piv = _pivot(df, metric)
     corr = piv.corr()
     pairs = {(a, b): float(corr.loc[a, b])
              for a, b in combinations(sorted(corr.columns), 2)}
     comp = min(pairs, key=pairs.get)
     red = max(pairs, key=pairs.get)
-    out = {"recipe": RECIPE_ID, "n_samples": int(len(piv)),
+    out = {"recipe": RECIPE_ID, "metric": metric, "n_samples": int(len(piv)),
            "corr": {"all": {a: {b: round(float(corr.loc[a, b]), 4)
                                 for b in corr.columns}
                             for a in corr.columns}},
@@ -66,7 +67,8 @@ def render(stats: dict):
         for j in range(len(names)):
             ax.text(j, i, f"{mat[i, j]:.2f}", ha="center", va="center",
                     fontsize=8)
-    ax.set_title("model-error-correlation: per-sample RMSE correlation")
+    ax.set_title("model-error-correlation: per-sample "
+                 f"{cc.metric_label(stats.get('metric', 'rmse'))} correlation")
     fig.colorbar(im, ax=ax, shrink=0.8)
     fig.tight_layout()
     return fig
@@ -77,8 +79,11 @@ def main(argv=None):
     ap.add_argument("--pred", required=True)
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--by-month", action="store_true")
+    ap.add_argument("--metric", default="rmse", choices=("rmse", "mse"),
+                    help="逐行口径；分析主口径是逐行 MSE 时传 mse")
     a = ap.parse_args(argv)
-    stats = compute(cc.load_predictions(a.pred), by_month=a.by_month)
+    stats = compute(cc.load_predictions(a.pred), by_month=a.by_month,
+                    metric=a.metric)
     cc.save_outputs(render(stats), a.out_dir, RECIPE_ID, stats)
 
 

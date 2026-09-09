@@ -3,11 +3,14 @@
 产物放两处：
 
 - **档案本体**：全部写到模型仓库的 `<model-repo>/.modelmap/` 目录下。
-- **pointer**：由运行中的消费方 playbook 按需生成到其工作目录的 `references/model-ref.pointer`——
-  哪个 playbook 内联执行 model-audit，pointer 就写到该 playbook 自己的 `references/`
-  下。例如 result-eval playbook 消费时，完整路径是
-  `ts-diagnose/playbooks/result-eval/references/model-ref.pointer`（各 playbook 的
-  subagent-briefs.md 写作「读运行时 pointer：`references/model-ref.pointer`」）。
+- **pointer**：由运行中的消费方 playbook 生成到**本次诊断工作目录**的
+  `references/model-ref.pointer`，即 `<workdir>/references/model-ref.pointer`
+  （`<workdir>` = 该 playbook 的 `diagnose_config.json` 所在目录）。
+  **绝不写进引擎包目录**（`ts-diagnose/playbooks/*/references/`）——那是随技能分发的只读
+  文件，运行时往里写会把某一次诊断的路径污染给之后所有项目。各 playbook 的
+  subagent-briefs.md 写作「读运行时 pointer：`references/model-ref.pointer`」，
+  路径相对工作目录解析。引擎按 `MODELMAP_RECEIPT.json` 的 `modelmap_dir` 消费，pointer
+  是给人和下游卡片看的索引。
 
 ## 文件清单
 | 文件 | 读者 | 内容 |
@@ -30,7 +33,10 @@
 pointer 格式；结构模板见 `models-template.md`。
 
 - **`ablation_switches`**（每个模型一份，紧跟该模型的桥接假设小节）：
-  `[{component, switch, kind}]`。`kind ∈ {config-flag, code-stub, not-intervenable}`：
+  `[{component, switch, kind, values}]`。`values` = 该开关值得一试的取值数组（`config-flag`
+  与 `code-stub` 必填，布尔开关写 `[true]`，`not-intervenable` 可省）——
+  下游 model-improve 的素版候选按 values 逐值排队，缺了它取值就只能靠人拍。
+  `kind ∈ {config-flag, code-stub, not-intervenable}`：
   现成配置项（如 `--n_heads`）标 `config-flag`；需新写代码才能触发的置零/替换/初始化
   覆盖（如 `--itrans_no_attn`）标 `code-stub`；确无法干预的标 `not-intervenable` 并写
   清原因。范围须覆盖 `__init__`/初始化/默认参数，不能只看 forward——初始化差异常年

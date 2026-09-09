@@ -21,6 +21,8 @@ import matplotlib.pyplot as plt  # noqa: E402
 REQUIRED_COLS = ("window_ts", "unit_id", "model", "horizon_step",
                  "y_true", "y_pred")
 
+DEFAULT_FREQ = "15min"
+
 FEATURE_COLS = ("window_ts", "unit_id", "feature", "horizon_step", "f_pred")
 
 
@@ -41,6 +43,32 @@ def setup_font() -> list:
         warnings.warn("未找到 CJK 字体,中文将渲染为方框;建议安装 Noto Sans CJK SC")
     plt.rcParams["axes.unicode_minus"] = False
     return hits
+
+
+def resolve_freq(pred_path, cli_freq=None, default=DEFAULT_FREQ):
+    """horizon 步长(目标时刻 = window_ts + step×freq)的来源优先级：
+    ①CLI 显式 --freq；②长表同目录 setup_manifest.json / alignment_report.json 的
+    freq(data-setup 实测的真实步长)；③default 并告警。
+    ②这一层是硬要求：默认值 15min 与真实数据不符时，按物理时刻聚合的图(日内画像、
+    误差构成)会整体错位而不报错。"""
+    if cli_freq:
+        return str(cli_freq)
+    d = Path(pred_path).resolve().parent
+    for name in ("setup_manifest.json", "alignment_report.json"):
+        fp = d / name
+        if not fp.exists():
+            continue
+        try:
+            doc = json.loads(fp.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        freq = doc.get("freq")
+        if freq:
+            return str(freq)
+    import warnings
+    warnings.warn(f"未给 --freq，且 {d} 下没有 setup_manifest.json 的 freq，"
+                  f"按 {default} 算目标时刻；步长不符会让按物理时刻聚合的图整体错位")
+    return default
 
 
 def load_predictions(path):
@@ -73,11 +101,39 @@ def load_features(path):
     return df
 
 
+def metric_fn(metric: str = "rmse"):
+    """→ 把一组误差聚合成标量的函数；metric ∈ {rmse, mse}。
+    按 row/model 之外的维度池化的图（如按 horizon_step）用它，别各写各的平方根。"""
+    if metric not in ("rmse", "mse"):
+        raise ValueError(f"metric 只支持 rmse / mse，收到 {metric!r}")
+    if metric == "mse":
+        return lambda e: float(np.mean(np.square(e)))
+    return lambda e: float(np.sqrt(np.mean(np.square(e))))
+
+
+def metric_label(metric: str = "rmse") -> str:
+    """图上/JSON note 里该写的口径名——别把 metric 名写死在文案里。"""
+    return {"rmse": "RMSE", "mse": "MSE"}.get(metric, str(metric).upper())
+
+
+def row_metric(df, metric: str = "rmse"):
+    """每 (model, unit_id, window_ts) 一行的全 horizon 误差聚合；metric ∈ {rmse, mse}。
+    列名固定叫 rmse（判读库与各图按此列名取数）；metric="mse" 时该列装的是逐行 MSE，
+    口径以各图 JSON 的 metric 字段为准。逐行 RMSE 与逐行 MSE 的模型排名可以相反——
+    分析主口径不是 rmse 时，证据线各图必须跟着切 metric，否则升级规则的输入与主口径脱钩。"""
+    fn = metric_fn(metric)
+    g = df.groupby(["model", "unit_id", "window_ts"])["err"]
+    return g.apply(fn).rename("rmse").reset_index()
+
+
+def pooled_metric(df, metric: str = "rmse"):
+    """逐模型的点池口径（全部误差点合一起算），与 row_metric 同口径开关。"""
+    return df.groupby("model")["err"].apply(metric_fn(metric))
+
+
 def row_rmse(df):
     """每 (model, unit_id, window_ts) 一行的全 horizon RMSE（整行全部 horizon 点的 RMSE——行级口径）。"""
-    g = df.groupby(["model", "unit_id", "window_ts"])["err"]
-    return (g.apply(lambda e: float(np.sqrt(np.mean(np.square(e)))))
-            .rename("rmse").reset_index())
+    return row_metric(df, "rmse")
 
 
 def curve_stats(y, index=None, round_to=3):

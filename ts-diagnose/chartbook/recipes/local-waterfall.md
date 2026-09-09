@@ -32,8 +32,10 @@ python3 chartbook/scripts/chart_local_waterfall.py \
   --pred predictions.parquet --features features.parquet \
   --adapter analysis_scripts/predict_adapter.py \
   --out-dir <workdir>/charts [--k 20] [--model auto] \
-  [--background-k 5] [--seed 0] [--max-calls 5000]
+  [--background-k 5] [--seed 0] [--max-calls 5000] [--metric rmse|mse]
 ```
+`--metric`：逐行口径，`rmse`（默认）或 `mse`。**分析主口径不是逐行 RMSE 时必须跟着切**——逐行 RMSE 与逐行 MSE 的模型排名可以相反，不切就等于用另一个口径的图去支撑本次结论。口径写进 JSON 的 `metric` 字段。
+
 适配器需 perturb_features=True；D≤8 全枚举精确。
 
 ## JSON schema

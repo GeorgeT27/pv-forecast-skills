@@ -43,10 +43,35 @@ receipt 是结论阶段唯一完成判据）。
   golden 覆盖的阶段先过 `gen_gate.py`，PASS 才碰真实数据；FAIL 改脚本不改期望。
 - **chartbook 豁免**：chartbook 已覆盖的图**必须**直接调 `chartbook/scripts/chart_*.py`，禁止现场重写；
   唯一现场写的是薄适配器 `analysis_scripts/adapter.py`（样例 `chartbook/golden/example_adapter/`）。
+  豁免只管**已覆盖**的图。取证计划里的疑问 chartbook 给不了时，现场写进 `analysis_scripts/`，
+  按下条选验证档位，`chart_plan.json` 该条记 `source: ad-hoc`，INDEX.md 标「chartbook 未覆盖」。
+- **现场写的图按三档验证**（`chart_plan.json` 的 `verification`，档位决定数字能不能进结论）：
+  `reconcile-2` = 纯聚合类（分组/均值/阈值），过对账两关，可进结论；
+  `chartbook-fn` = 统计检验调 `chartbook/scripts/` 里已验证的函数，可进结论；
+  `exploratory` = 自写的检验未经验证，**只作线索**——数字不许进 FINDINGS 的「假设」条目与 CONCLUSION。
+  自写检验想升档，先给它补一份 golden（固定合成输入 + 已知期望）再走 `gen_gate.py`。
+  **现场写图别从零写**：`cp <ENGINE>/chartbook/adhoc-template.py analysis_scripts/<名字>.py`
+  改四处（RECIPE_ID / compute / verify / render），跑时带 `--engine <ENGINE> --verify`。
+  样板已接好 chart_common（中文字体、`load_predictions`、`metric_fn`/`metric_label` 口径开关、
+  `save_outputs` 双落盘），并把 `verification` 写进图 JSON 顶层——`build_index.py` 按它把现场
+  图归进「现场脚本（chartbook 未覆盖）」组并标出档位，没有这个字段的落到「未识别产物」。
+  对账两关的手算**不许调 compute 用过的口径函数**：同一份代码复核同一份代码等于没查。
 - **对账两关适用一切整形脚本**（行数守恒 + 抽 3 个窗口逐值核对）：菜谱没预见的临时整形/换算脚本
   同样要过；菜谱没声明验证步 ≠ 免验证。转换口径记 PROGRESS.md。
-- **图表选择门**：声明 `charts:` 的阶段画图前必停一次（orient 打印四步清单）。默认全勾可画图；
-  用户删图不静默（PROGRESS 一行 + CONCLUSION 声明缺口）；画完 `build_index.py` 出 INDEX.md 再停顿。
+- **图表选择门**：声明 `charts:` 的阶段画图前必停一次。两种模式，看 frontmatter 的 `chart_gate`：
+  - `sweep`（缺省，体检类如 fact-scan）：默认全勾可画图；用户删图不静默（PROGRESS 一行 +
+    CONCLUSION 声明缺口）。
+  - `plan-first`（归因类）：**分两回合**。第一回合只做「先想要什么证据」——用人话问用户这一步
+    想弄清什么（别把 recipe 名字当选项列给用户），上一阶段已有假设时取证目标就是「验哪条假设」
+    不必问；每条疑问写清需要什么形态的证据（看什么量、按什么切、跟谁比），落 `chart_plan.json`
+    的 `entries: [{question, evidence, recipe, source}]`，跑 `scripts/chart_plan.py` 校验。
+    orient 在计划落盘前**不打印图池**，落盘后第二回合才发图池去匹配：有现成的调 chartbook，
+    没有的现场写。计划外的图不画；确要加先回写 `chart_plan.json` 补一条疑问。没有疑问支撑的图，
+    不画不用声明缺口。开画前跑 `chart_plan.py --strict`（查每条都落到了具体的图）。
+    `plan-first` 剧本声明 `charts:` 的阶段，`done_when.artifacts` 必须含 `chart_plan.json`
+    （frontmatter 校验硬拦）。
+  两种模式都一样：画完跑 `chartbook/scripts/build_index.py --charts-dir charts/ --out INDEX.md`
+  出工作目录根部的 INDEX.md 再停顿；每张图在 INDEX 登记服务哪条疑问。
   选择门 = 画前定范围；停顿点 = 画后定深挖；不可合并。
 - **事实阶段 ⏸**：`pause_after` 的事实阶段产出「现象清单」（观察 + 数字 + 来源，**禁机制语言**），
   停下汇报，等用户点名再进结论阶段。用户模糊授权（「挑最强的」）时选**效应量最大且样本过功效阈值**
@@ -68,10 +93,17 @@ receipt 是结论阶段唯一完成判据）。
 
 生成器 playbook（吐 `hypothesis_ledger.json`，如 model-comparison）不下结论；结论由跨 playbook 循环
 在出口产一次：① 生成器产账本停顿移交 → ② `architecture-attribution` 取判别力最高的假设做单变量
-干预（每条干预派 `architecture-attribution-worker`，主 agent 只收 receipt）→ ③ refuted 且预算未耗 →
-回生成器提修正假设，标 `provenance: post-hoc`（不许同一批数据既生成又确认）→ ④ confirmed /
-预算耗尽 / 无新判别假设 → 收敛 → ⑤ 结论只在出口过 `conclusion_gate` 产一次（架构因果表述附
-「## 消融证据」receipt）。**预算阶梯**：单轮干预 ~10 次训练，总轮数 ≤3。
+干预（每条干预派 `architecture-attribution-worker`，主 agent 只收 receipt）→ ③ **收口**：跑
+`harvest_check.py` 算这一轮解释了多少 real 切片，产 `harvest.json`（`full`/`partial`/`none` 三档 +
+未解释清单），停顿汇报并由用户答 `harvest-decision` 三选一：换角度再取一轮 / 以未决收口 /
+换方向停手——agent 不许自选，也不许自动开下一轮 → ③′ 用户选再来一轮 → 跑 `new_round.py`
+（取证/判定产物移进 `rounds/round_<N>/`、`state.round` +1、账本条目补 `round` 字段；账本与
+`receipts/` 不归档——前者跨轮累积、后者防摘樱桃）→ 归档后 orient 的 Stage 0/1 入口自动重开
+→ 回生成器换取证角度提新假设，带 `"round": <N>` 并标 `provenance: post-hoc`
+（不许同一批数据既生成又确认；`hypothesis_ledger.py` 按轮盖章，本轮无新假设则 Stage 1 判不完成）→ ④ 用户选收口 / 预算耗尽 / 无新判别假设
+→ 收敛 → ⑤ 结论只在出口过 `conclusion_gate` 产一次（架构因果表述附「## 消融证据」receipt；
+未解释切片逐条进「## 已知缺口」节，`n_confirmed==0` 必须写「本轮未能归因到任何组件」——
+规则 8 机检）。**预算阶梯**：单轮干预 ~10 次训练，总轮数 ≤3。
 无 `trainable_framework`（checkpoint/experiment_config absent-confirmed）→ 跳过验证主脊，结论标未经干预验证。
 
 **改进环**（`model-improve`）：账本 `kind: improvement` 条目 → 候选按轮批跑（每条派 `model-improve-worker`，

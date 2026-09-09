@@ -13,7 +13,12 @@
 闸结果落工作目录 gate_reports/<script>.json（含脚本 sha256，供 provenance 汇总）。
 
 manifest.json 的 stage 条目：
-  {"inputs": [...拷入沙箱的 golden 文件], "args": [...脚本 CLI], "expect": [check...]}
+  {"inputs": [...拷入沙箱的 golden 文件], "args": [...脚本 CLI], "expect": [check...],
+   "covers": [...本 stage golden 钉的脚本名]}
+`covers` 缺省 = 本 stage 的 golden 管该阶段的任何运行时脚本。声明了 covers，就只有列出的
+脚本（外加本 stage 自己的 reference 实现）归它管；别的脚本按该 stage 过闸会得到
+「无 golden 覆盖」（退出码 3，不写闸报告），此时按 playbook 正文的对账验证代替，
+不是失败也不许当过闸。
 check 断言 DSL（path = 产物 JSON 内的点分路径）：
   {"file","path","op","value"[,"tol"][,"field"]}
   op ∈ eq / ge / le / between / contains / first_is / argmax / argmin / exists
@@ -171,6 +176,26 @@ def golden_run(script_path, playbook, stage):
         return all(r["ok"] for r in results), results, None
 
 
+def coverage(playbook, stage):
+    """→ (allowed_basenames | None, err)。None = 本 stage 未声明 covers（管任何脚本）。"""
+    gdir = os.path.join(ec.playbook_dir(playbook), "golden")
+    manifest = ec.read_json(os.path.join(gdir, "manifest.json"))
+    if not manifest:
+        return None, f"playbook '{playbook}' 缺 golden/manifest.json"
+    ent = (manifest.get("stages") or {}).get(str(stage))
+    if not ent:
+        return None, f"manifest 未声明 stage {stage}"
+    covers = ent.get("covers")
+    if not covers:
+        return None, None
+    if isinstance(covers, str):
+        covers = [covers]
+    allowed = {os.path.basename(c) for c in covers}
+    if ent.get("reference"):  # CI 跑的是 reference 实现，永远算被覆盖
+        allowed.add(os.path.basename(ent["reference"]))
+    return allowed, None
+
+
 def sha256_of(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -187,6 +212,21 @@ def main():
     args = ap.parse_args()
 
     st_ok, issues = static_check(args.script)
+
+    allowed, _cov_err = coverage(args.playbook, args.stage)
+    if allowed is not None and os.path.basename(args.script) not in allowed:
+        # 本 stage 的 golden 钉的是别的脚本 → 拿它闸本脚本必然 FAIL，那是闸的错配，
+        # 不是脚本的问题。如实报「无覆盖」，不写闸报告（gate_reports/ 只装真过闸的）。
+        print(f"[gen_gate] {args.script}  playbook={args.playbook} stage={args.stage}")
+        print(f"  静态检查：{'PASS' if st_ok else 'FAIL ' + '; '.join(issues)}")
+        if not st_ok:
+            print("  ⛔ 静态检查未过：先改脚本。")
+            sys.exit(1)
+        print(f"  金标准：不适用——本 stage 的 golden 钉的是 {sorted(allowed)}，本脚本无 golden 覆盖。")
+        print("  → 改按 playbook 正文声明的对账验证（行数守恒 / 键唯一 / 抽样与源数据核对）"
+              "把数字验住，结果记 PROGRESS.md；不许当作已过金标准闸。")
+        sys.exit(3)
+
     g_ok, checks, err = (False, [], "静态检查未过，未运行金标准")
     if st_ok:
         g_ok, checks, err = golden_run(args.script, args.playbook, args.stage)

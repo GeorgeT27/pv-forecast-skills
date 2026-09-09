@@ -29,8 +29,11 @@ bridge_hooks: >
 ## CLI 与参数
 ```bash
 python3 chartbook/scripts/chart_cross_dim_stability.py \
-  --pred predictions.parquet --out-dir <workdir>/charts --focal-model <模型名>
+  --pred predictions.parquet --out-dir <workdir>/charts --focal-model <模型名> \
+  [--metric rmse|mse]
 ```
+`--metric`：逐行口径，`rmse`（默认）或 `mse`。**分析主口径不是逐行 RMSE 时必须跟着切**——逐行 RMSE 与逐行 MSE 的模型排名可以相反，不切就等于用另一个口径的图去支撑本次结论。口径写进 JSON 的 `metric` 字段。
+
 模型数 <2 抛 ValueError；对 focal 之外每个他模型各出一组配对结果。
 
 ## JSON schema

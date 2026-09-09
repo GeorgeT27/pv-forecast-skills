@@ -48,6 +48,8 @@ stages:
     prereqs:
       - desc: 变点已定位
         check: "stage:1"
+      - desc: 用户已点名待筛查现象
+        check: "question:drift-focus"
   - id: 4
     name: 机制归因（变体）
     done_when:
@@ -91,6 +93,12 @@ questions:
     why: "判据不同结论可分岔；默认即菜谱方法，避免两套判据并存"
     options: ["两段最大分离 + 置换基线 + 渐变双点（默认）", "固定基线窗对比（需给窗长）", "自定义"]
     default: "两段最大分离 + 置换基线 + 渐变双点"
+  - id: drift-focus
+    stage: 3
+    ask: "Stage 2 的结构分解现象清单已汇报。Stage 3 诱因筛查深挖哪几条现象？要不要补画某张图？能否提供运维事件记录或特征数据？"
+    why: "现象清单是全量的，诱因筛查是选择性的——挑哪条深挖决定了后面所有工作的方向，这个选择权在用户不在 agent。用户只给模糊授权时，按 engine-core 判据选（效应量最大且过功效阈值）并记 PROGRESS.md"
+    options: ["点名要深挖的现象（可多条）", "补画图/补材料后再定", "按 engine-core 判据由 agent 代选（模糊授权）"]
+    default: null
 evidence_lines:
   - id: error-changepoint
     stage: 1
@@ -99,6 +107,7 @@ evidence_lines:
     stage: 3
     output: cause_screen.json
 upgrade_rule: "被点名特征的 onset 与误差侧 onset 重合（±7 窗）且方向一致，且误差退化方向在奇偶交错正交重切（changepoint interleave）下一致，才把诱因结论从「现象」升「假设」"
+
 ---
 
 # deployment-drift：部署后退化/漂移诊断
@@ -151,9 +160,15 @@ done：changepoint_summary.json 落盘。
 **chart_sweep 产物 built/linked 时**：与它重叠的图直接复用其 charts/*.json 做判读，不重画。
 
 参数补充：D 组图加 `--features <setup>/features.csv`；train-test-drift 加 `--train-y <setup>/train_y.csv`。
+**口径对齐（硬规则）**：本次分析的主口径不是逐行 RMSE 时（例如逐行 MSE），所有按逐行指标聚合的图都要加 `--metric mse`，口径写进各图 JSON 的 `metric` 字段。逐行 RMSE 与逐行 MSE 的模型排名可以相反——图不跟着切，判读就是在用另一个口径回答本次问题，而且不会报错。
+
 判读：读各图 JSON 的描述符（见各 recipe 的判读节）。三个重点：rolling-stability 的时间形态是否与 Stage 1 的双点吻合；intraday-profile 的误差时段集中度（退化集中在哪些物理时刻）；构成对照——同类时段的前后段对比，结果喂给反驳门③（季节构成门）。
 产出 FINDINGS.md 现象清单——只写「现象」；因缺材料跳过的图逐条注明「因缺 <材料> 未画」。
-done：charts/*.json 至少一个 + FINDINGS.md 含「现象」→ **pause_after 停顿**。
+画完建索引（阶段闸判的是工作目录**根部**的 `INDEX.md`，不是 `charts/INDEX.md`）：
+
+    python3 <ENGINE>/chartbook/scripts/build_index.py --charts-dir charts/ --out INDEX.md
+
+done：charts/*.json 至少一个 + INDEX.md + FINDINGS.md 含「现象」→ **pause_after 停顿**。
 
 ### Stage 3 诱因筛查（变体，material:features 解锁）
 菜谱：写 `analysis_scripts/cause_screen.py`，CLI 契约固定：
@@ -182,7 +197,7 @@ done：FINDINGS.md 出现「假设」。
 ## 4. 停顿点与汇报
 
 Stage 2 完成即停，向用户汇报四件事：①退化判定（gap_z、置换 p、稳健性结果）；②时间双点（onset/split、形态、与训练边界的关系）；③已画/跳过图清单；④Top-3 现象，引用图 JSON 里的数字。
-然后请用户点名：深挖哪条、补哪张图、能否提供运维事件记录或特征数据。用户只给模糊授权时，按 engine-core 判据选（效应量最大且过功效阈值），并记入 PROGRESS.md。
+然后请用户答 `drift-focus`（AskUserQuestion）：深挖哪条、补哪张图、能否提供运维事件记录或特征数据——没拿到答复进不了 Stage 3，orient 会把它标成阻塞。用户只给模糊授权时，按 engine-core 判据选（效应量最大且过功效阈值），并记入 PROGRESS.md。
 
 ## 5. subagent 拆分建议
 

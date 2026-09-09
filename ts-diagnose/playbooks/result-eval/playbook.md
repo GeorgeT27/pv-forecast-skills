@@ -63,6 +63,8 @@ stages:
     prereqs:
       - desc: 用户已点名待深挖现象
         check: "stage:3"
+      - desc: 用户已点名待深挖现象
+        check: "question:eval-focus"
     subagent_ok: false
 questions:
   - id: metric-caliber
@@ -71,6 +73,13 @@ questions:
     why: "口径不同结论可反转"
     options: ["rmse_192（默认）", "指定子段", "自定义公式"]
     default: "rmse_192"
+
+  - id: eval-focus
+    stage: 4
+    ask: "Stage 3 的现象清单已汇报（按图/表分组）。哪几条进 Stage 4 深挖？"
+    why: "Stage 3 是本 playbook 唯一强制停顿点，正文明写「请用户点名哪几条进 Stage 4 深挖」——此前前置只机检 Stage 3 产物在不在，描述却写「用户已点名」，说的和查的不是一回事"
+    options: ["点名要深挖的现象（可多条）", "全部都深挖", "不深挖，直接按现有事实收口"]
+    default: null
 ---
 
 # result-eval：预测结果评估与归因
@@ -135,8 +144,14 @@ python3 <ENGINE>/chartbook/scripts/chart_<蛇形id>.py \
 ```
 
 复用规则：**chart_sweep 产物状态为 built/linked 时**，与本阶段声明重叠的图直接拿它的 charts/*.json 来判读，不重画；只补画本组缺的图。
+**口径对齐（硬规则）**：本次分析的主口径不是逐行 RMSE 时（例如逐行 MSE），所有按逐行指标聚合的图都要加 `--metric mse`，口径写进各图 JSON 的 `metric` 字段。逐行 RMSE 与逐行 MSE 的模型排名可以相反——图不跟着切，判读就是在用另一个口径回答本次问题，而且不会报错。
 
-画完跑 `<ENGINE>/scripts/build_index.py` 生成 `INDEX.md`（阶段闸的产物判据之一）。
+
+画完建索引（阶段闸判的是工作目录**根部**的 `INDEX.md`，不是 `charts/INDEX.md`）：
+
+    python3 <ENGINE>/chartbook/scripts/build_index.py --charts-dir charts/ --out INDEX.md
+
+生成的 `INDEX.md` 是阶段闸的产物判据之一。
 
 每张图落盘两个文件：PNG 与同名 `.stats.json`。
 **PNG 只给人看；分析一律读 stats.json，不 Read 图。**
@@ -186,7 +201,7 @@ done：`CONCLUSION.md` 落盘。`subagent_ok: false`：深归因涉及结论三�
 
 ## 4. 停顿点与汇报
 
-Stage 3 完成是唯一强制停顿点：向用户汇报现象清单（按图/表分组），请用户点名哪几条进 Stage 4 深挖。Stage 4 收尾时，把 `CONCLUSION.md` 的内容（含关键数字）直接展示给用户，不能只报一个文件路径。
+Stage 3 完成是唯一强制停顿点：向用户汇报现象清单（按图/表分组），请用户答 `eval-focus`（AskUserQuestion）点名哪几条进 Stage 4 深挖——没拿到答复进不了 Stage 4，orient 会把它标成阻塞。Stage 4 收尾时，把 `CONCLUSION.md` 的内容（含关键数字）直接展示给用户，不能只报一个文件路径。
 
 ## 5. subagent 拆分建议
 

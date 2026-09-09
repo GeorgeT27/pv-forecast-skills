@@ -27,8 +27,10 @@ worst-points 给「点」贴标签，本图对「整窗曲线」做聚类。它�
 ```bash
 python3 chartbook/scripts/chart_bad_window_clustering.py \
   --pred predictions.parquet --out-dir <workdir>/charts \
-  [--top-n 50] [--seed 0]
+  [--top-n 50] [--seed 0] [--metric rmse|mse]
 ```
+`--metric`：逐行口径，`rmse`（默认）或 `mse`。**分析主口径不是逐行 RMSE 时必须跟着切**——逐行 RMSE 与逐行 MSE 的模型排名可以相反，不切就等于用另一个口径的图去支撑本次结论。口径写进 JSON 的 `metric` 字段。
+
 k 在 2..4 由轮廓系数选；seed 显式落 JSON（_recipe-spec §5.3 种子例外）。
 
 ## JSON schema

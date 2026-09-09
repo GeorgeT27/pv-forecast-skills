@@ -21,6 +21,8 @@ model: sonnet
 - 训练入口、experiment_config 路径、checkpoint 起点、种子集、口径（缺省 rmse_192）
 - intervention 任务附：hypothesis_id / component / switch / kind / seeds / pred_direction /
   kill_criterion / confirm_criterion / noise_floor_3sigma / baseline_mean（同口径、同种子批）
+- 第二口径：保守复核口径名与其噪声底 3σ（判据②要两口径同判；主 agent 不给就用主口径的
+  同族保守口径自算，并在输出里写明用的是哪个）
 
 ## 步骤（去菜谱）
 
@@ -29,13 +31,16 @@ model: sonnet
 `playbooks/architecture-attribution/references/subagent-brief.md` 的 Brief A / Brief B 任务 1–5。
 - noise-floor：每种子一行落 `baseline_seed_metrics.csv`（seed,metric）；算 mean、std(ddof=1)、noise_floor_3sigma = std×3。
 - intervention：delta 逻辑写成 `analysis_scripts/eval_<hypothesis_id>.py`（带自检），记起止时刻，然后
-  `python3 "<ENGINE>/scripts/ablation_verdict.py" --hypothesis-id <id> --switch=<switch> --delta <delta> --noise-floor <nf> --direction <pred_direction> --seeds <N> --script analysis_scripts/eval_<id>.py --t-start <ISO> --t-end <ISO> --selftest "<一句话>" --out receipts/<id>.json`
+  `python3 "<ENGINE>/scripts/ablation_verdict.py" --hypothesis-id <id> --switch=<switch> --delta <delta> --noise-floor <nf> --direction <pred_direction> --seeds <N> --delta2 <第二口径 delta> --noise-floor2 <第二口径噪声底> --caliber2 <第二口径名> --script analysis_scripts/eval_<id>.py --t-start <ISO> --t-end <ISO> --selftest "<一句话>" --out receipts/<id>.json`
   每个种子的产物目录记进 metrics_dirs，种子状态记 run_status（ok|crash|timeout）；某种子非 ok → 回 BLOCKED。
 阶段与 prereq 由主 agent 掌握；本卡不跑 `python3 "<ENGINE>/scripts/orient.py"`（阶段状态单写者是主 agent）。
 
 ## 红线
 
 - 单变量：intervention 只改一个 switch；数据、步数、其余超参与基线完全一致。
+- 先算第二口径再清理：预测数组（pred/true）可以删，但删之前必须把第二口径 delta 算出来
+  写进 receipt；逐种子指标文件一律保留。没有第二口径，判据②就复核不了，假设只能悬在
+  undecided——那是本卡片的失职，不是数据的结论。
 - 不读 checkpoint 权重、逐 iteration loss、训练日志进上下文——脚本内跑、脚本内落盘。
 - 只写 `receipts/<hypothesis_id>.json`、`analysis_scripts/eval_<id>.py`、`baseline_seed_metrics.csv`；
   不碰 hypothesis_ledger.json / intervention_plan.json / PROGRESS.md / FINDINGS.md / diagnose_*.json。
@@ -56,6 +61,7 @@ model: sonnet
   "config_diff": ["--no-cross-attn"],
   "per_seed": [0.812, 0.799, 0.826],
   "mean": 0.812, "std": 0.0135, "noise_floor_3sigma": 0.0405,
+  "caliber_second": "rmse_96", "delta_second_caliber": 0.401, "noise_floor_second": 0.0412,
   "instability_note": "",
   "run_status": ["ok", "ok", "ok"],
   "metrics_dirs": ["runs/H3/seed_7", "runs/H3/seed_1337", "runs/H3/seed_2021"],

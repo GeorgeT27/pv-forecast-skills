@@ -124,3 +124,77 @@ def test_node_syntax(path, tmp_path):
     cjs.write_text("async function __wf(args, agent, parallel, pipeline, phase, log) {\n" + src + "\n}\n", encoding="utf-8")
     r = subprocess.run(["node", "--check", str(cjs)], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
+
+
+# ---------------------------------------------------------------- 真跑一遍（F10）
+HARNESS = r"""
+import { readFileSync } from 'node:fs'
+const src = readFileSync(process.argv[2], 'utf8').replace('export const meta', 'const meta')
+const prompts = []
+const agent = async (p) => { prompts.push(p); return {status:'COMPUTE_DONE', task:'x', run_status:['ok']} }
+const parallel = async (ts) => Promise.all(ts.map(t => t()))
+const phase = () => {}, log = () => {}
+const args = JSON.parse(process.argv[3])
+// Workflow 运行时把脚本体裹进 async 函数（顶层 return 合法）——这里照做
+const body = new Function('agent','parallel','phase','log','args',
+  `return (async () => { ${src} })()`)
+const out = await body(agent, parallel, phase, log, args)
+console.log(JSON.stringify({prompts, out}))
+"""
+
+INTERVENTION = {
+    "hypothesis_id": "H1", "component": "通道混合", "switch": "--tsmixer_no_channel_mix",
+    "kind": "config-flag", "seeds": [7, 1337, 2021], "pred_direction": "decrease",
+    "kill_criterion": "|delta| <= 噪声底一半", "confirm_criterion": "超噪声底且方向对",
+    "noise_floor_3sigma": 0.0195, "baseline_mean": 0.16533,
+    "source": "账本", "predicted_gain": "账本侧字段，不该进 prompt",
+}
+
+
+def _run_workflow(tmp_path, args):
+    harness = tmp_path / "run.mjs"
+    harness.write_text(HARNESS, encoding="utf-8")
+    r = subprocess.run(
+        ["node", str(harness), os.path.join(WF_DIR, "ts-train-batch.js"), json.dumps(args)],
+        capture_output=True, text=True)
+    return r
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="无 node")
+def test_intervention_prompt_carries_every_worker_input_field(tmp_path):
+    """architecture-attribution-worker 的「输入」节要 switch/kind/seeds/pred_direction/
+    两条判据/噪声底/基线——少一个 worker 就跑不了这条干预（全链路联调 F10）。"""
+    r = _run_workflow(tmp_path, {
+        "engine": "/ENG", "workdir": "/WD", "agent_type": "architecture-attribution-worker",
+        "task": "intervention", "context": {"train_entry": "run.py", "caliber_second": "rmse_96"},
+        "candidates": [INTERVENTION]})
+    assert r.returncode == 0, r.stdout + r.stderr
+    prompt = json.loads(r.stdout)["prompts"][0]
+    for field in ("switch", "kind", "seeds", "pred_direction", "kill_criterion",
+                  "confirm_criterion", "noise_floor_3sigma", "baseline_mean"):
+        assert field in prompt, f"intervention prompt 丢了字段 {field!r}"
+    assert "train_entry" in prompt and "caliber_second" in prompt   # 共用上下文透传
+    assert "predicted_gain" not in prompt and "账本侧字段" not in prompt
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="无 node")
+def test_candidate_prompt_stays_four_fields(tmp_path):
+    """model-improve-worker 那侧不变：只给卡片「输入」的四个字段。"""
+    r = _run_workflow(tmp_path, {
+        "engine": "/ENG", "workdir": "/WD", "agent_type": "model-improve-worker",
+        "task": "candidate",
+        "candidates": [{"exp_id": "E001", "hypothesis_id": "F1", "config_diff": {"dropout": 0.3},
+                        "guard_slices": ["horizon:far"], "source": "ledger",
+                        "predicted_gain": "不该进 prompt"}]})
+    assert r.returncode == 0, r.stdout + r.stderr
+    prompt = json.loads(r.stdout)["prompts"][0]
+    assert '"exp_id":"E001"' in prompt.replace(" ", "") and "guard_slices" in prompt
+    assert "predicted_gain" not in prompt and "共用上下文" not in prompt
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="无 node")
+def test_unknown_task_fails_fast(tmp_path):
+    r = _run_workflow(tmp_path, {
+        "engine": "/ENG", "workdir": "/WD", "agent_type": "model-improve-worker",
+        "task": "typo", "candidates": [{"exp_id": "E001"}]})
+    assert r.returncode != 0 and "未知 task" in (r.stdout + r.stderr)

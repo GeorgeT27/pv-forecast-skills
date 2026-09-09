@@ -57,6 +57,8 @@ stages:
     prereqs:
       - desc: 现象清单已有（Stage 3）
         check: "stage:3"
+      - desc: 用户已点名待深挖现象
+        check: "question:importance-focus"
     pause_after: false
     subagent_ok: false
   - id: 5
@@ -117,6 +119,12 @@ questions:
     ask: "高相关变量成组吗？（如多个辐照源）permutation 对共线组要整组置换还是逐列？"
     why: "共线变量逐列置换会互相顶替、重要性被摊薄——整组置换才反映信息源价值"
     default: "自动检测 |ρ|>0.9 的组，组内逐列 + 整组各报一份"
+  - id: importance-focus
+    stage: 4
+    ask: "Stage 3 的现象清单已汇报。结论阶段深挖哪几条？（清单是全量的，判级与结论只覆盖点名的那几条）"
+    why: "现象清单禁机制语言、只报看到什么；哪几条值得升级成解释由用户点名。不点名就全判，等于让 agent 替用户决定什么重要"
+    options: ["点名要深挖的现象（可多条）", "全部都判级", "先补第二条证据线再判"]
+    default: null
 evidence_lines:
   - id: correlation
     stage: 0
@@ -128,6 +136,7 @@ evidence_lines:
     stage: 2
     output: ablation_importance.json
 upgrade_rule: "变量重要性排名要升「假设」：≥2 条证据线（permutation/剔除重算/相关筛查）top-k 排名 Spearman 一致；只有相关筛查一线时上限「现象」且必须带『相关非因果』限定语"
+
 ---
 
 # Playbook：变量重要性/归因
@@ -176,7 +185,7 @@ upgrade_rule: "变量重要性排名要升「假设」：≥2 条证据线（per
 ### Stage 3：事实提取 ⏸
 
 - 只读前面三个阶段的 json 产物，产出现象清单：每条都带数字和来源。共线组与泄漏列是怎么处理的，也如实写进清单。
-- 只写"看到什么"，不写"为什么"。写完停顿，等用户点名要深入哪条。
+- 只写"看到什么"，不写"为什么"。写完停顿，用 AskUserQuestion 问 `importance-focus`：要深入哪条——没拿到答复进不了 Stage 4，orient 会把它标成阻塞。
 
 ### Stage 4：结论（主 agent）
 

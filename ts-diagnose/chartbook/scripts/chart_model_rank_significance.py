@@ -39,14 +39,14 @@ def _dm(d: np.ndarray) -> dict:
             "degenerate": False}
 
 
-def compute(df: pd.DataFrame) -> dict:
+def compute(df: pd.DataFrame, metric: str = "rmse") -> dict:
     models = sorted(df["model"].unique().tolist())
     k = len(models)
     if k < 2:
         raise ValueError("model-rank-significance 需要 ≥2 模型(§5.5)")
     if k > 10:
         raise ValueError("Nemenyi q 表内置至 k=10")
-    rr = cc.row_rmse(df)
+    rr = cc.row_metric(df, metric)
     mat = rr.pivot_table(index=["unit_id", "window_ts"], columns="model",
                          values="rmse").dropna()
     mat = mat.sort_index(level="window_ts")
@@ -60,9 +60,10 @@ def compute(df: pd.DataFrame) -> dict:
     best = avg.idxmin()
     best_group = sorted([m for m in models if avg[m] - avg[best] <= cd])
     out = {"recipe": RECIPE_ID, "n_rows": n, "cd": round(cd, 4),
+           "metric": metric,
            "avg_ranks": {m: round(float(avg[m]), 4) for m in models},
            "dm": dm, "best_group": best_group,
-           "note": "损失=行 RMSE(全模型齐的行);cd=Nemenyi α=0.05;"
+           "note": f"损失=逐行 {metric}(全模型齐的行);cd=Nemenyi α=0.05;"
                    "dm 为成对 HAC 方差 DM 检验,克隆/恒差记 degenerate。"}
     return out
 
@@ -98,8 +99,10 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--pred", required=True)
     ap.add_argument("--out-dir", required=True)
+    ap.add_argument("--metric", default="rmse", choices=("rmse", "mse"),
+                    help="逐行口径；分析主口径是逐行 MSE 时传 mse")
     a = ap.parse_args(argv)
-    stats = compute(cc.load_predictions(a.pred))
+    stats = compute(cc.load_predictions(a.pred), metric=a.metric)
     cc.save_outputs(render(stats), a.out_dir, RECIPE_ID, stats)
 
 

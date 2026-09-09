@@ -26,6 +26,7 @@ model: sonnet
 按 `playbooks/metric-eval/playbook.md` 全程跑到产物落盘：按 metric-spec 答案写生成
 脚本算逐模型指标表，外部脚本先对账（相对差 <1% 才算通过），再落产物清单。
 用 `python3 "<ENGINE>/scripts/orient.py" --playbook metric-eval` 领阶段与 prereq；
+产物落盘后再跑一次 `python3 "<ENGINE>/scripts/orient.py" --playbook metric-eval` 把 `current_stage` 推到 `done`（本工作目录的阶段状态由本卡片写），结果写进 `verification`。
 生成脚本前必过 `python3 "<ENGINE>/scripts/gen_gate.py" --script <path> --playbook metric-eval --stage <n>`
 （在 `<workdir>` 下运行；`<ENGINE>` = 主 agent 派发时填入的引擎绝对路径；golden 由脚本按 playbook 目录自动引用）。
 

@@ -122,7 +122,7 @@ done：`evaluator.json` + `champion.json` + `experiment_log.jsonl` 落盘 → **
 
 菜谱：
 1. 账本来源：`python3 "<ENGINE>/scripts/experiment_log.py" candidates --ledger <账本路径> --target <improve-target 的模型名>`。只取 `kind=improvement`、`status=pending`、`fix.target_model` 相同的条目，按其 `derived_from` 父假设的 `discriminating_power` 降序。
-2. 素版来源：把 `model_profile` 的 `ablation_switches` 存成 JSON，跑 `candidates --switches <该 JSON> --target <模型名> --guard <守护切片,逗号分隔>`。`config-flag` 先于 `code-stub`，`not-intervenable` 不进队。
+2. 素版来源：把 `model_profile` 的 `ablation_switches` 存成 JSON，跑 `candidates --switches <该 JSON> --target <模型名> --guard <守护切片,逗号分隔>`。`config-flag` 先于 `code-stub`，`not-intervenable` 不进队。取值来自每条的 `values` 数组（一个取值一条候选）；`values` 缺席时退回开关自带的 `=值`／布尔真，并在 PROGRESS 记一行「该开关取值无档案来源」——取值靠人临时拍的候选不可复现，下一轮 model-audit 应把 values 补进档案。
 3. 两种来源可以同时给。已跑过的 `config_diff` 自动去重；超出每轮上限或剩余预算的候选进 `deferred`。
 4. 向用户汇报本轮候选清单与训练次数（候选数 × 种子数），用户说开跑后执行 `experiment_log.py confirm-round`。候选为空时不确认，改走 `stop --reason no_candidates`，然后 `python3 "<ENGINE>/scripts/orient.py" --goto 4` 进结论阶段。`stop` 只在 Stage 3 的停顿点或这里候选为空时跑，别处不跑。
 
@@ -137,14 +137,14 @@ done：`rounds/round_{round}/candidates.json` 落盘（confirmed 由用户确认
 菜谱：
 1. 每条候选一个 worker 任务（task=candidate，输入：工作目录、引擎目录、exp_id、hypothesis_id、config_diff、guard_slices）。Claude Code 下调用 Workflow 工具：`scriptPath="<ENGINE>/workflows/ts-train-batch.js"`，`args={"engine": "<ENGINE>", "workdir": "<工作目录>", "agent_type": "model-improve-worker", "task": "candidate", "candidates": <candidates.json 的 candidates 数组>, "chunk": 4}`；本 playbook 写明的这条调用即 Workflow 的用户授权。Workflow 不可用时，主 agent 在一条消息里并行派多张 `model-improve-worker` 卡（每张一条候选）。
 2. 把返回的 `{results, failed}` 原样写成 `rounds/round_{round}/batch_result.json`。
-3. `python3 "<ENGINE>/scripts/experiment_log.py" append --batch rounds/round_{round}/batch_result.json`。append 拒收：未确认的轮、不在本轮候选里的 exp_id、重复 exp_id、结果里任何含 `test`/`sealed` 的键名。
+3. `python3 "<ENGINE>/scripts/experiment_log.py" append --batch rounds/round_{round}/batch_result.json`。append 拒收四类：未确认的轮（先 confirm-round，这就是门 2 的机器实现）、不在本轮候选里的 exp_id、重复 exp_id、结果里出现封存字段。封存字段的判据是**整键为 `test`、以 `test_` 开头、或键名含 `sealed`**（不区分大小写），不是「键名里出现 test 三个字母就拒」——`latest_ckpt` 这类含 test 子串的正常字段照常放行。
 4. 每条候选的判定写回账本：keep → 该 F 条目 `status: confirmed`、`receipt: receipts/E<id>.json`；discard → `status: refuted`、`kill_receipt` 同路径；undecided → `undecided`；crash/timeout → `untested` + `untested_reason`。改完跑 `python3 "<ENGINE>/scripts/hypothesis_ledger.py" <账本>`。
 
 done：`rounds/round_{round}/batch_result.json` 落盘且 append 成功。
 
 ### Stage 3 轮次裁决
 
-菜谱：`python3 "<ENGINE>/scripts/experiment_log.py" decide`。它在本轮 keep 里取均值最小者为新冠军、累加已用训练次数、判收敛，写 `rounds/round_{round}/summary.json`。
+菜谱：`python3 "<ENGINE>/scripts/experiment_log.py" decide`。它在本轮 keep 里取**按口径方向最好的那条**为新冠军（`evaluator.json` 的 `metric.direction` 为 `lower_is_better`（缺省）时取均值最小者，`higher_is_better` 时取均值最大者）、累加已用训练次数、判收敛，写 `rounds/round_{round}/summary.json`。
 
 done：`summary.json` 落盘 → **pause_after 停顿**（§4）。用户选择：
 - 再来一轮 → `python3 "<ENGINE>/scripts/experiment_log.py" new-round`，然后回 Stage 1（orient 会自动指向第 N+1 轮的候选阶段）。
@@ -163,7 +163,7 @@ done：`final_test.json` + `CONCLUSION.md` + `gate_reports/conclusion_gate.json`
 ## 3. 证据升级规则
 
 - 候选 → keep：三种子均值低于冠军且 |delta| ≥ 冠军噪声底 3σ，且每个守护切片的 delta 不满足「>0 且 ≥ 该切片噪声底」（门 1 稳健性）。
-- keep → 冠军：本轮 keep 里均值最小者（门 2 假设登记先于看数：候选在 confirm-round 前已登记，config_diff 不许事后改）。
+- keep → 冠军：本轮 keep 里按口径方向最好的那条（`lower_is_better` 取均值最小者，`higher_is_better` 取最大者）（门 2 假设登记先于看数：候选在 confirm-round 前已登记，config_diff 不许事后改）。
 - 冠军 → 「改进成立」：`final_test.json.verdict == improved`（封存测试集上超基线且超测试集噪声底）。verdict 为 not_distinguishable 时结论只许写「验证集上改进、测试集上不可分」（门 3 反驳门）。
 - 素版候选（无假设）留下的冠军，结论只许写「配置级改进」，不写机制。
 

@@ -27,8 +27,10 @@ bridge_hooks: >
 ```bash
 python3 chartbook/scripts/chart_feature_regime_error.py \
   --pred predictions.parquet --features features.parquet \
-  --out-dir <workdir>/charts [--seed 0]
+  --out-dir <workdir>/charts [--seed 0] [--metric rmse|mse]
 ```
+`--metric`：逐行口径，`rmse`（默认）或 `mse`。**分析主口径不是逐行 RMSE 时必须跟着切**——逐行 RMSE 与逐行 MSE 的模型排名可以相反，不切就等于用另一个口径的图去支撑本次结论。口径写进 JSON 的 `metric` 字段。
+
 k 在 2..4 由轮廓系数选；seed 落 JSON。
 
 ## JSON schema

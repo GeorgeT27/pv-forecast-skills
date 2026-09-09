@@ -26,9 +26,9 @@ y-label 误差「谁、什么时候、错在哪」的第一张图；A 组入口�
 ## CLI 与参数
 ```bash
 python3 chartbook/scripts/chart_error_breakdown.py \
-  --pred predictions.parquet --out-dir <workdir>/charts [--freq 15min] [--top-k 10]
+  --pred predictions.parquet --out-dir <workdir>/charts [--freq <步长>] [--top-k 10]
 ```
-`--freq`：horizon 步长（目标时刻 = window_ts + step×freq，hour 维度据此算）。
+`--freq`：horizon 步长（目标时刻 = window_ts + step×freq）。**不给就从长表同目录的 `setup_manifest.json` 读**（data-setup 实测值）；两者都没有才回落 15min 并告警——步长与数据不符时，按物理时刻聚合的结果会整体错位且不报错。
 
 ## JSON schema
 见 frontmatter json_schema；所有 RMSE 为点级 sqrt(mean(err²))，跨单元格可比；

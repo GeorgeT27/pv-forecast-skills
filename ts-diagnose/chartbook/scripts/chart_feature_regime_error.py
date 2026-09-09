@@ -17,7 +17,8 @@ import chart_common as cc
 RECIPE_ID = "feature-regime-error"
 
 
-def compute(df: pd.DataFrame, feats: pd.DataFrame, seed: int = 0) -> dict:
+def compute(df: pd.DataFrame, feats: pd.DataFrame, seed: int = 0,
+            metric: str = "rmse") -> dict:
     vec = (feats.groupby(["unit_id", "window_ts", "feature"])["f_pred"].mean()
            .unstack("feature").dropna())
     if len(vec) < 8:
@@ -39,11 +40,11 @@ def compute(df: pd.DataFrame, feats: pd.DataFrame, seed: int = 0) -> dict:
         if s > best[1]:
             best = (k, s, km.labels_)
     k, _, labels = best
-    rr = cc.row_rmse(df)
+    rr = cc.row_metric(df, metric)
     lab = pd.Series(labels, index=vec.index, name="regime")
     rr = rr.join(lab, on=["unit_id", "window_ts"]).dropna(subset=["regime"])
     out = {"recipe": RECIPE_ID, "chosen_k": int(k), "silhouette_by_k": sil,
-           "seed": seed, "regimes": [], "worst_best_ratio_by_model": {},
+           "metric": metric, "seed": seed, "regimes": [], "worst_best_ratio_by_model": {},
            "note": "制式=窗口级 f_pred 均值向量标准化后 k-means;centroid 为"
                    "原始单位;制式命名交判读层结合 intake 背景。"}
     for ci in range(k):
@@ -79,7 +80,7 @@ def render(stats: dict):
     ax.set_xticks(x + 0.4 - w / 2)
     ax.set_xticklabels([f"regime {i}\nshare={r['share']:.2f}"
                         for i, r in enumerate(regimes)], fontsize=8)
-    ax.set_ylabel("mean row RMSE")
+    ax.set_ylabel(f"mean row {cc.metric_label(stats.get('metric', 'rmse'))}")
     ax.set_title(f"feature-regime-error (k={stats['chosen_k']})")
     ax.legend(fontsize=8)
     return fig
@@ -91,9 +92,11 @@ def main(argv=None):
     ap.add_argument("--features", required=True)
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--metric", default="rmse", choices=("rmse", "mse"),
+                    help="逐行口径；分析主口径是逐行 MSE 时传 mse")
     a = ap.parse_args(argv)
     stats = compute(cc.load_predictions(a.pred), cc.load_features(a.features),
-                    seed=a.seed)
+                    seed=a.seed, metric=a.metric)
     cc.save_outputs(render(stats), a.out_dir, RECIPE_ID, stats)
 
 
