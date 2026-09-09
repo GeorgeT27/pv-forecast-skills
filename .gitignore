@@ -18,3 +18,22 @@ crystallize_record.json
 # Claude Code 本机设置：绝对路径、个人权限，不进版本库（另一台设备用 ts-diagnose/install.sh 装钩子）
 .claude/settings.json
 .claude/settings.local.json
+
+# ts-diagnose 运行时产物（续）：每个工作目录一份，只服务当次分析
+.orient_audit.jsonl
+PROGRESS.md
+
+# 评测案例：整个不进版本库——数据与跑批产物共约 6.1G，只存在于本机。
+# 已经跟踪的那些（adapters/lsf_mini_adapter.py、improve-smoke-weather/、两个 README）
+# 不受影响，gitignore 管不了已跟踪文件。
+eval-cases/
+# 盲测留出集：即使将来放开上面那条，它也必须留在库外——进了库任何看仓库的 agent
+# 都能读到答案，留出集当场失效。
+eval-cases/holdout/
+
+# 打包产物：随时可由 ts-diagnose/install.sh 与源码重建。
+# 短期分析.zip 当初已被提交，仍是跟踪状态，不受此条影响。
+*.zip
+
+# archify 的 visual-check 产物（截图与报告）：由已跟踪的 .html/.json 重新生成
+docs/**/*.visual-check.*
