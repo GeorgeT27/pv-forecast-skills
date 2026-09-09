@@ -417,6 +417,10 @@ def main():
         print("    ① schema/单位/口径不明 ② 成功判据未定义 "
               "③ 证据不足以升级（问降级 or 补证据并列成本）")
         print("    ④ 破坏性/昂贵操作（重训/覆盖产物/写外部目录） ⑤ 多候选文件或版本选哪个")
+        if (target.get("done_when") or {}).get("manual"):
+            print(f"  🖐 本阶段没有产物判据（done_when.manual）——做完必须把 {target['id']} "
+                  f"追加进 {ec.STATE_PATH} 的 manual_done 数组，orient 才会判它完成；"
+                  "不写就一直停在本阶段，产物齐了也没用。")
         if "CONCLUSION.md" in ((target.get("done_when") or {}).get("artifacts") or []):
             print("  🚪 结论阶段·三道门自检（三门全过才可在 FINDINGS.md 标「已证实」；"
                   "细则 mechanisms.md）——逐条办：")

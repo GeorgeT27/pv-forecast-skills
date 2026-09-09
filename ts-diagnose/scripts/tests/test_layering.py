@@ -241,6 +241,24 @@ def test_every_pause_after_has_a_machine_gate():
                       + "\n  ".join(soft))
 
 
+# ------------------------------------------- manual 阶段必须写清怎么标完成（R2-2）
+# manual 阶段没有产物判据，orient 判它完成的唯一依据是 state.manual_done 里有这个 id。
+# 这件事 agent 不可能从产物推出来，剧本不写就只能靠猜。
+def test_manual_stages_document_how_to_mark_done():
+    import glob
+    from pathlib import Path
+    engine = Path(__file__).resolve().parents[2]
+    missing = []
+    for path in sorted(glob.glob(str(engine / "playbooks" / "*" / "playbook.md"))):
+        fm = ec.load_frontmatter(path)
+        manual = [st["id"] for st in fm["stages"]
+                  if (st.get("done_when") or {}).get("manual")]
+        if manual and "manual_done" not in _read(path):
+            missing.append(f"{fm['id']} Stage {manual}")
+    assert not missing, ("这些剧本有 manual 阶段却没说怎么标完成（正文须提 manual_done）：\n  "
+                         + "\n  ".join(missing))
+
+
 def test_pause_gate_exemptions_are_real():
     """豁免名单不许留僵尸条目：名单里的剧本/阶段必须真存在且真的 pause_after。"""
     for pb_id, stage_id in PAUSE_GATE_EXEMPT:

@@ -20,7 +20,7 @@ python3 "<ENGINE>/scripts/orient.py" [--playbook <id> | --profile <skill>/profil
   用户明确说没有 = absent-confirmed；required 材料降级须用户再确认并写 degraded_ok。
 
 **三道闸（脚本强制）**：入口闸（材料不齐 orient 只打追问清单）· 阶段闸（`--goto` 前置不齐默认拒绝，
-`--force` 留痕；声明 `charts:` 的阶段 done 必含 INDEX.md）· 结论闸（`conclusion_gate.py` 通过生成的
+`--force` 留痕；声明 `charts:` 的阶段 done 必含 INDEX.md；`done_when.manual` 的阶段没有产物判据，做完必须把该 stage id 追加进 `diagnose_state.json` 的 `manual_done` 数组，orient 才判它完成）· 结论闸（`conclusion_gate.py` 通过生成的
 receipt 是结论阶段唯一完成判据）。
 
 ## 提问纪律

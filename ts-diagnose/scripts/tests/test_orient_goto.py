@@ -122,6 +122,51 @@ def test_producer_completion_message_does_not_point_at_conclusion(tmp_path):
     assert "conclusion_gate" not in out
 
 
+# manual 阶段：没有产物判据，完成标记只有主 agent 会写。R2-2 之前这件事只写在
+# engine_common.py 的代码注释里，剧本与 orient 输出一个字都没有——agent 得自己猜。
+PB_MANUAL = """---
+id: manual-demo
+name: manual 阶段演示
+goal: 测试 manual 阶段的完成方式有没有打印到眼前
+materials:
+  required: [predict, truth]
+stages:
+  - id: 0
+    name: 人工确认
+    done_when: {manual: true}
+  - id: 1
+    name: 后续
+    prereqs:
+      - {desc: 前一阶段, check: 'stage:0'}
+    done_when: {artifacts: ['stage1.json']}
+---
+正文占位。
+"""
+
+
+def test_manual_stage_prints_how_to_mark_it_done(tmp_path):
+    """R2-2：manual 阶段做完要把 stage id 写进 state.manual_done，否则 orient 永远
+    判它未完成、流程原地打转。这条必须打印到眼前——它是 agent 不可能从产物推出来的。"""
+    wd = setup_one_stage_pb(tmp_path, pb_text=PB_MANUAL)
+    out = run_orient(wd)
+    assert "manual_done" in out, "manual 阶段没告诉 agent 怎么标完成"
+    assert "diagnose_state.json" in out
+
+
+def test_manual_done_actually_closes_the_stage(tmp_path):
+    """指令得是真的：写进 manual_done 之后阶段必须真的关掉，当前阶段前移。"""
+    wd = setup_one_stage_pb(tmp_path, pb_text=PB_MANUAL)
+    assert "进入 Stage 0 的前置" in run_orient(wd)
+    st = ec.read_json(str(wd / "diagnose_state.json"))
+    st["manual_done"] = [0]
+    ec.dump_json(st, str(wd / "diagnose_state.json"))
+    out = run_orient(wd)
+    assert "进入 Stage 1 的前置" in out
+    # 不能断言 "manual_done" 不出现：pytest 的临时目录名里就带这几个字，
+    # 而 orient 会打印工作目录。认那条提示自己的标记。
+    assert "done_when.manual" not in out     # Stage 1 不是 manual，就别再念这条
+
+
 def setup_two_stage_pb(tmp_path):
     pb = tmp_path / "pb" / "playbook.md"
     pb.parent.mkdir()
