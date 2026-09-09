@@ -1,0 +1,328 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "ts-diagnose 里有什么",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "main-line",
+        "label": "一次诊断走过的主线",
+        "focus": [
+          "user",
+          "skill",
+          "playbooks",
+          "orient",
+          "cards",
+          "workdir"
+        ],
+        "note": "用户说目标 → 选剧本 → 导航员带着走 → 子代理干重活 → 结果写回工作目录。"
+      },
+      {
+        "id": "runtime",
+        "label": "代码把关的部分",
+        "focus": [
+          "orient",
+          "gates",
+          "hooks"
+        ],
+        "note": "这三样是代码，不靠模型自觉：每回合导航、三道关卡、三个钩子。"
+      },
+      {
+        "id": "method",
+        "label": "写着怎么做的部分",
+        "focus": [
+          "playbooks",
+          "chartbook",
+          "refs"
+        ],
+        "note": "剧本讲每个阶段做什么，图库给现成画图脚本，手册讲纪律。"
+      }
+    ]
+  },
+  "layout": {
+    "mode": "grid",
+    "cols": 5,
+    "cellW": 176,
+    "cellH": 76,
+    "gapX": 96,
+    "gapY": 84
+  },
+  "components": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "用户",
+      "sublabel": "说：我想知道模型为什么…",
+      "row": 0,
+      "col": 0,
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "skill",
+      "type": "frontend",
+      "label": "入口 SKILL.md",
+      "sublabel": "认目标 → 选一本剧本",
+      "tag": "12 条路由",
+      "row": 0,
+      "col": 1,
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "install",
+      "type": "cloud",
+      "label": "安装脚本 install.sh",
+      "sublabel": "链接进 ~/.claude",
+      "row": 1,
+      "col": 0,
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "playbooks",
+      "type": "database",
+      "label": "12 本剧本 playbooks",
+      "sublabel": "4 本准备数据 + 8 本分析",
+      "row": 0,
+      "col": 2,
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "chartbook",
+      "type": "database",
+      "label": "标准图库 chartbook",
+      "sublabel": "28 张图的现成脚本",
+      "row": 1,
+      "col": 2,
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "refs",
+      "type": "database",
+      "label": "纪律手册 references",
+      "sublabel": "engine-core 等 8 份",
+      "row": 2,
+      "col": 2,
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "orient",
+      "type": "backend",
+      "label": "导航员 orient.py",
+      "sublabel": "每回合：到哪了、做什么",
+      "tag": "多本一起跑用 batch.py",
+      "row": 0,
+      "col": 3,
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "gates",
+      "type": "security",
+      "label": "三道关卡",
+      "sublabel": "入口关、阶段关、结论关",
+      "row": 1,
+      "col": 3,
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "hooks",
+      "type": "security",
+      "label": "三个钩子 hooks",
+      "sublabel": "记轨迹、拦收尾、每回合提醒",
+      "row": 2,
+      "col": 3,
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "cards",
+      "type": "backend",
+      "label": "13 张分工卡片 agents",
+      "sublabel": "派给子代理跑重活",
+      "row": 0,
+      "col": 4,
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "workdir",
+      "type": "database",
+      "label": "工作目录记录",
+      "sublabel": "进度、现象、结论、收据",
+      "row": 1,
+      "col": 4,
+      "size": [
+        150,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "方法库：写着怎么做",
+      "wraps": [
+        "playbooks",
+        "chartbook",
+        "refs"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "运行时：代码决定下一步",
+      "wraps": [
+        "orient",
+        "gates",
+        "hooks"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "分工与记录",
+      "wraps": [
+        "cards",
+        "workdir"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "user-asks",
+      "from": "user",
+      "to": "skill",
+      "label": "说出想知道什么"
+    },
+    {
+      "id": "skill-picks-playbook",
+      "from": "skill",
+      "to": "playbooks",
+      "label": "认目标，选剧本",
+      "variant": "emphasis"
+    },
+    {
+      "id": "skill-reads-rules",
+      "from": "skill",
+      "to": "refs",
+      "label": "命中后先读执行纪律",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "id": "playbook-to-orient",
+      "from": "playbooks",
+      "to": "orient",
+      "label": "读阶段定义，打印本阶段菜谱",
+      "labelDy": 56
+    },
+    {
+      "id": "playbook-uses-charts",
+      "from": "playbooks",
+      "to": "chartbook",
+      "label": "画图步骤直接调库里的脚本",
+      "variant": "dashed",
+      "labelDy": 30
+    },
+    {
+      "id": "orient-gates",
+      "from": "orient",
+      "to": "gates",
+      "label": "每回合先过关",
+      "variant": "security",
+      "labelDy": 30
+    },
+    {
+      "id": "hooks-guard",
+      "from": "hooks",
+      "to": "gates",
+      "label": "收尾与每回合自动把关",
+      "variant": "security"
+    },
+    {
+      "id": "orient-dispatch",
+      "from": "orient",
+      "to": "cards",
+      "label": "按卡片派子代理",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cards-write",
+      "from": "cards",
+      "to": "workdir",
+      "label": "产物与现象清单写回",
+      "labelDy": 30
+    },
+    {
+      "id": "gate-receipt",
+      "from": "gates",
+      "to": "workdir",
+      "label": "过关后发收据",
+      "variant": "security"
+    },
+    {
+      "id": "install-links",
+      "from": "install",
+      "to": "skill",
+      "label": "把 skill、卡片、钩子链接进 ~/.claude",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "bottom"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "三层怎么分工",
+      "items": [
+        "入口只做一件事：认目标、选剧本，不讲做法",
+        "运行时是代码：导航员、关卡、钩子，替模型记住走到哪、拦住跳步",
+        "方法库是文字：剧本讲每阶段做什么，图库给现成脚本，手册讲纪律"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "谁负责什么",
+      "items": [
+        "主 agent（Claude 本体）负责问用户、整理现象、写结论",
+        "子代理按卡片干重活：整理数据、算指标、画图、重训做消融",
+        "所有结果落在工作目录：进度、现象清单、结论、收据"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "装到另一台电脑",
+      "items": [
+        "clone 仓库后运行 bash ts-diagnose/install.sh",
+        "脚本把 skill、13 张卡片、3 个钩子链接进 ~/.claude，再用 --check 验证"
+      ]
+    }
+  ]
+}

@@ -28,8 +28,10 @@ bridge_hooks: >
 ## CLI 与参数
 ```bash
 python3 chartbook/scripts/chart_intraday_profile.py \
-  --pred predictions.parquet --out-dir <workdir>/charts [--freq 15min]
+  --pred predictions.parquet --out-dir <workdir>/charts [--freq <步长>]
 ```
+`--freq`：horizon 步长（目标时刻 = window_ts + step×freq）。**不给就从长表同目录的 `setup_manifest.json` 读**（data-setup 实测值）；两者都没有才回落 15min 并告警——步长与数据不符时，按物理时刻聚合的结果会整体错位且不报错。
+
 tod = window_ts + step×freq 的物理时刻，**不是**预报发起时刻。
 
 ## JSON schema

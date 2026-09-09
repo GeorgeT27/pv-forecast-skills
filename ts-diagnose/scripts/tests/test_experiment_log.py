@@ -380,3 +380,89 @@ def test_append_rejects_receipt_config_diff_differing_from_candidate(wd):
     out = r.stdout + r.stderr
     assert r.returncode != 0 and "E001" in out and "config_diff" in out
     assert (wd / "experiment_log.jsonl").read_text(encoding="utf-8") == before
+
+
+def test_candidates_expand_switch_values(wd):
+    """全链路联调 F9：素版候选的取值来自 ablation_switches 的 values，一个取值一条候选；
+    没给 values 才退回开关自带的 =值/布尔真（旧档案继续能用）。"""
+    ec.dump_json({"ablation_switches": [
+        {"component": "a", "switch": "--e_layers", "kind": "config-flag", "values": [1, 4]},
+        {"component": "b", "switch": "--learning_rate=0.0005", "kind": "config-flag"},
+        {"component": "c", "switch": "--tsmixer_no_channel_mix", "kind": "config-flag",
+         "values": [True]}]}, str(wd / "sw.json"))
+    champ = ec.read_json(str(wd / "champion.json"))
+    champ["budget"]["max_per_round"] = 5
+    ec.dump_json(champ, str(wd / "champion.json"))
+    run(wd, "candidates", "--switches", "sw.json", "--target", "TSMixer")
+    diffs = [c["config_diff"] for c in
+             ec.read_json(str(wd / "rounds" / "round_1" / "candidates.json"))["candidates"]]
+    assert {"e_layers": 1} in diffs and {"e_layers": 4} in diffs      # 逐值排队
+    assert {"learning_rate": 0.0005} in diffs                        # 无 values → 用 =值
+    assert {"tsmixer_no_channel_mix": True} in diffs
+    assert len(diffs) == 4
+
+
+# ------------------------------------------------ R2-8：素版候选入口的三处
+def test_candidates_skip_prose_switch(wd):
+    """model-audit 的开关列允许写「无（需改代码）」这类散文（code-stub 行）。
+    裸解析会把整句散文当 knob 名，排出永远过不了 apply_diff 的废候选。"""
+    ec.dump_json({"ablation_switches": [
+        {"component": "NLinear 锚定", "switch": "无（需改代码）", "kind": "code-stub",
+         "values": ["-"]},
+        {"component": "正则", "switch": "--dropout", "kind": "config-flag",
+         "values": [0.3]}]}, str(wd / "sw.json"))
+    r = run(wd, "candidates", "--switches", "sw.json", "--target", "TSMixer")
+    diffs = [c["config_diff"] for c in
+             ec.read_json(str(wd / "rounds" / "round_1" / "candidates.json"))["candidates"]]
+    assert diffs == [{"dropout": 0.3}]
+    assert "不是 CLI 开关字面量" in r.stdout, "跳过必须有交代，不许静默吞掉"
+
+
+def test_candidates_filter_switches_by_target(wd):
+    """--target 此前只筛账本条目，switches 分支完全不筛——别的模型的开关照样排进来。"""
+    ec.dump_json({"ablation_switches": [
+        {"component": "a", "switch": "--dropout", "kind": "config-flag",
+         "values": [0.3], "model": "TSMixer"},
+        {"component": "b", "switch": "--n_heads", "kind": "config-flag",
+         "values": [8], "model": "NLinear"}]}, str(wd / "sw.json"))
+    r = run(wd, "candidates", "--switches", "sw.json", "--target", "TSMixer")
+    diffs = [c["config_diff"] for c in
+             ec.read_json(str(wd / "rounds" / "round_1" / "candidates.json"))["candidates"]]
+    assert diffs == [{"dropout": 0.3}]
+    assert "≠ --target TSMixer" in r.stdout
+
+
+def test_candidates_keep_all_when_no_switch_declares_model(wd):
+    """单模型档案（一条都没写 model）= 这份表就是该模型的，不许误筛成空。"""
+    ec.dump_json({"ablation_switches": [
+        {"component": "a", "switch": "--dropout", "kind": "config-flag", "values": [0.3]},
+        {"component": "b", "switch": "--n_heads", "kind": "config-flag", "values": [8]}]},
+        str(wd / "sw.json"))
+    run(wd, "candidates", "--switches", "sw.json", "--target", "TSMixer")
+    diffs = [c["config_diff"] for c in
+             ec.read_json(str(wd / "rounds" / "round_1" / "candidates.json"))["candidates"]]
+    assert {"dropout": 0.3} in diffs and {"n_heads": 8} in diffs
+
+
+def test_candidates_drop_noop_against_champion(wd):
+    """与冠军当前配置逐键相同的候选 = 空转：训出来必然一样，白烧一轮种子。
+    此前只与「已跑过的 diff」去重，没跟 champion.json 的 config 比过。"""
+    champ = ec.read_json(str(wd / "champion.json"))
+    assert champ["config"]["dropout"] == 0.1, "夹具前提：冠军 dropout 就是 0.1"
+    ec.dump_json({"ablation_switches": [
+        {"component": "正则", "switch": "--dropout", "kind": "config-flag",
+         "values": [0.1, 0.3]}]}, str(wd / "sw.json"))
+    r = run(wd, "candidates", "--switches", "sw.json", "--target", "TSMixer")
+    diffs = [c["config_diff"] for c in
+             ec.read_json(str(wd / "rounds" / "round_1" / "candidates.json"))["candidates"]]
+    assert diffs == [{"dropout": 0.3}], "0.1 与冠军一致，应被剔"
+    assert "空转" in r.stdout
+
+
+def test_switch_to_diff_unit():
+    import experiment_log as xl
+    assert xl._switch_to_diff("--dropout", 0.3) == {"dropout": 0.3}
+    assert xl._switch_to_diff("--learning_rate=0.0005") == {"learning_rate": 0.0005}
+    assert xl._switch_to_diff("--flag") == {"flag": True}
+    for prose in ("无", "无（需改代码）", "需要改代码", "—", ""):
+        assert xl._switch_to_diff(prose) is None, prose

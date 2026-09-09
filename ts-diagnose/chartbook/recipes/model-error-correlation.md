@@ -25,8 +25,10 @@ bridge_hooks: >
 ## CLI 与参数
 ```bash
 python3 chartbook/scripts/chart_model_error_correlation.py \
-  --pred predictions.parquet --out-dir <workdir>/charts [--by-month]
+  --pred predictions.parquet --out-dir <workdir>/charts [--by-month] [--metric rmse|mse]
 ```
+`--metric`：逐行口径，`rmse`（默认）或 `mse`。**分析主口径不是逐行 RMSE 时必须跟着切**——逐行 RMSE 与逐行 MSE 的模型排名可以相反，不切就等于用另一个口径的图去支撑本次结论。口径写进 JSON 的 `metric` 字段。
+
 样本 = (unit, window) 的行 RMSE；各模型须对齐（缺任一模型的样本被 drop）。
 
 ## JSON schema

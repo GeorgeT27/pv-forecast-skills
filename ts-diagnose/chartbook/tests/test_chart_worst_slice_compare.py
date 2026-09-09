@@ -112,3 +112,21 @@ def test_perm_disabled_flag():
     st = cwsc.compute(_df_perm(), focal_model="A", n_perm=0)
     assert st["perm"] is None
     assert "n_perm=0" in st["note"]
+
+
+# ------------------------------- R2-5：perm 的「没算成」必须与「算了不显著」分得开
+def test_perm_status_is_three_valued():
+    """三条路各走一次。剧本按 perm_status 分支，不去解析 note 散文。"""
+    sig = cwsc.compute(_df(), focal_model="A", n_perm=200, perm_seed=0)
+    assert sig["perm_status"] == "significant" and sig["perm_skip_reason"] is None
+
+    off = cwsc.compute(_df(), focal_model="A", n_perm=0)
+    assert off["perm"] is None
+    assert off["perm_status"] == "not-computed"
+    assert "n_perm=0" in off["perm_skip_reason"]
+
+    # 焦点没落后 → 置换基线不适用；这不是「未超基线」，是根本没测
+    never = cwsc.compute(_df(), focal_model="B", n_perm=200, perm_seed=0)
+    assert never["perm"] is None
+    assert never["perm_status"] == "not-computed"
+    assert "无正差距" in never["perm_skip_reason"]

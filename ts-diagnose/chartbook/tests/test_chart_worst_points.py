@@ -60,6 +60,7 @@ def test_label_share_sums_to_points():
 def test_main_writes_outputs(tmp_path):
     p = tmp_path / "pred.csv"
     _df().drop(columns=["err"]).to_csv(p, index=False)
-    cwp.main(["--pred", str(p), "--out-dir", str(tmp_path), "--top-n", "3"])
+    cwp.main(["--pred", str(p), "--out-dir", str(tmp_path), "--top-n", "3",
+              "--freq", "15min"])  # 显式给步长：不给会按 F6 的回落告警
     assert (tmp_path / "worst-points.json").exists()
     assert (tmp_path / "worst-points.png").exists()

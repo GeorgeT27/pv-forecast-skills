@@ -87,7 +87,7 @@ MODELMAP_RECEIPT.json。这份回执不含 inputs 指纹，引擎的"产物过�
 请用户确认哪个是产线（问 `production-version`），绝不自行裁决。某个模型定位不到 →
 如实报「未找到」，该节留空，不硬套。
 
-done：模型清单（含类名映射与候选裁决）已与用户确认，人工判定（manual）。
+done：模型清单（含类名映射与候选裁决）已与用户确认，人工判定（manual）——本阶段没有产物判据，确认完把 `0` 追加进 `diagnose_state.json` 的 `manual_done` 数组，orient 才判它完成。
 
 ### Stage 1：（可选）数据画像
 
@@ -113,14 +113,14 @@ done：`data-profile-receipt.json` 落盘（跳过时该 done_when 不适用，o
   具体用了哪些方法要从代码里读出来，不预设产线用了哪些技法。
 - **桥接层**（架构 → 结果分析含义）：把架构事实翻译成对结果分析的预期，链条是：
   架构事实 → 预期误差形态 → 哪张图能检验 → H-ID（桥接假设编号，供下游引用）。桥接
-  必须遵守 `references/cross-skill-contract.md` 的契约：读消费端的 hypotheses.md 与
+  必须遵守 `references/cross-skill-contract.md` 的契约（H-ID 写工作目录的 `references/hypotheses.md`，引擎包那份只读）：读消费端的 hypotheses.md 与
   图谱目录，H-ID 写回登记表。
 
 核验的优先级排序：损失函数 > 输入特征 > 训练窗口 > 其余结构。上下文策略见
 `references/machinery.md` §4：逐模型串行处理、写完立即落盘、支持断点续跑；一模型
 一子代理并行时，父代理只保留一份小账本做汇总。
 
-done：人工判定（manual）——每个已确认的模型，三层抽取要么完成，要么显式标注"未找到"。
+done：人工判定（manual）——每个已确认的模型，三层抽取要么完成，要么显式标注"未找到"；本阶段没有产物判据，抽取完把 `2` 追加进 `diagnose_state.json` 的 `manual_done` 数组，orient 才判它完成。
 
 ### Stage 3：Reconcile + 落盘 + 回执（统一核验流）
 

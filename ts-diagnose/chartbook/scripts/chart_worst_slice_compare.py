@@ -1,5 +1,5 @@
 """worst-slice-compare：焦点模型最差片（默认按月）上的全模型同期对比——
-「A 输掉的是一个月还是整个周期」。片指标 = 片内行 RMSE 均值。
+「A 输掉的是一个月还是整个周期」。片指标 = 片内逐行指标均值（口径由 --metric 定，默认 RMSE）。
 内置置换基线：最差片正差距按日块置换检验——未超随机基线不许点名切片。"""
 from __future__ import annotations
 
@@ -64,13 +64,13 @@ def _perm_baseline(rr, focal_model, others, n_perm, seed):
 
 
 def compute(df: pd.DataFrame, focal_model: str, slice_by: str = "month",
-            n_perm: int = 200, perm_seed: int = 0) -> dict:
+            n_perm: int = 200, perm_seed: int = 0, metric: str = "rmse") -> dict:
     models = sorted(df["model"].unique())
     if focal_model not in models:
         raise ValueError(f"focal_model {focal_model!r} 不在数据模型集 {models}")
     if len(models) < 2:
         raise ValueError("同期对比至少需要 2 个模型")
-    rr = cc.row_rmse(df)
+    rr = cc.row_metric(df, metric)
     if slice_by != "month":
         raise ValueError("v1 仅支持 slice_by=month")
     rr["slice"] = pd.to_datetime(rr["window_ts"]).dt.strftime("%Y-%m")
@@ -87,13 +87,15 @@ def compute(df: pd.DataFrame, focal_model: str, slice_by: str = "month",
     sl = rr[rr["slice"] == worst]
     daily = sl.groupby(["model", "date"])["rmse"].mean()
     perm, skip = _perm_baseline(rr, focal_model, others, n_perm, perm_seed)
-    note = ("片指标=片内行 RMSE 均值；gap=焦点−同片最优他模型；"
-            "concentration_ratio→1 表示差距集中于最差片，→均匀表示普遍性落后。")
+    lab = cc.metric_label(metric)
+    note = (f"片指标=片内行 {lab} 均值；gap=焦点−同片最优他模型；"
+            "concentration_ratio→1 表示差距集中于最差片，→均匀表示普遍性落后。"
+            "（JSON 里 rmse 是固定列名，实际口径以 metric 字段为准）")
     if perm is None:
         note += f"perm 未做：{skip}。"
     return {
         "recipe": RECIPE_ID, "focal": focal_model, "slice_by": slice_by,
-        "worst_slice": worst,
+        "metric": metric, "worst_slice": worst,
         "basis": {k: round(float(v), 4) for k, v in basis.items()},
         "overall": {m: round(float(v), 4)
                     for m, v in rr.groupby("model")["rmse"].mean().items()},
@@ -105,6 +107,12 @@ def compute(df: pd.DataFrame, focal_model: str, slice_by: str = "month",
         "slice_gaps": {k: round(float(v), 4) for k, v in gaps.items()},
         "concentration_ratio": conc,
         "perm": perm,
+        # 「没算成」和「算了没显著」是两回事，散文里区分不了——给个结构化字段让下游按它分支。
+        # 剧本此前只写「significant → 点名，否则明说『集中未超随机基线』」，perm 为 null 时
+        # 照办就是把「没测」讲成「测了没过」（r2 联调 R2-5）。
+        "perm_status": ("significant" if perm and perm.get("verdict") == "significant"
+                        else "not-significant" if perm else "not-computed"),
+        "perm_skip_reason": None if perm else skip,
         "note": note}
 
 
@@ -117,7 +125,8 @@ def render(stats: dict):
     axes[0].bar(models, [stats["in_slice"][m] for m in models],
                 color=["firebrick" if m == stats["focal"] else "steelblue"
                        for m in models])
-    axes[0].set_title(f"worst slice {stats['worst_slice']}: per-model RMSE")
+    axes[0].set_title(f"worst slice {stats['worst_slice']}: per-model "
+                      f"{cc.metric_label(stats.get('metric', 'rmse'))}")
     for m, series in stats["daily_in_slice"].items():
         axes[1].plot(pd.to_datetime(list(series)), list(series.values()),
                      label=m, lw=1.5 if m == stats["focal"] else 0.9)
@@ -135,9 +144,12 @@ def main(argv=None):
     ap.add_argument("--slice-by", default="month")
     ap.add_argument("--n-perm", type=int, default=200)
     ap.add_argument("--perm-seed", type=int, default=0)
+    ap.add_argument("--metric", default="rmse", choices=("rmse", "mse"),
+                    help="逐行口径；分析主口径是逐行 MSE 时传 mse")
     a = ap.parse_args(argv)
     stats = compute(cc.load_predictions(a.pred), focal_model=a.focal_model,
-                    slice_by=a.slice_by, n_perm=a.n_perm, perm_seed=a.perm_seed)
+                    slice_by=a.slice_by, n_perm=a.n_perm, perm_seed=a.perm_seed,
+                    metric=a.metric)
     cc.save_outputs(render(stats), a.out_dir, RECIPE_ID, stats)
 
 

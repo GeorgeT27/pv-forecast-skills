@@ -27,6 +27,7 @@ model_profile 产物」的计算，不问用户、不下结论。
 逐模型三层抽取（工程/数学/桥接）、reconcile + 落盘 + 回执，落 `MODELMAP_RECEIPT.json`
 即止。Stage 4 自检不在本卡片范围内（见下方「停顿/交回」）。
 用 `python3 "<ENGINE>/scripts/orient.py" --playbook model-audit` 领阶段与 prereq；
+产物落盘后再跑一次 `python3 "<ENGINE>/scripts/orient.py" --playbook model-audit` 把 `current_stage` 推到 `done`（本工作目录的阶段状态由本卡片写），结果写进 `verification`。
 生成脚本前必过 `python3 "<ENGINE>/scripts/gen_gate.py" --script <path> --playbook model-audit --stage <n>`
 （在 `<workdir>` 下运行；`<ENGINE>` = 主 agent 派发时填入的引擎绝对路径；golden 由脚本按 playbook 目录自动引用）。
 

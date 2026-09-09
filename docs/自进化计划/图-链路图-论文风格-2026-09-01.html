@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Rollout 与反传链路图（论文风格）</title>
+<style>
+  body { background:#e9e9e9; margin:0; padding:24px; font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; }
+  figure { background:#fff; max-width:1280px; margin:0 auto 36px; padding:28px 32px 20px; border:1px solid #ccc; box-shadow:0 1px 4px rgba(0,0,0,.12); }
+  svg { width:100%; height:auto; display:block; }
+  figcaption { margin-top:14px; font-size:14px; line-height:1.75; color:#222; text-align:justify; border-top:1px solid #eee; padding-top:12px; }
+  figcaption b { font-size:15px; }
+  text { font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; }
+  .t  { font-size:13px; fill:#1a1a1a; }
+  .b  { font-size:13.5px; font-weight:600; fill:#1a1a1a; }
+  .s  { font-size:11px; fill:#555; }
+  .w  { fill:#fff; }
+  .ws { font-size:11px; fill:#e8e8f5; }
+  .rt { font-size:13px; font-weight:600; fill:#666; }
+  .lbl{ font-size:11px; fill:#777; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════ 图 1 ═══════════════════════ -->
+<figure>
+<svg viewBox="0 0 1500 700" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <marker id="arr"  markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M1,1 L8,4.5 L1,8 Z" fill="#444"/></marker>
+  <marker id="arrG" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M1,1 L8,4.5 L1,8 Z" fill="#b8860b"/></marker>
+</defs>
+
+<!-- 冻结考场 -->
+<rect x="40" y="50" width="250" height="250" rx="10" fill="#f7f7f7" stroke="#999"/>
+<text x="60" y="82" class="rt">冻结考场</text>
+<rect x="60" y="100" width="210" height="52" rx="6" fill="#d5e8d4" stroke="#82b366"/>
+<text x="165" y="122" class="b" text-anchor="middle">评测案例 C1 / C2 / C3</text>
+<text x="165" y="141" class="s" text-anchor="middle">迭代集 · agent 只见题面</text>
+<rect x="60" y="162" width="210" height="52" rx="6" fill="#fff2cc" stroke="#d6b656"/>
+<text x="165" y="184" class="b" text-anchor="middle">gold 标准答案 🔒</text>
+<text x="165" y="203" class="s" text-anchor="middle">agent 不可见 · 只给 judge</text>
+<rect x="60" y="224" width="210" height="56" rx="6" fill="#eeeeee" stroke="#999"/>
+<text x="165" y="246" class="b" text-anchor="middle">holdout 保留题 🔒</text>
+<text x="165" y="265" class="s" text-anchor="middle">永不参与改进 · 防练歪</text>
+
+<!-- agent + 技能 -->
+<text x="70" y="402" font-size="44">🤖</text>
+<text x="93" y="430" class="s" text-anchor="middle">冻结执行 agent</text>
+<rect x="170" y="345" width="150" height="90" rx="8" fill="#dae8fc" stroke="#6c8ebf"/>
+<text x="245" y="372" class="b" text-anchor="middle">当前技能 Sₜ</text>
+<text x="245" y="392" class="s" text-anchor="middle">ts-diagnose 说明书</text>
+<text x="245" y="414" class="s" text-anchor="middle">🔥 唯一被优化对象</text>
+
+<polyline points="290,120 370,120" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+<polyline points="320,390 338,390 338,150 370,150" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+
+<!-- 盲跑区 -->
+<rect x="350" y="50" width="1110" height="150" rx="10" fill="#fcfcfc" stroke="#bbb" stroke-dasharray="6 4"/>
+<text x="370" y="76" class="rt">盲跑做题（agent 按说明书走 · 不知答案）</text>
+<g>
+  <rect x="370" y="95" width="190" height="80" rx="6" fill="#dae8fc" stroke="#6c8ebf"/>
+  <text x="465" y="128" class="b" text-anchor="middle">看数据 · 选路线</text>
+  <text x="465" y="150" class="s" text-anchor="middle">intake / data-setup</text>
+  <rect x="590" y="95" width="190" height="80" rx="6" fill="#dae8fc" stroke="#6c8ebf"/>
+  <text x="685" y="128" class="b" text-anchor="middle">提假设 H1–H4</text>
+  <text x="685" y="150" class="s" text-anchor="middle">写入假设账本</text>
+  <rect x="810" y="95" width="190" height="80" rx="6" fill="#dae8fc" stroke="#6c8ebf"/>
+  <text x="905" y="128" class="b" text-anchor="middle">干预实验</text>
+  <text x="905" y="150" class="s" text-anchor="middle">子代理并发 · 每假设 3 种子</text>
+  <rect x="1030" y="95" width="190" height="80" rx="6" fill="#dae8fc" stroke="#6c8ebf"/>
+  <text x="1125" y="128" class="b" text-anchor="middle">开小票 receipt</text>
+  <text x="1125" y="150" class="s" text-anchor="middle">delta · 口径 · 溯源四件套</text>
+  <rect x="1250" y="95" width="190" height="80" rx="6" fill="#dae8fc" stroke="#6c8ebf"/>
+  <text x="1345" y="128" class="b" text-anchor="middle">写结论</text>
+  <text x="1345" y="150" class="s" text-anchor="middle">conclusion_gate 硬闸</text>
+  <polyline points="560,135 590,135" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+  <polyline points="780,135 810,135" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+  <polyline points="1000,135 1030,135" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+  <polyline points="1220,135 1250,135" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+</g>
+
+<!-- 三样遗留物 -->
+<polyline points="510,200 510,268" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+<polyline points="770,200 770,268" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+<polyline points="1035,200 1035,268" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+
+<g>
+  <rect x="406" y="276" width="212" height="74" rx="6" fill="#fff" stroke="#888"/>
+  <rect x="400" y="270" width="212" height="74" rx="6" fill="#fff" stroke="#555"/>
+  <text x="506" y="300" class="b" text-anchor="middle">监控录像：转录</text>
+  <text x="506" y="322" class="s" text-anchor="middle">每句话 · 每个工具调用</text>
+</g>
+<g>
+  <rect x="676" y="276" width="192" height="74" rx="6" fill="#fff" stroke="#888"/>
+  <rect x="670" y="270" width="192" height="74" rx="6" fill="#fff" stroke="#555"/>
+  <text x="766" y="300" class="b" text-anchor="middle">埋点 stage_probe</text>
+  <text x="766" y="322" class="s" text-anchor="middle">关键动作时间戳</text>
+</g>
+<g>
+  <rect x="926" y="276" width="222" height="74" rx="6" fill="#fff" stroke="#888"/>
+  <rect x="920" y="270" width="222" height="74" rx="6" fill="#fff" stroke="#555"/>
+  <text x="1031" y="300" class="b" text-anchor="middle">答题卡：产物 ~45 个</text>
+  <text x="1031" y="322" class="s" text-anchor="middle">账本·计划·小票·判决·结论</text>
+</g>
+
+<!-- 收卷区 -->
+<rect x="350" y="400" width="780" height="160" rx="10" fill="#fcfcfc" stroke="#bbb" stroke-dasharray="6 4"/>
+<text x="370" y="426" class="rt">收卷（全自动 · 纯函数拼图）</text>
+<rect x="380" y="450" width="220" height="80" rx="6" fill="#e1d5e7" stroke="#9673a6"/>
+<text x="490" y="482" class="b" text-anchor="middle">segments.py 抽段</text>
+<text x="490" y="504" class="s" text-anchor="middle">~9 段 · 时间戳定边界</text>
+<rect x="660" y="450" width="220" height="80" rx="6" fill="#e1d5e7" stroke="#9673a6"/>
+<text x="770" y="482" class="b" text-anchor="middle">build.py 确定性拼图</text>
+<text x="770" y="504" class="s" text-anchor="middle">硬证据连边 · 断链显式 gap</text>
+<rect x="930" y="440" width="180" height="100" rx="8" fill="#7b5ea7" stroke="#5d4482"/>
+<text x="1020" y="470" class="b w" text-anchor="middle">graph.json 案卷图</text>
+<text x="1020" y="494" class="ws" text-anchor="middle">91 节点 · 128 边 · 21 gap</text>
+<text x="1020" y="514" class="ws" text-anchor="middle">谁生谁 · 谁引谁 · 谁支持谁</text>
+
+<polyline points="506,344 506,450" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+<polyline points="766,344 766,378 560,378 560,450" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+<polyline points="1031,344 1031,386 770,386 770,450" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+<polyline points="600,490 660,490" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+<polyline points="880,490 930,490" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+
+<!-- judge -->
+<rect x="1190" y="440" width="200" height="100" rx="8" fill="#e1d5e7" stroke="#9673a6" stroke-width="1.5"/>
+<text x="1290" y="472" class="b" text-anchor="middle">judge 对照 gold 打分</text>
+<text x="1290" y="496" class="s" text-anchor="middle">输出哪条结论错</text>
+<text x="1290" y="516" class="s" text-anchor="middle">+ refs 指认 H 线</text>
+<polyline points="1110,490 1190,490" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+
+<!-- gold 虚线 -->
+<polyline points="165,214 165,370 1290,370 1290,440" fill="none" stroke="#b8860b" stroke-width="1.4" stroke-dasharray="7 5" marker-end="url(#arrG)"/>
+<text x="700" y="362" class="lbl" fill="#b8860b">gold（只进 judge，不进 agent）</text>
+
+<!-- 输出 -->
+<rect x="1190" y="580" width="200" height="80" rx="8" fill="#f8cecc" stroke="#b85450" stroke-width="1.5"/>
+<text x="1290" y="612" class="b" text-anchor="middle">分数 + 错误信号</text>
+<text x="1290" y="636" class="s" text-anchor="middle">→ 进入反传（图 2）</text>
+<polyline points="1290,540 1290,580" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#arr)"/>
+</svg>
+<figcaption><b>图 1 | Rollout 链路。</b>冻结的执行 agent 拿当前版本技能 Sₜ（唯一被优化对象），在冻结考题上盲跑完整分析：提假设 → 子代理并发干预实验（每假设 3 种子）→ 开带溯源的小票 → 过硬闸写结论。做题留下三样遗留物（产物答题卡、转录录像、埋点时间戳），收卷脚本将其确定性拼成 graph.json 案卷图——只按硬证据连边（假设编号逐字对上、数字位级相等、sha 指纹一致），拼不上显式记 gap。judge 对照 agent 全程不可见的 gold 打分，输出带 refs 指认的错误信号，交给图 2 的反传。holdout 保留题永不参与改进，用于防练歪回归。</figcaption>
+</figure>
+
+<!-- ═══════════════════════ 图 2 ═══════════════════════ -->
+<figure>
+<svg viewBox="0 0 1500 950" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <marker id="a2"  markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M1,1 L8,4.5 L1,8 Z" fill="#444"/></marker>
+  <marker id="a2t" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M1,1 L8,4.5 L1,8 Z" fill="#0e8a8a"/></marker>
+  <marker id="a2r" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M1,1 L8,4.5 L1,8 Z" fill="#c0392b"/></marker>
+  <marker id="a2g" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M1,1 L8,4.5 L1,8 Z" fill="#3c7a3c"/></marker>
+</defs>
+
+<!-- 错误信号 -->
+<rect x="40" y="70" width="180" height="70" rx="8" fill="#f8cecc" stroke="#b85450" stroke-width="1.5"/>
+<text x="130" y="98" class="b" text-anchor="middle">错误信号</text>
+<text x="130" y="122" class="s" text-anchor="middle">judge 判结论错（图 1 输出）</text>
+<polyline points="220,105 268,105" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a2)"/>
+
+<!-- 锚定级联 -->
+<rect x="270" y="40" width="860" height="140" rx="10" fill="#fcfcfc" stroke="#bbb" stroke-dasharray="6 4"/>
+<text x="290" y="66" class="rt">入口：锚定级联（能锚多低锚多低）</text>
+<rect x="290" y="85" width="180" height="60" rx="6" fill="#fff2cc" stroke="#d6b656"/>
+<text x="380" y="108" class="b" text-anchor="middle">① gate 报告点名？</text>
+<text x="380" y="128" class="s" text-anchor="middle">闸报告写明哪条没过</text>
+<rect x="505" y="85" width="180" height="60" rx="6" fill="#fff2cc" stroke="#d6b656"/>
+<text x="595" y="108" class="b" text-anchor="middle">② 图警报灯扫描</text>
+<text x="595" y="128" class="s" text-anchor="middle">gap · 数字矛盾 · 种子不够</text>
+<rect x="720" y="85" width="180" height="60" rx="6" fill="#fff2cc" stroke="#d6b656"/>
+<text x="810" y="108" class="b" text-anchor="middle">③ judge refs 指认</text>
+<text x="810" y="128" class="s" text-anchor="middle">只拉该 H 线 ~10 节点</text>
+<rect x="935" y="85" width="180" height="60" rx="6" fill="#fff2cc" stroke="#d6b656"/>
+<text x="1025" y="108" class="b" text-anchor="middle">④ LLM 鸟瞰挑线</text>
+<text x="1025" y="128" class="s" text-anchor="middle">唯一动用 LLM 之处</text>
+<polyline points="470,115 505,115" fill="none" stroke="#444" stroke-width="1.4" marker-end="url(#a2)"/>
+<text x="487" y="107" class="lbl" text-anchor="middle">没有</text>
+<polyline points="685,115 720,115" fill="none" stroke="#444" stroke-width="1.4" marker-end="url(#a2)"/>
+<text x="702" y="107" class="lbl" text-anchor="middle">没有</text>
+<polyline points="900,115 935,115" fill="none" stroke="#444" stroke-width="1.4" marker-end="url(#a2)"/>
+<text x="917" y="107" class="lbl" text-anchor="middle">没有</text>
+
+<!-- 汇流母线 → 锚点 -->
+<polyline points="380,145 380,165" fill="none" stroke="#444" stroke-width="1.3"/>
+<polyline points="595,145 595,165" fill="none" stroke="#444" stroke-width="1.3"/>
+<polyline points="810,145 810,165" fill="none" stroke="#444" stroke-width="1.3"/>
+<polyline points="1025,145 1025,165" fill="none" stroke="#444" stroke-width="1.3"/>
+<polyline points="380,165 1165,165" fill="none" stroke="#444" stroke-width="1.3" marker-end="url(#a2)"/>
+<text x="430" y="159" class="lbl">任一环命中 → 得到锚点</text>
+<rect x="1165" y="135" width="170" height="60" rx="8" fill="#dae8fc" stroke="#6c8ebf" stroke-width="1.5"/>
+<text x="1250" y="160" class="b" text-anchor="middle">锚点 = 反传起点</text>
+<text x="1250" y="181" class="s" text-anchor="middle">命中即停止级联</text>
+<polyline points="1250,195 1250,215 150,215 150,300" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a2)"/>
+
+<!-- 第一层 -->
+<rect x="40" y="250" width="1070" height="340" rx="10" fill="#f2faf2" stroke="#82b366" stroke-dasharray="6 4"/>
+<text x="60" y="276" class="rt" fill="#3c7a3c">第一层：机械验证反传（全脚本 · agent 不参与判对错）</text>
+
+<rect x="80" y="300" width="180" height="64" rx="6" fill="#d5e8d4" stroke="#82b366"/>
+<text x="170" y="338" class="b" text-anchor="middle">逆拓扑走到下一节点</text>
+<polygon points="400,296 475,332 400,368 325,332" fill="#fff" stroke="#666"/>
+<text x="400" y="337" class="t" text-anchor="middle">有验证器？</text>
+<polyline points="260,332 325,332" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a2)"/>
+<rect x="520" y="292" width="250" height="80" rx="6" fill="#d5e8d4" stroke="#82b366"/>
+<text x="645" y="316" class="b" text-anchor="middle">机械算子（按成本升序）</text>
+<text x="645" y="338" class="s" text-anchor="middle">① 确定性重算 · 毫秒级</text>
+<text x="645" y="358" class="s" text-anchor="middle">② 补 seed 重放 · 考场标准评测器</text>
+<polyline points="475,332 520,332" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a2)"/>
+<text x="492" y="324" class="lbl">有</text>
+<polygon points="880,296 955,332 880,368 805,332" fill="#fff" stroke="#666"/>
+<text x="880" y="337" class="t" text-anchor="middle">声明 = 重算？</text>
+<polyline points="770,332 805,332" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a2)"/>
+<polyline points="880,296 880,268 195,268 195,300" fill="none" stroke="#3c7a3c" stroke-width="1.5" marker-end="url(#a2g)"/>
+<text x="520" y="262" class="lbl" fill="#3c7a3c">干净 → 洗清，继续往上走</text>
+<polyline points="880,368 880,410" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a2)"/>
+<text x="892" y="392" class="lbl">脏</text>
+<polygon points="880,410 965,450 880,490 795,450" fill="#fff" stroke="#666"/>
+<text x="880" y="455" class="t" text-anchor="middle">父辈全净？</text>
+<polyline points="795,450 772,450 772,390 240,390 240,366" fill="none" stroke="#444" stroke-width="1.5" marker-end="url(#a2)"/>
+<text x="490" y="383" class="lbl">否 · 错更早，继续上</text>
+<polyline points="880,490 880,510" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a2)"/>
+<text x="892" y="505" class="lbl">是</text>
+<rect x="700" y="510" width="360" height="70" rx="8" fill="#c0392b" stroke="#922b21"/>
+<text x="880" y="537" class="b w" text-anchor="middle">错误引入点（自己脏 · 父辈净）</text>
+<text x="880" y="560" class="ws" text-anchor="middle">produced_by = 元凶脚本 · descendants = 作废清单</text>
+
+<polyline points="400,368 400,400" fill="none" stroke="#444" stroke-width="1.5" marker-end="url(#a2)"/>
+<text x="408" y="386" class="lbl">无契约</text>
+<rect x="300" y="400" width="250" height="84" rx="6" fill="#fdf3e3" stroke="#d79b00"/>
+<text x="425" y="424" class="b" text-anchor="middle">③ agent 逐节点判读</text>
+<text x="425" y="445" class="s" text-anchor="middle">P(node | parents)：节点声明 + 父辈原料</text>
+<text x="425" y="465" class="s" text-anchor="middle">输出 = 洗清 / 嫌疑 · 只标注不定罪</text>
+<polyline points="300,442 170,442 170,366" fill="none" stroke="#d79b00" stroke-width="1.4" marker-end="url(#a2)"/>
+<text x="60" y="434" class="lbl" fill="#a06000">洗清或嫌疑均不停机 · 继续上走</text>
+<rect x="60" y="500" width="290" height="80" rx="6" fill="#fdf3e3" stroke="#d79b00"/>
+<text x="205" y="524" class="b" text-anchor="middle">机械层无引入点时收尾</text>
+<text x="205" y="545" class="s" text-anchor="middle">嫌疑按逆拓扑序复核 · 首个坐实 = 引入点</text>
+<text x="205" y="565" class="s" text-anchor="middle">坐实手段 = 重放（机制见图 3）· 非 LLM 表态</text>
+<polyline points="425,484 425,540 350,540" fill="none" stroke="#d79b00" stroke-width="1.4" stroke-dasharray="6 4" marker-end="url(#a2)"/>
+<text x="440" y="518" class="lbl" fill="#a06000">嫌疑清单（带逆拓扑位置）</text>
+<polyline points="205,580 205,612 1130,612" fill="none" stroke="#d79b00" stroke-width="1.4" stroke-dasharray="6 4"/>
+<text x="560" y="605" class="lbl" fill="#a06000">重放坐实后 → 定罪报告</text>
+
+<!-- 全净仍错 → 第二层 -->
+<polyline points="520,590 520,650" fill="none" stroke="#444" stroke-width="1.6" stroke-dasharray="7 5" marker-end="url(#a2)"/>
+<text x="532" y="622" class="lbl">全部节点干净但结论仍错</text>
+
+<!-- 第二层 -->
+<rect x="40" y="650" width="1070" height="250" rx="10" fill="#fff7ec" stroke="#d79b00" stroke-dasharray="6 4"/>
+<text x="60" y="676" class="rt" fill="#a06000">第二层：决策审查（图 = 调度台 · agent 读录像）</text>
+<rect x="70" y="700" width="185" height="84" rx="6" fill="#ffe9cf" stroke="#d79b00"/>
+<text x="162" y="724" class="b" text-anchor="middle">图定位归属</text>
+<text x="162" y="745" class="s" text-anchor="middle">哪段 · 谁写的（executes 边）</text>
+<text x="162" y="765" class="s" text-anchor="middle">并发线必须切对人</text>
+<rect x="280" y="700" width="185" height="84" rx="6" fill="#ffe9cf" stroke="#d79b00"/>
+<text x="372" y="724" class="b" text-anchor="middle">掐时间窗</text>
+<text x="372" y="745" class="s" text-anchor="middle">前一事件 → 产物落盘</text>
+<text x="372" y="765" class="s" text-anchor="middle">段 / 小票时间戳定界</text>
+<rect x="490" y="700" width="185" height="84" rx="6" fill="#ffe9cf" stroke="#d79b00"/>
+<text x="582" y="724" class="b" text-anchor="middle">切转录切片</text>
+<text x="582" y="745" class="s" text-anchor="middle">该执行者的思考现场</text>
+<rect x="700" y="700" width="185" height="84" rx="6" fill="#ffe9cf" stroke="#d79b00"/>
+<text x="792" y="724" class="b" text-anchor="middle">agent 读现场</text>
+<text x="792" y="745" class="s" text-anchor="middle">consumes 边 = 当时的材料</text>
+<text x="792" y="765" class="s" text-anchor="middle">输出 = 线索 · 低信任</text>
+<rect x="910" y="700" width="160" height="84" rx="6" fill="#ffe9cf" stroke="#d79b00"/>
+<text x="990" y="746" class="b" text-anchor="middle">重放定罪</text>
+<polyline points="255,742 280,742" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a2)"/>
+<polyline points="465,742 490,742" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a2)"/>
+<polyline points="675,742 700,742" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a2)"/>
+<polyline points="885,742 910,742" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a2)"/>
+<rect x="490" y="820" width="400" height="56" rx="6" fill="#d5f0f0" stroke="#0e8a8a"/>
+<text x="690" y="842" class="b" text-anchor="middle">同类错第 2 次 → 决策产物化</text>
+<text x="690" y="863" class="s" text-anchor="middle">强制结构化文件 + 闸门 = 新契约 + 新验证器</text>
+<polyline points="990,784 990,848 890,848" fill="none" stroke="#444" stroke-width="1.5" marker-end="url(#a2)"/>
+<polyline points="490,848 25,848 25,332 320,332" fill="none" stroke="#0e8a8a" stroke-width="1.6" stroke-dasharray="7 5" marker-end="url(#a2t)"/>
+<text x="18" y="640" class="lbl" fill="#0e8a8a" transform="rotate(-90 18 640)">验证器清单逐轮增长（领土转移：脚本地盘扩张）</text>
+
+<!-- 出口 -->
+<rect x="1150" y="250" width="320" height="650" rx="10" fill="#f3f8ff" stroke="#6c8ebf" stroke-dasharray="6 4"/>
+<text x="1170" y="276" class="rt" fill="#2b5b9b">出口：改说明书（LLM 提案 · 机器验收）</text>
+<rect x="1180" y="310" width="260" height="96" rx="8" fill="#3a6ea5" stroke="#2b5b9b"/>
+<text x="1310" y="338" class="b w" text-anchor="middle">定罪报告 JSON</text>
+<text x="1310" y="361" class="ws" text-anchor="middle">引入点 · 声明 vs 重算 · 作废清单</text>
+<text x="1310" y="382" class="ws" text-anchor="middle">governed_by → 说明书具体条款</text>
+
+<polyline points="1060,545 1130,545" fill="none" stroke="#444" stroke-width="1.6"/>
+<polyline points="1070,742 1130,742" fill="none" stroke="#444" stroke-width="1.6"/>
+<polyline points="1130,742 1130,358 1180,358" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a2)"/>
+
+<rect x="1180" y="450" width="260" height="84" rx="6" fill="#dae8fc" stroke="#6c8ebf"/>
+<text x="1310" y="476" class="b" text-anchor="middle">agent 起草最小编辑</text>
+<text x="1310" y="497" class="s" text-anchor="middle">读定罪报告 + 两端原文 + 条款原文</text>
+<text x="1310" y="517" class="s" text-anchor="middle">倾向机械化：手抄 → 脚本注入</text>
+<polyline points="1310,406 1310,450" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a2)"/>
+
+<polygon points="1310,560 1445,610 1310,660 1175,610" fill="#fff2cc" stroke="#d6b656" stroke-width="1.5"/>
+<text x="1310" y="606" class="b" text-anchor="middle">串行验收闸</text>
+<text x="1310" y="628" class="s" text-anchor="middle">一轮一处 · 冻结题库 + holdout</text>
+<polyline points="1310,534 1310,560" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a2)"/>
+
+<rect x="1180" y="710" width="150" height="70" rx="8" fill="#d5e8d4" stroke="#82b366" stroke-width="1.5"/>
+<text x="1255" y="738" class="b" text-anchor="middle">新版说明书</text>
+<text x="1255" y="760" class="b" text-anchor="middle">Sₜ₊₁</text>
+<polyline points="1310,660 1310,685 1255,685 1255,710" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a2)"/>
+<text x="1322" y="680" class="lbl">分数升</text>
+
+<rect x="1360" y="710" width="100" height="70" rx="8" fill="#f8cecc" stroke="#b85450" stroke-width="1.5"/>
+<text x="1410" y="738" class="b" text-anchor="middle">回滚</text>
+<text x="1410" y="760" class="s" text-anchor="middle">+ 反对票</text>
+<polyline points="1445,610 1410,710" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a2)"/>
+<text x="1448" y="662" class="lbl">不升</text>
+
+<polyline points="1255,780 1255,825" fill="none" stroke="#0e8a8a" stroke-width="1.6" stroke-dasharray="7 5" marker-end="url(#a2t)"/>
+<text x="1250" y="848" class="lbl" fill="#0e8a8a" text-anchor="middle">回到图 1 下一轮 rollout</text>
+<text x="1250" y="866" class="lbl" fill="#0e8a8a" text-anchor="middle">（进化闭环）</text>
+<polyline points="1410,780 1410,825" fill="none" stroke="#c0392b" stroke-width="1.4" stroke-dasharray="6 4" marker-end="url(#a2r)"/>
+<text x="1408" y="848" class="lbl" fill="#c0392b" text-anchor="middle">反对票拼回</text>
+<text x="1408" y="866" class="lbl" fill="#c0392b" text-anchor="middle">下轮反思提示</text>
+</svg>
+<figcaption><b>图 2 | 反传链路（含第二层决策审查）。</b>错误信号先过锚定级联，四环依次尝试把错锚到最低可锚位置（前三环纯脚本，第④环是入口处唯一动用 LLM 的地方）。第一层（绿区）为机械验证反传：从锚点逆拓扑逐节点执行 V(node | parents)——按声明口径拿父节点原料独立重算，干净则上行，脏则继续上验父辈，停在「自己脏 · 父辈净」的节点即错误引入点（produced_by 指向元凶脚本，descendants 一跳给出作废清单）；无契约的语义节点由第③档算子接手——agent 以 P(node | parents) 逐节点判读（读节点声明与父辈原料），输出洗清或嫌疑，但不停机不定罪；机械层未找到引入点时，嫌疑清单按逆拓扑序复核，首个被重放坐实的嫌疑即引入点。全部节点干净而结论仍错时才进入第二层（橙区）：图转岗为调度台，定位可疑产物的段与执行者（并发假设线必须切对人的转录）、掐时间窗、切出思考现场交 agent 找线索（低信任，定罪仍靠重放）；同类决策错误第二次出现即产物化为新契约+新验证器，沿青色虚线回流第一层——脚本地盘随轮次扩张（领土转移）。三条定罪路径汇入定罪报告，agent 据此起草最小编辑（倾向机械化），串行验收闸（一轮一处、冻结题库+holdout 回归）决定接受为 Sₜ₊₁ 或回滚记反对票；被拒编辑拼回下一轮反思提示。</figcaption>
+</figure>
+
+<!-- ═══════════════════════ 图 3 ═══════════════════════ -->
+<figure>
+<svg viewBox="0 0 1500 640" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <marker id="a3"  markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M1,1 L8,4.5 L1,8 Z" fill="#444"/></marker>
+  <marker id="a3t" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M1,1 L8,4.5 L1,8 Z" fill="#0e8a8a"/></marker>
+  <marker id="a3o" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M1,1 L8,4.5 L1,8 Z" fill="#d79b00"/></marker>
+</defs>
+
+<!-- 嫌疑输入 -->
+<rect x="40" y="80" width="220" height="90" rx="8" fill="#fdf3e3" stroke="#d79b00" stroke-width="1.5"/>
+<text x="150" y="110" class="b" text-anchor="middle">嫌疑清单输入</text>
+<text x="150" y="132" class="s" text-anchor="middle">来自 agent 逐节点判读（图 2）</text>
+<text x="150" y="152" class="s" text-anchor="middle">或图警报灯 · 带逆拓扑位置</text>
+
+<rect x="40" y="230" width="220" height="100" rx="8" fill="#fff2cc" stroke="#d6b656" stroke-width="1.5"/>
+<text x="150" y="260" class="b" text-anchor="middle">重放队列</text>
+<text x="150" y="283" class="s" text-anchor="middle">按 预期翻转概率 ÷ 成本 排序</text>
+<text x="150" y="303" class="s" text-anchor="middle">跑到预算线为止</text>
+<polyline points="150,170 150,230" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a3)"/>
+
+<!-- do 执行区 -->
+<rect x="320" y="50" width="780" height="340" rx="10" fill="#f2faf2" stroke="#82b366" stroke-dasharray="6 4"/>
+<text x="340" y="78" class="rt" fill="#3c7a3c">do 干预（agent 设计 · 脚本执行 · 执行环节无需聊天上下文）</text>
+
+<rect x="340" y="110" width="170" height="112" rx="6" fill="#d5e8d4" stroke="#82b366"/>
+<text x="425" y="138" class="b" text-anchor="middle">① 取最小重放集</text>
+<text x="425" y="160" class="s" text-anchor="middle">= consumes 闭包（一跳）</text>
+<text x="425" y="180" class="s" text-anchor="middle">父辈产物 + sha 版本</text>
+<text x="425" y="200" class="s" text-anchor="middle">马尔可夫性：与祖先无关</text>
+
+<rect x="530" y="110" width="170" height="112" rx="6" fill="#d5e8d4" stroke="#82b366"/>
+<text x="615" y="136" class="b" text-anchor="middle">② 施加干预 do(X)</text>
+<text x="615" y="156" class="s" text-anchor="middle">模板内：脚本自动构造</text>
+<text x="615" y="174" class="s" text-anchor="middle">（补 seed · 开关翻转）</text>
+<text x="615" y="192" class="s" text-anchor="middle">模板外：agent 设计干预方案</text>
+<text x="615" y="210" class="s" text-anchor="middle">只动被疑因子 · 单变量</text>
+
+<rect x="720" y="110" width="170" height="112" rx="6" fill="#d5e8d4" stroke="#82b366"/>
+<text x="805" y="138" class="b" text-anchor="middle">③ 重跑 + 标准评测器</text>
+<text x="805" y="160" class="s" text-anchor="middle">训练 / 评测纯脚本执行</text>
+<text x="805" y="180" class="s" text-anchor="middle">禁用 run 自己的 eval</text>
+<text x="805" y="200" class="s" text-anchor="middle">防脚本重放自己的 bug</text>
+
+<rect x="910" y="110" width="170" height="112" rx="6" fill="#d5e8d4" stroke="#82b366"/>
+<text x="995" y="138" class="b" text-anchor="middle">④ 沿 descendants 重算</text>
+<text x="995" y="160" class="s" text-anchor="middle">新 delta → 新判决</text>
+<text x="995" y="180" class="s" text-anchor="middle">→ 结论支撑刷新</text>
+<text x="995" y="200" class="s" text-anchor="middle">传播是机械的</text>
+
+<polyline points="510,166 530,166" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a3)"/>
+<polyline points="700,166 720,166" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a3)"/>
+<polyline points="890,166 910,166" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a3)"/>
+<polyline points="260,280 300,280 300,166 340,166" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a3)"/>
+
+<!-- 翻转判定 -->
+<polygon points="1230,105 1330,165 1230,225 1130,165" fill="#fff" stroke="#666" stroke-width="1.3"/>
+<text x="1230" y="160" class="t" text-anchor="middle">结论支撑</text>
+<text x="1230" y="180" class="t" text-anchor="middle">翻转？</text>
+<polyline points="1080,166 1130,166" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a3)"/>
+
+<rect x="1150" y="280" width="170" height="84" rx="8" fill="#c0392b" stroke="#922b21"/>
+<text x="1235" y="310" class="b w" text-anchor="middle">坐实（X 是因）</text>
+<text x="1235" y="334" class="ws" text-anchor="middle">进定罪报告正文</text>
+<text x="1235" y="352" class="ws" text-anchor="middle">与机械引入点同等地位</text>
+<polyline points="1230,225 1230,280" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a3)"/>
+<text x="1242" y="256" class="lbl">翻转</text>
+
+<rect x="1350" y="130" width="120" height="72" rx="8" fill="#d5e8d4" stroke="#82b366" stroke-width="1.5"/>
+<text x="1410" y="158" class="b" text-anchor="middle">洗清</text>
+<text x="1410" y="180" class="s" text-anchor="middle">记「已查无罪」</text>
+<polyline points="1330,165 1350,165" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a3)"/>
+<text x="1336" y="152" class="lbl">不翻转</text>
+<polyline points="1410,130 1410,28 150,28 150,80" fill="none" stroke="#d79b00" stroke-width="1.5" stroke-dasharray="7 5" marker-end="url(#a3o)"/>
+<text x="700" y="21" class="lbl" fill="#a06000">洗清证据回流：排除该因 → agent 带新证据提下一个嫌疑（诊断循环）</text>
+<polyline points="1235,364 1235,396" fill="none" stroke="#2b5b9b" stroke-width="1.5" stroke-dasharray="7 5" marker-end="url(#a3)"/>
+<text x="1290" y="418" class="lbl" fill="#2b5b9b" text-anchor="middle">同一实验复用：坐实的干预方案</text>
+<text x="1290" y="436" class="lbl" fill="#2b5b9b" text-anchor="middle">= 实例级修复的因果证据</text>
+<text x="1290" y="454" class="lbl" fill="#2b5b9b" text-anchor="middle">→ agent 条款化为最小编辑</text>
+<text x="1290" y="472" class="lbl" fill="#2b5b9b" text-anchor="middle">（仍过串行验收 · 防伤别的案例）</text>
+
+<!-- 未决 -->
+<rect x="40" y="420" width="330" height="96" rx="8" fill="#eeeeee" stroke="#999" stroke-width="1.5"/>
+<text x="205" y="450" class="b" text-anchor="middle">未决：设计不出干预 / 预算耗尽</text>
+<text x="205" y="473" class="s" text-anchor="middle">不硬判 · 相关结论降级为「未验证」</text>
+<text x="205" y="493" class="s" text-anchor="middle">进报告附栏 · 禁止据此起草说明书编辑</text>
+<polyline points="150,330 150,420" fill="none" stroke="#444" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a3)"/>
+<text x="162" y="380" class="lbl">重放不了</text>
+
+<!-- 自检 -->
+<rect x="420" y="440" width="680" height="112" rx="8" fill="#d5f0f0" stroke="#0e8a8a" stroke-width="1.5"/>
+<text x="760" y="470" class="b" text-anchor="middle">副产品：重放 = 图完整性自检</text>
+<text x="760" y="495" class="s" text-anchor="middle">按父辈闭包重放却复现不出 → 存在图外隐形输入（agent 凭记忆写数 · 共享上下文）</text>
+<text x="760" y="516" class="s" text-anchor="middle">→ gap 报警 → 产物化补边（evidence_refs）→ 图更全一分 · 局部性更硬一分</text>
+<polyline points="700,390 700,440" fill="none" stroke="#0e8a8a" stroke-width="1.5" stroke-dasharray="7 5" marker-end="url(#a3t)"/>
+</svg>
+<figcaption><b>图 3 | 重放 do 干预机制。</b>嫌疑（来自图 2 的 agent 逐节点判读或图警报灯）先进重放队列，按预期翻转概率与成本排序、跑到预算线为止。干预分设计与执行两权：模板内干预（补 seed、开关翻转）由脚本自动构造；模板外的语义嫌疑由 agent 设计干预方案（改哪一步、换成什么）——但执行永远是脚本：最小重放集 = 被疑节点的 consumes 闭包（马尔可夫性：给定父辈产物即与更早祖先条件独立，无需任何聊天上下文），单变量施加干预，考场标准评测器重跑（禁用 run 自己的 eval 脚本），沿 descendants 机械重算传播。三个出口：结论支撑翻转即坐实——且同一实验复用为编辑证据：坐实的干预方案就是实例级修复的因果凭据，agent 只需将其条款化为最小编辑（仍过串行验收，防实例有效但伤及其他案例）；不翻转即洗清——洗清不是终点而是诊断循环的一环，排除该因的证据回流给 agent 提出下一个嫌疑；设计不出干预或预算耗尽则不硬判，相关结论降级「未验证」进报告附栏，禁止据此起草编辑。副产品：按父辈闭包复现不出结果时，即暴露图上没画出的隐形输入，gap 报警并产物化补边——重放同时充当图完整性的测试。</figcaption>
+</figure>
+
+</body>
+</html>

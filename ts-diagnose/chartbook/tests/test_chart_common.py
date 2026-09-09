@@ -118,3 +118,28 @@ def test_detect_period_steps_period_at_max_lag_boundary():
     # (仅约 0.37,边界处单周期重叠样本太少),故取 3 周期保证边界峰能稳健地过阈值。
     x = 10 + 5 * np.sin(2 * np.pi * np.arange(72) / 24)
     assert cc.detect_period_steps(x, max_lag=24) == 24
+
+
+def test_metric_fn_switches_caliber():
+    """按 row/model 之外的维度池化的图共用这个聚合函数，别各写各的平方根。"""
+    e = np.array([1.0, 2.0, 3.0])
+    assert cc.metric_fn("mse")(e) == pytest.approx(14 / 3)
+    assert cc.metric_fn("rmse")(e) == pytest.approx(np.sqrt(14 / 3))
+    with pytest.raises(ValueError, match="只支持"):
+        cc.metric_fn("bogus")
+
+
+def test_metric_label_for_figures():
+    assert cc.metric_label("mse") == "MSE"
+    assert cc.metric_label("rmse") == "RMSE"
+
+
+def test_row_and_pooled_metric_agree_with_metric_fn():
+    """三个入口必须同源——row/pooled 改实现时这条会红。"""
+    df = pd.DataFrame({
+        "model": ["A"] * 4, "unit_id": ["u"] * 4,
+        "window_ts": ["t"] * 4, "horizon_step": [0, 1, 2, 3],
+        "err": [1.0, -2.0, 3.0, -4.0]})
+    fn = cc.metric_fn("mse")
+    assert cc.row_metric(df, "mse")["rmse"].iloc[0] == pytest.approx(fn(df["err"]))
+    assert cc.pooled_metric(df, "mse")["A"] == pytest.approx(fn(df["err"]))

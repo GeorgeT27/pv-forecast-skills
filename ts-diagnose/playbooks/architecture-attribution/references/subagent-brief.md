@@ -102,13 +102,15 @@ subagent——两者都是"改配置 + 重训 + 评估"的同类耗时操作。
 **主 agent 收到后**：把 receipt 行原样存进 `receipts/receipts.json`（追加，不覆盖）；
 把 `intervention_plan.json` 该条的 `script` 回填为 receipt 的 `produced_by`；
 按 §2 Stage 3 三态规则更新 `hypothesis_ledger.json` 该假设的 `status`
-（`refuted` 必须同时填 `kill_receipt`）；汇总 `verdict_summary.json`；更新 FINDINGS/PROGRESS。
+（`refuted` 必须同时填 `kill_receipt`）；汇总 `verdict_summary.json`（含 `unexplained_real_slices`：
+Stage 0 判 real、又没被任何干预推动的切片，逐条列名）；跑 `harvest_check.py` 收口并按 §4
+向用户汇报收成、等 `harvest-decision` 答复；更新 FINDINGS/PROGRESS。
 
 ---
 
 ## 主 agent 保留清单（不外包）
 
-问用户（噪声底来源、账本来源、干预预算确认）· 假设按判别力排序拍板 ·
+问用户（噪声底来源、账本来源、干预预算确认、收成后的下一步 `harvest-decision`）· 假设按判别力排序拍板 ·
 干预设计的单变量/双向可判合规性判断 · 收 receipt 后的三态判定与账本状态更新 ·
 三道门 + 本 playbook 特有反驳门 · FINDINGS/CONCLUSION 撰写 · conclusion_gate 前的
 `## 消融证据` 组装 · `hypothesis_ledger.json`/`intervention_plan.json`/PROGRESS/FINDINGS

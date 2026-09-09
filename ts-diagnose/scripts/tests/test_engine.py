@@ -353,3 +353,55 @@ def test_orient_silent_about_trajectory_when_disabled(workdir, monkeypatch):
     monkeypatch.delenv("SKILL_EVOLVE_TRAJECTORY_AGENT", raising=False)
     r = run_orient(workdir, "--playbook", "training-sufficiency")
     assert "轨迹埋点" not in r.stdout
+
+
+# ---------------------------------------------- R2-1：目录型材料的指纹
+def test_path_fingerprint_handles_directory(tmp_path):
+    """orient 的入场指引就叫用户整块拷 materials/，材料因此常是目录。
+    file_fingerprint 对目录 open(..., 'rb') 直接 IsADirectoryError，
+    setup_manifest 在 data-setup 阶段就崩（R2-1）。"""
+    d = tmp_path / "materials"
+    (d / "sub").mkdir(parents=True)
+    (d / "a.txt").write_text("a", encoding="utf-8")
+    (d / "sub" / "b.txt").write_text("b", encoding="utf-8")
+    fp = ec.path_fingerprint(str(d))
+    assert fp.startswith("v1:dir-full:2:")
+    assert fp == ec.path_fingerprint(str(d)), "同内容必须可复现"
+    (d / "sub" / "b.txt").write_text("CHANGED", encoding="utf-8")
+    assert fp != ec.path_fingerprint(str(d)), "内容变了指纹必须变"
+
+
+def test_path_fingerprint_dispatches_files_to_file_fingerprint(tmp_path):
+    f = tmp_path / "x.csv"
+    f.write_text("a,b\n1,2\n", encoding="utf-8")
+    assert ec.path_fingerprint(str(f)) == ec.file_fingerprint(str(f))
+
+
+def test_file_fingerprint_rejects_directory_with_clear_error(tmp_path):
+    (tmp_path / "d").mkdir()
+    with pytest.raises(IsADirectoryError, match="path_fingerprint"):
+        ec.file_fingerprint(str(tmp_path / "d"))
+
+
+def test_dir_fingerprint_degrades_to_listing_when_many_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(ec, "DIR_FULL_MAX_FILES", 2)
+    d = tmp_path / "big"
+    d.mkdir()
+    for i in range(3):
+        (d / f"f{i}.txt").write_text(str(i), encoding="utf-8")
+    assert ec.path_fingerprint(str(d)).startswith("v1:dir-list:3:")
+
+
+def test_produces_conclusion_reads_frontmatter(tmp_path):
+    """Stop 钩子的「该不该有结论」判据来源——硬编码 playbook 名单会漏掉新剧本。"""
+    def _pb(name, arts):
+        p = tmp_path / name
+        p.mkdir()
+        (p / "playbook.md").write_text(
+            "---\nid: %s\nname: n\ngoal: g\nstages:\n  - id: 0\n    name: s\n"
+            "    done_when: {artifacts: %s}\n---\n正文\n" % (name, arts),
+            encoding="utf-8")
+        return ec.load_frontmatter(str(p / "playbook.md"))
+    assert ec.produces_conclusion(_pb(
+        "withconc", '["CONCLUSION.md", "gate_reports/conclusion_gate.json"]')) is True
+    assert ec.produces_conclusion(_pb("noconc", '["ledger.json"]')) is False

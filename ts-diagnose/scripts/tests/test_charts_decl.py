@@ -168,3 +168,14 @@ def test_all_real_playbooks_frontmatter_loads():
     for p in paths:
         fm = ec.load_frontmatter(p)
         assert fm.get("id"), f"{p} frontmatter 无 id"
+
+
+def test_model_comparison_reports_perm_three_ways():
+    """R2-5：汇报条款与 upgrade_rule 都得认 perm 的三态。把三态压成两态，
+    就是在 perm 没算成时（最常见：焦点模型压根没落后）把「没测」讲成「测了没过」。"""
+    from pathlib import Path
+    pb = (Path(__file__).resolve().parents[2] / "playbooks" / "model-comparison"
+          / "playbook.md").read_text(encoding="utf-8")
+    for token in ("perm_status", "not-computed", "perm_skip_reason"):
+        assert token in pb, f"model-comparison 剧本没提 {token}"
+    assert "perm.verdict=significant" not in pb, "upgrade_rule 还在读旧的两态字段"

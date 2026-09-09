@@ -10,6 +10,8 @@
   "stages": {
     "0": {
       "desc": "切片配对 z 检验：far 切片真实差异（z>3）、near 切片落噪声底内（~noise）",
+      "covers": ["slice_zcheck.py"],
+      "_covers_note": "本 stage 的 golden 只钉 slice_zcheck 的 CLI 与 z 口径；同阶段的现场脚本 build_slice_metrics.py 无 golden 覆盖，对它跑 gen_gate 会得到退出码 3「无 golden 覆盖」，按 playbook Stage 0 的对账验证代替。",
       "inputs": ["slice_metrics.csv"],
       "args": ["--metrics", "slice_metrics.csv", "--out", "slice_zcheck.json"],
       "expect": [

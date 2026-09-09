@@ -18,6 +18,20 @@ def verdict(delta, noise_floor_3sigma, pred_direction):
     return "confirmed" if got == pred_direction else "refuted"
 
 
+def pred_miss(delta, noise_floor_3sigma, delta2=None, noise_floor2=None):
+    """判据②「预测落空」是否成立：预登记说「|delta| 应超噪声底」，实测 |delta| ≤ 噪声底一半，
+    **且保守第二口径同判**。→ {"main":bool,"second":bool|None,"eligible":bool,"note":str}。
+    第二口径缺席时 eligible=False：只凭主口径不许升级为 refuted，只能停在 undecided
+    （全链路联调 F11：worker 删掉预测数组后第二口径复核做不了，判定被迫悬空）。"""
+    main = abs(delta) <= noise_floor_3sigma / 2.0
+    if delta2 is None or noise_floor2 is None:
+        return {"main": main, "second": None, "eligible": False,
+                "note": "缺第二口径复核（--delta2/--noise-floor2）——判据②不可用，只能 undecided"}
+    second = abs(delta2) <= noise_floor2 / 2.0
+    return {"main": main, "second": second, "eligible": bool(main and second),
+            "note": "两口径同判「预测落空」" if main and second else "两口径判定不一致或未落空"}
+
+
 def receipt_line(hypothesis_id, switch, delta, noise_floor_3sigma, seeds, pred_direction):
     """→ (verdict, line)。line 格式固定为
     `- <id> <verdict>: switch=<switch> delta=<±.3f> noise_floor=<.4f> seeds=<N>`。"""
@@ -49,6 +63,12 @@ def main():
                      help="干预执行起始时刻（ISO8601），受访日志用真实时间，不用 mtime")
     ap.add_argument("--t-end", default=None, dest="t_end",
                      help="干预执行结束时刻（ISO8601）")
+    ap.add_argument("--delta2", type=float, default=None,
+                     help="保守第二口径下的同一 delta（判据②「预测落空」必须两口径同判）")
+    ap.add_argument("--noise-floor2", type=float, default=None, dest="noise_floor2",
+                     help="第二口径的噪声底 3σ")
+    ap.add_argument("--caliber2", default=None,
+                     help="第二口径名（如 rmse_96）——写进 receipt，供结论逐条披露")
     ap.add_argument("--selftest", default=None,
                      help="eval 脚本自检结果一句话（如「植入回收 3/3 通过」）——"
                           "把“认真验证过”变成机器可读信号")
@@ -65,6 +85,9 @@ def main():
     v, line = receipt_line(args.hypothesis_id, args.switch, args.delta,
                             args.noise_floor, args.seeds, args.direction)
     print(line)
+    pm = pred_miss(args.delta, args.noise_floor, args.delta2, args.noise_floor2)
+    if v == "undecided":
+        print(f"  判据②（预测落空）：{'成立' if pm['eligible'] else '不成立'}——{pm['note']}")
 
     if args.out:
         try:
@@ -82,6 +105,15 @@ def main():
             "produced_by": args.script, "script_sha256": script_sha256,
             "t_start": args.t_start, "t_end": args.t_end,
             "script_selftest": args.selftest,
+            # 第二口径：判据②(预测落空)要求保守口径同判；缺了就只能停在 undecided
+            "second_caliber": ({"name": args.caliber2, "delta": args.delta2,
+                                "noise_floor_3sigma": args.noise_floor2,
+                                "verdict": verdict(args.delta2, args.noise_floor2,
+                                                   args.direction)}
+                               if args.delta2 is not None and args.noise_floor2 is not None
+                               else None),
+            "pred_miss": pred_miss(args.delta, args.noise_floor,
+                                   args.delta2, args.noise_floor2),
         })
         with open(args.out, "w", encoding="utf-8") as f:
             json.dump(receipts, f, ensure_ascii=False, indent=2)

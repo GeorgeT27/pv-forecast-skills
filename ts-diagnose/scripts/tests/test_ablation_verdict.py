@@ -93,3 +93,49 @@ def test_cli_undecided_and_refuted_lines_also_match_gate_regex():
         line = proc.stdout.strip()
         assert want in line
         assert cg.RECEIPT_LINE_RE.search(line), f"receipt 行未命中 RECEIPT_LINE_RE：{line}"
+
+
+# ---------------------------------------------------------------- 第二口径（F11）
+def test_pred_miss_needs_second_caliber():
+    """判据②「预测落空」缺第二口径时不可用——只能停在 undecided，不许判 refuted。"""
+    only_main = av.pred_miss(0.0004, 0.0195)
+    assert only_main["main"] is True and only_main["second"] is None
+    assert only_main["eligible"] is False and "第二口径" in only_main["note"]
+    both = av.pred_miss(0.0004, 0.0195, 0.0003, 0.0210)
+    assert both["eligible"] is True
+    disagree = av.pred_miss(0.0004, 0.0195, 0.0300, 0.0210)   # 第二口径没落空
+    assert disagree["eligible"] is False
+
+
+def test_receipt_records_second_caliber(tmp_path):
+    import json as _json
+    script = tmp_path / "eval_H1.py"
+    script.write_text("print(1)\n", encoding="utf-8")
+    out = tmp_path / "receipts.json"
+    r = subprocess.run(
+        [sys.executable, os.path.join(SCRIPTS_DIR, "ablation_verdict.py"), "--hypothesis-id", "H1", "--switch=--no-mix",
+         "--delta", "0.0004", "--noise-floor", "0.0195",
+         "--delta2", "0.0003", "--noise-floor2", "0.0210", "--caliber2", "rmse_96",
+         "--direction", "decrease", "--seeds", "3", "--script", str(script),
+         "--out", str(out)],
+        cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    rec = _json.load(open(out, encoding="utf-8"))[-1]
+    assert rec["second_caliber"]["name"] == "rmse_96"
+    assert rec["second_caliber"]["noise_floor_3sigma"] == 0.0210
+    assert rec["pred_miss"]["eligible"] is True
+    assert "判据②" in r.stdout
+
+
+def test_receipt_without_second_caliber_keeps_none(tmp_path):
+    import json as _json
+    script = tmp_path / "eval_H1.py"
+    script.write_text("print(1)\n", encoding="utf-8")
+    out = tmp_path / "receipts.json"
+    subprocess.run(
+        [sys.executable, os.path.join(SCRIPTS_DIR, "ablation_verdict.py"), "--hypothesis-id", "H1", "--switch=--no-mix",
+         "--delta", "0.0004", "--noise-floor", "0.0195", "--direction", "decrease",
+         "--seeds", "3", "--script", str(script), "--out", str(out)],
+        cwd=tmp_path, capture_output=True, text=True, check=True)
+    rec = _json.load(open(out, encoding="utf-8"))[-1]
+    assert rec["second_caliber"] is None and rec["pred_miss"]["eligible"] is False

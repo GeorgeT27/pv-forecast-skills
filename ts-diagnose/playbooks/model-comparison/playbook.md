@@ -2,6 +2,7 @@
 id: model-comparison
 name: 多模型对比归因
 goal: 量化「模型 A 为什么比 B 好/差」——按题型分解差距事实，产出指向模型组件的可否证假设账本；不产结论，交验证主脊做干预判定
+chart_gate: plan-first
 upstream:
   - product: setup
     required: true
@@ -27,7 +28,7 @@ stages:
   - id: 1
     name: 差距分解（事实）
     done_when:
-      artifacts: ["charts/*.json", "INDEX.md"]
+      artifacts: ["chart_plan.json", "charts/*.json", "INDEX.md"]
       findings_marker: "现象"
     prereqs:
       - desc: 总差距已知
@@ -39,7 +40,8 @@ stages:
   - id: 2
     name: 机制归因（变体，产假设账本）
     done_when:
-      artifacts: ["hypothesis_ledger.json"]
+      # 账本跨轮累积，它在盘上说明不了「这一轮登记过假设」——按轮的章才说明。
+      artifacts: ["hypothesis_ledger.json", "gate_reports/ledger_round_{round}.json"]
       findings_marker: "假设"
     prereqs:
       - desc: 模型档案产物已解决（built/linked 或 declined）
@@ -74,7 +76,7 @@ evidence_lines:
   - id: cross-dim
     stage: 1
     output: charts/cross-dim-stability.json
-upgrade_rule: "总差距方向与主导切片方向一致（slice-gap 仅在 worst-slice perm.verdict=significant 时计入）且 cross-dim time_split 两半同向，才把总差距从「现象」升级为可登记进假设账本的「假设」"
+upgrade_rule: "总差距方向与主导切片方向一致（slice-gap 仅在 worst-slice perm_status=significant 时计入；perm_status=not-computed 时该证据线整条缺席，既不计入也不得当作反证，结论里写明置换基线未算成及其原因）且 cross-dim time_split 两半同向，才把总差距从「现象」升级为可登记进假设账本的「假设」；三图的 metric 必须与 gap_summary 的 caliber 同源，口径不同源的图不作为升级输入"
 ---
 
 # model-comparison：多模型对比归因
@@ -103,7 +105,10 @@ upgrade_rule: "总差距方向与主导切片方向一致（slice-gap 仅在 wor
 **metric_table 产物复用规则**：metric_table 产物 built/linked，且其 `metrics_summary.json` 的 `caliber` 与本次 `metric-caliber` 答案一致 → 直接复用其汇总值作为指标表，不重算。口径不一致 → 视同 absent：照常自算，并在 FINDINGS 注明存在另一口径的指标表。
 
 菜谱：写 `analysis_scripts/gap_metrics.py`，CLI 契约固定：
-`--pred <setup>/predictions.csv --pair A,B --out gap_summary.json`。
+`--pred <setup>/predictions.csv --pair A,B --out gap_summary.json [--caliber <口径 id>]`。
+`metric-caliber` 答的不是默认口径时，口径**只能**经 `--caliber` 传，且 `--caliber` 的默认值
+必须是 `rmse_192`——金标准按默认口径跑，把自定义口径写死进脚本会让 gen_gate 必然 FAIL。
+`gap_summary.json` 的 `caliber` 字段照抄本次实际口径。
 计算内容（口径=rmse_192 时）：每 (model,unit,window) 行算 RMSE，得到每个模型的均值与排名；配对差 d_i = rmse_focal_i − rmse_other_i（对齐行内逐样本相减）；汇总 mean_diff、win_rate（d<0 的占比）、符号检验的 z 与 p（正态近似 z=(wins−n/2)/sqrt(n/4)，取双侧 p）。
 落 `gap_summary.json`（schema：`{"caliber":str, "per_model":{m:mean},
 "ranking":[...], "pair":[A,B], "n":int, "mean_diff":float, "win_rate":float,
@@ -122,15 +127,36 @@ done：gap_summary.json 落盘。
 3. Stage 0 显著、且 model_profile 的 diff_list ≤2 个差异组件 → 允许跳过 Stage 1 直接进 Stage 2 登记消融假设；验证主脊要求签名级 falsifiable_pred 时，回头补画对应的单张图，不补全套。
 
 ### Stage 1 差距分解（事实）
-**不写图代码。** frontmatter charts 是预检池——orient 按材料把每张图标好可画/跳过，**不是必画清单**。按当前疑问从 §6 调色板选图，每张图在 INDEX.md 登记「服务哪个疑问」；没有疑问支撑的图不画。两条例外是硬前置：要点名最差片必须画 worst-slice-compare（带置换基线）；要把总差距升级登记进假设账本必须画 cross-dim-stability（`upgrade_rule` 的输入）。全部用 chartbook 预写脚本（engine-core 对 chartbook 有专门豁免）。命令模板：
+**本阶段的选图门是 `plan-first`，分两回合走（engine-core §图表选择门）。**
+
+第一回合只做一件事：先想清楚要什么证据，**这时候 orient 不会打印图池**。用人话问用户「这一步你想弄清什么」——不要把 recipe 名字当选项列给用户；Stage 2 回头补证据时不必问用户，取证目标就是「验哪条假设」。每条疑问写清需要什么形态的证据：看什么量、按什么切、跟谁比。落 `chart_plan.json`：
+
+    {"entries": [{"question": "<要弄清什么>", "evidence": "<需要什么形态的证据>",
+                  "recipe": "", "source": "chartbook"}]}
+
+跑 `python3 <ENGINE>/scripts/chart_plan.py` 校验，过了才进第二回合。
+
+第二回合 orient 才发图池。**逐条疑问对图池**：有现成的直接调 chartbook 脚本（已覆盖的图禁止现场重写）；图池给不了的现场写进 `analysis_scripts/`，该条改 `source: ad-hoc` 并按 engine-core 三档选 `verification`。计划外的图不画；确要加先回写 `chart_plan.json` 补一条疑问。没有疑问支撑的图，不画不用声明缺口。开画前跑 `chart_plan.py --strict`。
+
+frontmatter charts 是预检池——orient 按材料把每张图标好可画/跳过，**不是必画清单**。每张图在 INDEX.md 登记「服务哪个疑问」。两条例外是硬前置：要点名最差片必须画 worst-slice-compare（带置换基线）；要把总差距升级登记进假设账本必须画 cross-dim-stability（`upgrade_rule` 的输入）——这两条触发时，对应的疑问也要写进 `chart_plan.json`。chartbook 已有的图用预写脚本，命令模板：
 
     python3 <ENGINE>/chartbook/scripts/chart_<蛇形id>.py \
       --pred <setup>/predictions.csv --out-dir charts/ [各图特有参数]
 
 参数补充：worst-slice-compare 与 cross-dim-stability 要传 `--focal-model`，值 = model-set 答案里最关注的那个模型。worst-slice 的置换基线默认开启：`--n-perm 200 --perm-seed 0`。改种子等于改期望结果，必须连 golden 一起改。
 
+**口径对齐（硬规则）**：`metric-caliber` 答的是逐行 MSE 类口径时，worst-slice-compare、
+cross-dim-stability、model-rank-significance 三张图一律加 `--metric mse`；默认 `rmse` 是逐行
+RMSE。逐行 RMSE 与逐行 MSE 的模型排名可以相反，图不跟着切，`upgrade_rule` 的输入就来自
+另一个口径，升级判定不作数。每张图 JSON 的 `metric` 字段与 `gap_summary.json` 的 `caliber`
+必须同源；不同源时在 FINDINGS 里逐条写明哪张图是哪个口径。
+
 广谱图（error-breakdown/intraday-profile 等）不在默认集里：已有 chart_sweep 产物（体检类 playbook 跑过）→ 直接复用其图 JSON 做判读；没有 → 需要时经图表选择门从可加画池加画，或先跑体检类 playbook。
 判读：读各图 JSON 的描述符（见各 recipe 的判读节），产出 FINDINGS.md 现象清单——只写「现象」；因缺材料跳过的图逐条注明「因缺 <材料> 未画」。已有真实输入上的单开关 receipt 也在此按 switch、逐种子 delta、适用域记录为实现级干预事实，不解释源码组件或跨域迁移。
+画完建索引（阶段闸判的是工作目录**根部**的 `INDEX.md`，不是 `charts/INDEX.md`）：
+
+    python3 <ENGINE>/chartbook/scripts/build_index.py --charts-dir charts/ --out INDEX.md
+
 done：charts/*.json 至少一个 + INDEX.md + FINDINGS.md 含「现象」→ **pause_after 停顿**。
 
 ### Stage 2 机制归因（变体，material:model_code 解锁）
@@ -149,7 +175,7 @@ done：charts/*.json 至少一个 + INDEX.md + FINDINGS.md 含「现象」→ **
 - `provenance`：固定 `"pre-registered"`（干预执行前登记）
 - `kill_receipt`：固定 `null`（本阶段不产生，键必须保留）
 
-**切片认领规则（硬规则）**：`slice_map` 必须收录 Stage 1 全部超噪声底的显著切片，覆盖每个已切维度（时段、波动分位、lead、单元/通道、时间段），不得只保留单一维度。其中方向与总差距相反（对照模型显著占优）的每个切片，必须被至少一条假设的 `falsifiable_pred` 显式认领——写明干预后该切片 delta 的预期方向；无假设可认领的，逐条写进顶层 `uncovered` 列表并注明「无假设认领」——未认领切片只用 `uncovered` 这一个字段名表达，不得另造同义字段（如 `not_registered`），下游验证按此字段核对。每条押注方向的假设，登记时同步登记互补假设（编号 `H<n>b`）：同 component、同干预，`falsifiable_pred` 为原方向取反——组件移除使对手模型的劣势切片追平或反超，即确认「该组件损害这些切片」。互补假设的 confirm/kill 判据各自独立成文，`provenance` 同标 `"pre-registered"`，判定共用同一次干预的 receipt，不占新预算。
+**切片认领规则（硬规则）**：`slice_map` 每行的形状是 `{"slice": str, "claimed_by": [假设id,...]}`——两个字段都必填，`slice` 的取值与切片版图产物里的切片名一字不差（含 `channel:`/`month:` 前缀），无人认领写 `[]` 而不是省略（省略与 `[]` 在下游是两个意思）；`dimension`/`winner`/`caliber`/`basis`/`zcheck` 是可选补充字段，内嵌 `zcheck` 若写了必须与权威产物一致。`slice_map` 必须收录 Stage 1 全部超噪声底的显著切片，覆盖每个已切维度（时段、波动分位、lead、单元/通道、时间段），不得只保留单一维度。其中方向与总差距相反（对照模型显著占优）的每个切片，必须被至少一条假设的 `falsifiable_pred` 显式认领——写明干预后该切片 delta 的预期方向；无假设可认领的，逐条写进顶层 `uncovered` 列表并注明「无假设认领」——未认领切片只用 `uncovered` 这一个字段名表达，不得另造同义字段（如 `not_registered`），下游验证按此字段核对。每条押注方向的假设，登记时同步登记互补假设（编号 `H<n>b`）：同 component、同干预，`falsifiable_pred` 为原方向取反——组件移除使对手模型的劣势切片追平或反超，即确认「该组件损害这些切片」。互补假设的 confirm/kill 判据各自独立成文，`provenance` 同标 `"pre-registered"`，判定共用同一次干预的 receipt，不占新预算。
 
 **改进假设（可选，`kind: "improvement"`）**：对每条 component 的 switch 是 `config-flag` 或 `code-stub` 的机理假设，若它的 `falsifiable_pred` 蕴含「改该组件能让某个模型的口径指标变好」，同步登记一条 `F<n>`：`kind: "improvement"`、`derived_from: "H<n>"`、`fix: {target_model, config_diff, predicted_gain, guard_slices}`——`config_diff` 是评估器 knob 名到取值的对象（如 `{"tsmixer_no_channel_mix": true}`），`predicted_gain` 写方向与相对噪声底的幅度，`guard_slices` 默认取 `slice_map` 里 `target_model` 占优的全部切片；其余字段同机理假设，`status: "pending"`、`provenance: "pre-registered"`、`kill_receipt: null`、`receipt: null`。F 条目不进验证主脊的判别力排序，由改进环消费；账本仍须过 `hypothesis_ledger.py`。
 
@@ -168,7 +194,7 @@ done：`hypothesis_ledger.json` 落盘、`hypotheses` 数组非空、通过
 
 Stage 0 止步（分流规则 1 命中）时，向用户汇报：配对 z、噪声底对照、「无显著差距」的现象记录，并说明据此不做分解。
 
-Stage 1 完成即停，向用户汇报五件事：①gap_summary 的排名与 z；②已画图各自服务的疑问 + 跳过/未选图清单；③Top-3 现象，引用图 JSON 里的数字；④若画了 worst-slice：置换基线判定——significant → 点名最差片，否则明说「集中未超随机基线，不点名」；⑤若画了 cross-dim：两个维度是否稳定。然后请用户点名：补画哪张图、调什么参数（top-N、切片粒度）、下一步关注哪个配对或片段。用户不点名，则按 orient 推荐推进。
+Stage 1 完成即停，向用户汇报五件事：①gap_summary 的排名与 z；②已画图各自服务的疑问 + 跳过/未选图清单；③Top-3 现象，引用图 JSON 里的数字；④若画了 worst-slice：按 JSON 的 `perm_status` 三选一照实说，**不许把三态压成两态**——`significant` → 点名最差片；`not-significant` → 「集中未超随机基线，不点名」；`not-computed` → 「置换基线没算成：<`perm_skip_reason` 原文>，本轮无法判断集中性」（最常见的原因是焦点模型在最差片上没有正差距，即它根本没落后——这时说「未超基线」是把没测讲成测了没过）；⑤若画了 cross-dim：两个维度是否稳定。然后请用户点名：补画哪张图、调什么参数（top-N、切片粒度）、下一步关注哪个配对或片段。用户不点名，则按 orient 推荐推进。
 
 Stage 2（若解锁）完成即停，止步于交接——不产结论。向用户汇报：①`hypothesis_ledger.json` 里每条假设的 id/claim/component/falsifiable_pred/discriminating_power；②按 discriminating_power 排好的验证优先序；③因组件不可干预（`ablation_switches` 标 `not-intervenable`）或缺 model_profile 而未能登记的候选，逐条注明原因。产出：假设账本 → 移交验证主脊做干预验证，本 playbook 到此为止。
 
@@ -198,4 +224,4 @@ model-comparison 主题调色板（recipe id 均为 chartbook 已注册的合法
 | 高波动/极值段误差对比 | `worst-points` | 想看"是不是高波动/极值段吃亏"——生成高频容量不足或幅值压缩类假设时画（context.local_std/y_quantile 自带波动标签）|
 | 模型间残差相关 | `model-error-correlation` * | 想区分两个机制假设——全对高相关→降级为共享输入/标签缺陷候选，某对独低→架构差异候选成立——时画 |
 
-palette 之外的需求（如需 features 的输入侧关联图、需 train_y 的漂移图）：走图表选择门从可加画池按需加，不在本节穷举——加画理由要写清"服务哪条假设"。
+palette 之外的需求（如需 features 的输入侧关联图、需 train_y 的漂移图）：先在 `chart_plan.json` 补一条疑问，再看图池里有没有——有就从可加画池加，没有就现场写进 `analysis_scripts/`（`source: ad-hoc` + `verification`）。本节不穷举；chartbook 有没有覆盖不决定该不该取这份证据，疑问决定。

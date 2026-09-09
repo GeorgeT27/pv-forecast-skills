@@ -1,7 +1,7 @@
 """feature-trend-overlay：焦点模型最差月份内，feature 走势/质量与 y 日误差的
 对齐 overlay——「坏片上输入是不是也在坏」。
 
-sync_basis：有 f_true → 用日均质量 |f_pred−f_true| 与日 RMSE 求 Pearson（quality）；
+sync_basis：有 f_true → 用日均质量 |f_pred−f_true| 与日误差（口径由 --metric 定，默认 RMSE）求 Pearson（quality）；
 f_true 全缺 → 退化用日均 f_pred 水平（level，仅提示同步性、不可归因质量）。
 """
 from __future__ import annotations
@@ -17,12 +17,13 @@ RECIPE_ID = "feature-trend-overlay"
 
 
 def compute(pred_df: pd.DataFrame, feat_df: pd.DataFrame,
-            model: str | None = None, slice_month: str | None = None) -> dict:
+            model: str | None = None, slice_month: str | None = None,
+            metric: str = "rmse") -> dict:
     models = sorted(pred_df["model"].unique())
     focal = model or models[0]
     if focal not in models:
         raise ValueError(f"model {focal!r} 不在数据模型集 {models}")
-    rr = cc.row_rmse(pred_df[pred_df["model"] == focal])
+    rr = cc.row_metric(pred_df[pred_df["model"] == focal], metric)
     rr["month"] = pd.to_datetime(rr["window_ts"]).dt.strftime("%Y-%m")
     rr["date"] = pd.to_datetime(rr["window_ts"]).dt.strftime("%Y-%m-%d")
     sl = slice_month or str(rr.groupby("month")["rmse"].mean().idxmax())
@@ -32,8 +33,9 @@ def compute(pred_df: pd.DataFrame, feat_df: pd.DataFrame,
     fd["month"] = fd["window_ts"].dt.strftime("%Y-%m")
     fd["date"] = fd["window_ts"].dt.strftime("%Y-%m-%d")
     fd["quality"] = (fd["f_pred"] - fd["f_true"]).abs()
-    out = {"recipe": RECIPE_ID, "model": focal, "slice": sl, "features": {},
-           "note": "sync_corr=日 RMSE 与日均质量(或水平)的 Pearson；"
+    out = {"recipe": RECIPE_ID, "model": focal, "slice": sl,
+           "metric": metric, "features": {},
+           "note": f"sync_corr=日 {cc.metric_label(metric)} 与日均质量(或水平)的 Pearson；"
                    "level 口径只提示同步、不可归因质量。"}
     for feat, fg in fd[fd["month"] == sl].groupby("feature"):
         daily = fg.groupby("date").agg(f_pred=("f_pred", "mean"),
@@ -74,7 +76,8 @@ def render(stats: dict):
         e = stats["features"][feat]
         days = pd.to_datetime(list(e["aligned"]))
         ax.plot(days, [v["y_rmse"] for v in e["aligned"].values()],
-                color="firebrick", label="y daily RMSE")
+                color="firebrick",
+                label=f"y daily {cc.metric_label(stats.get('metric', 'rmse'))}")
         ax2 = ax.twinx()
         key = "quality" if e["sync_basis"] == "quality" else "f_pred"
         ax2.plot(days, [v.get(key) for v in e["aligned"].values()],
@@ -94,9 +97,11 @@ def main(argv=None):
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--model", default=None)
     ap.add_argument("--slice-month", default=None)
+    ap.add_argument("--metric", default="rmse", choices=("rmse", "mse"),
+                    help="逐行口径；分析主口径是逐行 MSE 时传 mse")
     a = ap.parse_args(argv)
     stats = compute(cc.load_predictions(a.pred), cc.load_features(a.features),
-                    model=a.model, slice_month=a.slice_month)
+                    model=a.model, slice_month=a.slice_month, metric=a.metric)
     cc.save_outputs(render(stats), a.out_dir, RECIPE_ID, stats)
 
 

@@ -141,3 +141,47 @@ def test_every_playbook_has_golden():
                 f"{pid} stage {st} 缺 reference 字段——reference 不声明就不进 CI 闸")
             assert os.path.exists(os.path.join(gdir, ent["reference"])), \
                 f"{pid} stage {st} 的 reference 文件不存在：{ent['reference']}"
+
+
+# ---------------------------------------------------------------- covers（F8）
+UNCOVERED = '''import argparse, json
+ap = argparse.ArgumentParser()
+ap.add_argument("--metrics"); ap.add_argument("--out")
+a = ap.parse_args()
+json.dump({"ok": True}, open(a.out or "o.json", "w"))
+'''
+
+
+def test_uncovered_script_reports_no_golden_not_failure(tmp_path):
+    """AA stage 0 的 golden 钉 slice_zcheck；同阶段的现场脚本无覆盖 →
+    退出码 3（无覆盖），不写闸报告，也不谎称过闸。"""
+    script = tmp_path / "build_slice_metrics.py"
+    script.write_text(UNCOVERED, encoding="utf-8")
+    r = run_gate(tmp_path, str(script), "architecture-attribution", 0)
+    assert r.returncode == 3, r.stdout + r.stderr
+    assert "无 golden 覆盖" in r.stdout
+    assert "对账验证" in r.stdout
+    assert not (tmp_path / "gate_reports").exists()
+
+
+def test_uncovered_script_still_fails_static_check(tmp_path):
+    """无 golden 覆盖不豁免静态检查：危险副作用照样 FAIL(退出码 1)。"""
+    script = tmp_path / "build_slice_metrics.py"
+    script.write_text("import subprocess\nsubprocess.run(['ls'])\n", encoding="utf-8")
+    r = run_gate(tmp_path, str(script), "architecture-attribution", 0)
+    assert r.returncode == 1 and "静态检查" in r.stdout
+
+
+def test_covers_absent_means_any_script(tmp_path):
+    """没声明 covers 的 playbook 阶段行为不变：照跑金标准，算错就 FAIL。"""
+    script = tmp_path / "gap_metrics.py"
+    script.write_text(UNCOVERED, encoding="utf-8")
+    r = run_gate(tmp_path, str(script), "model-comparison", 0)
+    assert r.returncode == 1  # 金标准跑不出期望值 → FAIL，不是「无覆盖」
+    assert "无 golden 覆盖" not in r.stdout
+
+
+def test_reference_impl_is_always_covered():
+    allowed, err = gg.coverage("architecture-attribution", 0)
+    assert err is None and allowed == {"slice_zcheck.py", "slice_zcheck_ref.py"}
+    assert gg.coverage("model-comparison", 0)[0] is None

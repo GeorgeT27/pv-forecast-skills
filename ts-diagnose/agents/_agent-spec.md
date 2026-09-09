@@ -102,6 +102,10 @@ model: sonnet                         # 计算工默认 sonnet；重推理阶段
   「按 `playbooks/<id>/playbook.md` 全程跑到产物落盘」），不得只留语义描述、丢了这条指针——
   守卫按字面子串匹配，缺了这行原样字符串就会判卡片不合规。
 - 「输入」里「已答问题」= 该 playbook §7 表里列的上游问题（主 agent 派发前已问过）。
+- **收尾推进 stage（producer 专属）**：生产者 playbook 的工作目录里没有别的 agent 在跑，
+  `diagnose_state.json` 的写者就是本卡片。产物落盘后**必须**再跑一次
+  `python3 "<ENGINE>/scripts/orient.py" --playbook <id>`，确认 `current_stage` 推到 `done`，
+  并把这一句写进 `verification`。漏了这步，工作目录的阶段状态会永远停在 Stage 0 todo。
 - 无「停顿/交回」节的等待语义——改写为：产物落盘即返回
   `status: COMPUTE_DONE, produces_dir: <产物工作目录>`（六节标题本身仍保留「停顿」二字以过守卫）。
 

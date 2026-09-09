@@ -26,7 +26,8 @@ def main():
             for i, p in enumerate(rec.get("paths") or []):
                 if os.path.exists(p):
                     key = mid if i == 0 else f"{mid}#{i}"
-                    inputs[key] = {"path": p, "fingerprint": ec.file_fingerprint(p)}
+                    inputs[key] = {"path": p,
+                                   "fingerprint": ec.path_fingerprint(p)}
                 else:
                     print(f"⚠ 材料 {mid} 的路径不存在，未入指纹（过期检测对它失明）：{p}")
     for spec in a.input:
@@ -34,7 +35,8 @@ def main():
         if not path:
             sys.exit(f"--input 需要 KEY=PATH 形式：{spec}")
         if os.path.exists(path):
-            inputs[key] = {"path": path, "fingerprint": ec.file_fingerprint(path)}
+            inputs[key] = {"path": path,
+                           "fingerprint": ec.path_fingerprint(path)}
         else:
             print(f"⚠ --input {key} 路径不存在，未入指纹：{path}")
     ec.dump_json({"product": a.product, "inputs": inputs}, a.out)

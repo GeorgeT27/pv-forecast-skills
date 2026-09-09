@@ -18,21 +18,20 @@ def _hm(half_mean, model, half):
     return float(v) if v is not None else float("nan")
 
 
-def compute(df: pd.DataFrame, focal_model: str) -> dict:
+def compute(df: pd.DataFrame, focal_model: str, metric: str = "rmse") -> dict:
     models = sorted(df["model"].unique())
     if focal_model not in models:
         raise ValueError(f"focal_model {focal_model!r} 不在数据模型集 {models}")
     if len(models) < 2:
         raise ValueError("跨维稳定性对比至少需要 2 个模型")
-    rr = cc.row_rmse(df)
+    rr = cc.row_metric(df, metric)
     ts_sorted = sorted(rr["window_ts"].unique())
     n_first = (len(ts_sorted) + 1) // 2
     cut_ts = ts_sorted[n_first - 1]
     rr["half"] = np.where(rr["window_ts"] <= cut_ts, "first", "second")
     half_mean = rr.groupby(["model", "half"])["rmse"].mean()
     row_mean = rr.groupby("model")["rmse"].mean()
-    pooled = df.groupby("model")["err"].apply(
-        lambda e: float(np.sqrt(np.mean(np.square(e)))))
+    pooled = cc.pooled_metric(df, metric)
     pairs = {}
     for other in models:
         if other == focal_model:
@@ -54,7 +53,8 @@ def compute(df: pd.DataFrame, focal_model: str) -> dict:
                                "pooled_diff": round(pooled_d, 4),
                                "consistent": cal_ok},
             "verdict": {"time_stable": time_ok, "caliber_stable": cal_ok}}
-    return {"recipe": RECIPE_ID, "focal": focal_model, "pairs": pairs,
+    return {"recipe": RECIPE_ID, "focal": focal_model, "metric": metric,
+            "pairs": pairs,
             "note": "同一份 predictions 的多图属同一证据维度，方向一致只是内部"
                     "自洽；本图给正交切分稳定性：time_stable 是「现象→假设」"
                     "必查项；caliber_stable=false 不阻塞升级，但结论必须限定"
@@ -77,7 +77,8 @@ def render(stats: dict):
         axes[i][0].axhline(0, color="gray", lw=0.8)
         axes[i][0].set_title(f"{stats['focal']}−{o} time-half diff"
                              f" (consistent={ts['consistent']})")
-        axes[i][1].bar(["row-RMSE mean", "point pool"],
+        _lab = cc.metric_label(stats.get("metric", "rmse"))
+        axes[i][1].bar([f"row-{_lab} mean", "point pool"],
                        [cs["row_diff"], cs["pooled_diff"]], color="darkorange")
         axes[i][1].axhline(0, color="gray", lw=0.8)
         axes[i][1].set_title(f"metric-switch diff (consistent={cs['consistent']})")
@@ -90,8 +91,12 @@ def main(argv=None):
     ap.add_argument("--pred", required=True)
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--focal-model", required=True)
+    ap.add_argument("--metric", default="rmse", choices=("rmse", "mse"),
+                    help="逐行口径；分析主口径是逐行 MSE 时传 mse，"
+                         "否则升级规则的输入与主口径脱钩")
     a = ap.parse_args(argv)
-    stats = compute(cc.load_predictions(a.pred), focal_model=a.focal_model)
+    stats = compute(cc.load_predictions(a.pred), focal_model=a.focal_model,
+                    metric=a.metric)
     cc.save_outputs(render(stats), a.out_dir, RECIPE_ID, stats)
 
 

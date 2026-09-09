@@ -56,3 +56,28 @@ def test_main_writes_outputs(tmp_path):
     chd.main(["--pred", str(p), "--out-dir", str(tmp_path)])
     assert (tmp_path / "horizon-degradation.json").exists()
     assert (tmp_path / "horizon-degradation.png").exists()
+
+
+def test_metric_switch_changes_curve_and_is_recorded():
+    """口径开关：mse 曲线 = rmse 曲线的平方（解析式 alt 让每步误差同幅值），
+    且口径必须落进 JSON 的 metric 字段与 note，否则读图的人不知道在看什么。"""
+    df = _df()
+    r = chd.compute(df, metric="rmse")
+    m = chd.compute(df, metric="mse")
+    assert r["metric"] == "rmse" and m["metric"] == "mse"
+    cr = list(r["models"]["A"]["rmse_by_step"]["curve"].values())
+    cm = list(m["models"]["A"]["rmse_by_step"]["curve"].values())
+    assert np.allclose(np.square(cr), cm, rtol=1e-6)
+    assert "MSE" in m["note"] and "RMSE" in r["note"], "note 不许写死一个口径"
+
+
+def test_metric_defaults_to_rmse_for_back_compat():
+    st = chd.compute(_df())
+    assert st["metric"] == "rmse"
+
+
+def test_cli_rejects_unknown_metric(tmp_path):
+    import pytest
+    with pytest.raises(SystemExit):
+        chd.main(["--pred", "x.csv", "--out-dir", str(tmp_path),
+                  "--metric", "bogus"])

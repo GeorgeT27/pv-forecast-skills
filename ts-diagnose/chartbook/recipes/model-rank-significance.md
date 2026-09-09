@@ -31,6 +31,8 @@ bridge_hooks: >
 python3 chartbook/scripts/chart_model_rank_significance.py \
   --pred predictions.parquet --out-dir <workdir>/charts
 ```
+`--metric`：逐行口径，`rmse`（默认）或 `mse`。**分析主口径不是逐行 RMSE 时必须跟着切**——逐行 RMSE 与逐行 MSE 的模型排名可以相反，不切就等于用另一个口径的图去支撑本次结论。口径写进 JSON 的 `metric` 字段。
+
 < 2 模型抛 ValueError(§5.5)。
 
 ## JSON schema

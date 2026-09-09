@@ -188,9 +188,20 @@ def _traceable_world(tmp_path, **overrides):
     if overrides.get("no_serves"):
         prov["code"].pop("serves")
     (wd / "provenance.json").write_text(json.dumps(prov), encoding="utf-8")
-    (wd / "verdict_summary.json").write_text(json.dumps(
-        {"interventions": [{"hypothesis_id": "H3", "verdict": "confirmed"}]}),
-        encoding="utf-8")
+    vs = {"interventions": [{"hypothesis_id": "H3", "verdict": "confirmed"}],
+          "unexplained_real_slices": []}
+    vs.update(overrides.get("verdict_summary", {}))
+    (wd / "verdict_summary.json").write_text(json.dumps(vs), encoding="utf-8")
+    # 规则 8 收口:harvest.json 由 harvest_check.py 产,这里手造等价物
+    # (sha 绑当前 verdict_summary,过期即拦)。
+    harv = {"round": 1, "harvest": "full", "n_real_slices": 1, "n_moved": 1,
+            "n_confirmed": 1, "n_refuted": 0, "n_undecided": 0, "n_skipped": 0,
+            "unexplained": [], "residual_by_dimension": {},
+            "verdict_summary_sha256": hl.sha256(
+                (wd / "verdict_summary.json").read_bytes()).hexdigest()}
+    harv.update(overrides.get("harvest", {}))
+    if not overrides.get("no_harvest"):
+        (wd / "harvest.json").write_text(json.dumps([harv]), encoding="utf-8")
     plan = [{"hypothesis_id": "H3", "switch": "--itrans_no_attn",
              "script": overrides.get("plan_script",
                                      "analysis_scripts/eval_H3.py")}]
@@ -202,9 +213,11 @@ def _traceable_world(tmp_path, **overrides):
          "## 消融证据\n" + rec.get("line", "- H3 confirmed: switch=--x "
                                             "delta=+0.031 noise_floor=0.0102 "
                                             "seeds=3") + "\n"
-         "## 证据清单\n"
+         + overrides.get("extra_sections", "")
+         + "## 证据清单\n"
          "- `receipts/H3.json` — H3 判定回执\n"
-         "- `verdict_summary.json` — 干预汇总\n")
+         "- `verdict_summary.json` — 干预汇总\n"
+         "- `harvest.json` — 本轮收成\n")
     (wd / "CONCLUSION.md").write_text(c, encoding="utf-8")
     return wd
 
@@ -383,3 +396,199 @@ def test_rule7_not_applied_to_other_playbooks(tmp_path):
     setup(tmp_path, GOOD, with_chart=True, pb_text=PB_NON_ABLATION)   # 无改进证据节也过闸
     r = run_gate(tmp_path)
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+# ---- 规则 5：一支脚本服务多个假设（F12） ----
+
+def _shared_script_world(tmp_path, serves_ids):
+    """互补假设 H3b 与母假设 H3 共用 eval_H3.py 和同一判定脚本。
+    serves_ids 决定 provenance 里 eval_H3.py 挂回哪些假设。"""
+    import hashlib as hl
+    wd = _traceable_world(tmp_path)
+    sha = hl.sha256((wd / "analysis_scripts" / "eval_H3.py").read_bytes()).hexdigest()
+    rec_b = {"hypothesis_id": "H3b", "switch": "--itrans_no_attn", "delta": 0.031,
+             "noise_floor_3sigma": 0.0102, "seeds": 3, "pred_direction": "decrease",
+             "verdict": "refuted",
+             "line": "- H3b refuted: switch=--itrans_no_attn delta=+0.031 "
+                     "noise_floor=0.0102 seeds=3",
+             "produced_by": "analysis_scripts/eval_H3.py", "script_sha256": sha,
+             "t_start": "T0", "t_end": "T1", "script_selftest": "植入回收通过"}
+    (wd / "receipts" / "H3b.json").write_text(json.dumps([rec_b]), encoding="utf-8")
+    prov = json.loads((wd / "provenance.json").read_text(encoding="utf-8"))
+    prov["code"]["serves"] = {"eval_H3.py": {"episode_id": serves_ids[0],
+                                             "episode_ids": list(serves_ids),
+                                             "segment_id": None}}
+    (wd / "provenance.json").write_text(json.dumps(prov), encoding="utf-8")
+    plan = json.loads((wd / "intervention_plan.json").read_text(encoding="utf-8"))
+    plan["interventions"].append({"hypothesis_id": "H3b", "switch": "--itrans_no_attn",
+                                  "script": "analysis_scripts/eval_H3.py"})
+    (wd / "intervention_plan.json").write_text(json.dumps(plan), encoding="utf-8")
+    text = (wd / "CONCLUSION.md").read_text(encoding="utf-8").replace(
+        "## 证据清单\n", "## 证据清单\n- `receipts/H3b.json` — 互补假设回执\n")
+    (wd / "CONCLUSION.md").write_text(text, encoding="utf-8")
+    return wd
+
+
+def test_shared_eval_script_serves_both_hypotheses(tmp_path):
+    """H3 与 H3b 共用一支脚本：serves 写全两个就过闸（过去只能挂一个 → 报孤儿脚本）。"""
+    r = run_gate(_shared_script_world(tmp_path, ["H3", "H3b"]))
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_shared_script_missing_one_hypothesis_still_fails(tmp_path):
+    """只挂回母假设、漏了互补假设 → 仍是孤儿脚本，照拦。"""
+    r = run_gate(_shared_script_world(tmp_path, ["H3"]))
+    assert r.returncode == 1 and "孤儿脚本" in r.stdout
+
+
+def test_legacy_serves_without_episode_ids_still_accepted(tmp_path):
+    """旧形态 provenance（只有 episode_id）继续认。"""
+    wd = _traceable_world(tmp_path)
+    prov = json.loads((wd / "provenance.json").read_text(encoding="utf-8"))
+    assert "episode_ids" not in prov["code"]["serves"]["eval_H3.py"]
+    assert run_gate(wd).returncode == 0
+
+
+# ---- 判据②闸：账本升级为 refuted 必须有第二口径同判 ----
+
+def _criterion2_world(tmp_path, receipt_extra, ledger_status="refuted"):
+    """脚本判 undecided（|delta| 落在噪声底内），账本把它升级为 refuted（判据②预测落空）。"""
+    wd = _traceable_world(tmp_path)
+    rec = json.loads((wd / "receipts" / "H3.json").read_text(encoding="utf-8"))[-1]
+    rec.update({"verdict": "undecided", "delta": 0.0004, "noise_floor_3sigma": 0.0195,
+                "line": "- H3 undecided: switch=--itrans_no_attn delta=+0.000 "
+                        "noise_floor=0.0195 seeds=3"})
+    rec.update(receipt_extra)
+    (wd / "receipts" / "H3.json").write_text(json.dumps([rec]), encoding="utf-8")
+    (wd / "hypothesis_ledger.json").write_text(json.dumps(
+        {"hypotheses": [{"id": "H3", "status": ledger_status,
+                         "kill_receipt": {"note": "预测落空"}}]}), encoding="utf-8")
+    text = (wd / "CONCLUSION.md").read_text(encoding="utf-8").replace(
+        "- H3 confirmed: switch=--x delta=+0.031 noise_floor=0.0102 seeds=3", rec["line"])
+    (wd / "CONCLUSION.md").write_text(text, encoding="utf-8")
+    return wd
+
+
+def test_criterion2_without_second_caliber_is_blocked(tmp_path):
+    """全链路联调 F11 的闸：没有第二口径就把假设写成「被推翻」，拦。"""
+    wd = _criterion2_world(tmp_path, {"pred_miss": {
+        "main": True, "second": None, "eligible": False, "note": "缺第二口径复核"}})
+    r = run_gate(wd)
+    assert r.returncode == 1 and "判据②" in r.stdout and "pred_miss" in r.stdout
+
+
+def test_criterion2_legacy_receipt_without_pred_miss_is_blocked(tmp_path):
+    """早于第二口径契约的旧回执（没有 pred_miss 字段）同样拦，不许默认放行。"""
+    r = run_gate(_criterion2_world(tmp_path, {}))
+    assert r.returncode == 1 and "判据②" in r.stdout
+
+
+def test_criterion2_with_agreeing_second_caliber_passes(tmp_path):
+    wd = _criterion2_world(tmp_path, {
+        "second_caliber": {"name": "rmse_96", "delta": 0.0003,
+                           "noise_floor_3sigma": 0.0210, "verdict": "undecided"},
+        "pred_miss": {"main": True, "second": True, "eligible": True,
+                      "note": "两口径同判「预测落空」"}})
+    r = run_gate(wd)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_undecided_receipt_left_undecided_needs_no_second_caliber(tmp_path):
+    """账本没升级（仍 undecided）时不要求第二口径——这条闸只管判据②的升级。"""
+    wd = _criterion2_world(tmp_path, {}, ledger_status="undecided")
+    assert run_gate(wd).returncode == 0
+
+
+def test_criterion1_refuted_needs_no_second_caliber(tmp_path):
+    """判据①（超噪声底但方向反）由脚本直接判 refuted，与第二口径无关。"""
+    wd = _traceable_world(tmp_path)
+    rec = json.loads((wd / "receipts" / "H3.json").read_text(encoding="utf-8"))[-1]
+    rec["verdict"] = "refuted"
+    (wd / "receipts" / "H3.json").write_text(json.dumps([rec]), encoding="utf-8")
+    (wd / "hypothesis_ledger.json").write_text(json.dumps(
+        {"hypotheses": [{"id": "H3", "status": "refuted",
+                         "kill_receipt": {"note": "方向反"}}]}), encoding="utf-8")
+    assert run_gate(wd).returncode == 0
+
+
+# ------------------------------------------------- 规则 8：收成收口（解释环）
+def test_missing_harvest_blocks(tmp_path):
+    """有 Stage 3 汇总却没跑 harvest_check.py → 拦。"""
+    wd = _traceable_world(tmp_path, no_harvest=True)
+    r = run_gate(wd)
+    assert r.returncode == 1 and "harvest_check.py" in r.stdout
+
+
+def test_stale_harvest_blocks(tmp_path):
+    """判定改过之后收成没重算：sha 对不上 → 拦。"""
+    wd = _traceable_world(tmp_path, harvest={"verdict_summary_sha256": "dead"})
+    r = run_gate(wd)
+    assert r.returncode == 1 and "verdict_summary_sha256" in r.stdout
+
+
+def test_unexplained_slices_must_appear_in_conclusion(tmp_path):
+    wd = _traceable_world(tmp_path, harvest={
+        "harvest": "partial", "n_confirmed": 1,
+        "unexplained": [{"slice": "month:2020-10"}, {"slice": "channel:raining_s"}]})
+    r = run_gate(wd)
+    assert r.returncode == 1 and "已知缺口" in r.stdout
+
+
+def test_unexplained_section_must_name_every_slice(tmp_path):
+    """列一半也不行——概括不算逐条。"""
+    wd = _traceable_world(tmp_path, harvest={
+        "harvest": "partial", "n_confirmed": 1,
+        "unexplained": [{"slice": "month:2020-10"}, {"slice": "channel:raining_s"}]},
+        extra_sections="## 已知缺口\n- `month:2020-10`（其余切片未解释）\n")
+    r = run_gate(wd)
+    assert r.returncode == 1 and "channel:raining_s" in r.stdout
+
+
+def test_unexplained_all_named_passes(tmp_path):
+    wd = _traceable_world(tmp_path, harvest={
+        "harvest": "partial", "n_confirmed": 1,
+        "unexplained": [{"slice": "month:2020-10"}, {"slice": "channel:raining_s"}]},
+        extra_sections="## 已知缺口\n- `month:2020-10` z=9.8\n- `channel:raining_s` z=11.8\n")
+    r = run_gate(wd)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_zero_confirmed_needs_explicit_declaration(tmp_path):
+    """一条 confirmed 都没有，却把 undecided 写成读起来像发现的说法 → 拦。"""
+    wd = _traceable_world(tmp_path, harvest={"harvest": "none", "n_confirmed": 0})
+    r = run_gate(wd)
+    assert r.returncode == 1 and "本轮未能归因到任何组件" in r.stdout
+
+
+def test_zero_confirmed_with_declaration_passes(tmp_path):
+    wd = _traceable_world(tmp_path, harvest={"harvest": "none", "n_confirmed": 0})
+    c = (wd / "CONCLUSION.md").read_text(encoding="utf-8").replace(
+        "档案 H3：跨变量注意力**导致**近端优势。",
+        "本轮未能归因到任何组件。档案 H3 停在未决。")
+    (wd / "CONCLUSION.md").write_text(c, encoding="utf-8")
+    r = run_gate(wd)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_declaration_must_be_in_structure_section_not_buried(tmp_path):
+    """声明写在证据清单里不算——它必须站在「模型结构依据」节，和因果表述同一处。"""
+    wd = _traceable_world(tmp_path, harvest={"harvest": "none", "n_confirmed": 0},
+                          extra_sections="## 备注\n本轮未能归因到任何组件。\n")
+    r = run_gate(wd)
+    assert r.returncode == 1 and "模型结构依据" in r.stdout
+
+
+def test_non_ablation_playbook_unaffected_by_rule8(tmp_path):
+    """零破坏契约：不声明 produces_ablation_receipts 的 6 个 playbook 不过规则 8。"""
+    wd = setup(tmp_path, GOOD, pb_text=PB_NON_ABLATION)
+    (wd / "verdict_summary.json").write_text("{}", encoding="utf-8")
+    assert run_gate(wd).returncode == 0
+
+
+def test_harvest_json_must_be_in_evidence_list(tmp_path):
+    wd = _traceable_world(tmp_path)
+    c = (wd / "CONCLUSION.md").read_text(encoding="utf-8").replace(
+        "- `harvest.json` — 本轮收成\n", "")
+    (wd / "CONCLUSION.md").write_text(c, encoding="utf-8")
+    r = run_gate(wd)
+    assert r.returncode == 1 and "harvest.json" in r.stdout

@@ -27,8 +27,11 @@ error-breakdown / worst-slice-compare 定位坏片之后，看该片内输入质
 ```bash
 python3 chartbook/scripts/chart_feature_trend_overlay.py \
   --pred predictions.parquet --features features.parquet \
-  --out-dir <workdir>/charts [--model A] [--slice-month 2024-02]
+  --out-dir <workdir>/charts [--model A] [--slice-month 2024-02] \
+  [--metric rmse|mse]
 ```
+`--metric`：逐行口径，`rmse`（默认）或 `mse`。**分析主口径不是逐行 RMSE 时必须跟着切**——逐行 RMSE 与逐行 MSE 的模型排名可以相反，不切就等于用另一个口径的图去支撑本次结论。口径写进 JSON 的 `metric` 字段。
+
 
 ## JSON schema
 见 frontmatter；y 日指标 = 焦点模型日均行 RMSE（与 rolling-stability 同口径）。

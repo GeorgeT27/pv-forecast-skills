@@ -9,6 +9,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import statistics
 import sys
 from collections import Counter
@@ -122,8 +123,20 @@ def _last_entry(path):
     return doc if isinstance(doc, dict) else None
 
 
-def _switch_to_diff(switch):
-    s = str(switch).lstrip("-")
+SWITCH_RE = re.compile(r"^--?[A-Za-z][A-Za-z0-9_-]*(=.*)?$")
+
+
+def _switch_to_diff(switch, value=None):
+    """开关字面量 → config_diff；不像 CLI 开关的字面量返回 None（调用方跳过并报告）。
+    model-audit 的 ablation_switches 表里「开关」一列允许写「无」「需改代码」这类散文
+    （kind=code-stub / not-intervenable 的行），裸解析会把整句散文当成 knob 名，
+    排出永远过不了 evaluator.apply_diff 的废候选。"""
+    raw = str(switch).strip()
+    if not SWITCH_RE.match(raw):
+        return None
+    s = raw.lstrip("-")
+    if value is not None:
+        return {s.split("=", 1)[0]: value}
     if "=" in s:
         k, v = s.split("=", 1)
         for cast in (int, float):
@@ -133,6 +146,21 @@ def _switch_to_diff(switch):
                 pass
         return {k: v}
     return {s: True}
+
+
+def _switch_targets(item):
+    """switches 条目声明的目标模型集合（model / target_model，标量或列表）；
+    没声明返回 None = 该条目不限定模型。"""
+    v = item.get("model", item.get("target_model"))
+    if v is None:
+        return None
+    return {str(x) for x in (v if isinstance(v, (list, tuple, set)) else [v])}
+
+
+def _is_noop(diff, config):
+    """候选与当前冠军配置逐键相同 = 空转：训出来必然与冠军一致，白烧一轮种子。"""
+    return bool(diff) and all(
+        k in config and config[k] == v for k, v in diff.items())
 
 
 # ---------------------------------------------------------------- init
@@ -189,14 +217,45 @@ def cmd_candidates(a):
         for h in sorted(hyps, key=key):
             cands.append({"hypothesis_id": h["id"], "source": "ledger", "config_diff": h["fix"]["config_diff"],
                           "predicted_gain": h["fix"]["predicted_gain"], "guard_slices": h["fix"]["guard_slices"]})
+    skipped = []
     if a.switches:
         sw = _need(a.switches, "读不到 switches")
         items = sw.get("ablation_switches", sw) if isinstance(sw, dict) else sw
         order = {"config-flag": 0, "code-stub": 1}
         picked = [i for i in items if i.get("kind") in order and i.get("switch")]
+        # 目标模型过滤：只要有一条声明了 model，整份表就按 --target 严筛（混合档案
+        # 必须标清楚）；一条都没声明 = 这份表就是该模型的，全放行（单模型档案）。
+        scoped = any(_switch_targets(i) is not None for i in picked)
         for it in sorted(picked, key=lambda i: (order[i["kind"]], i.get("component", ""))):
-            cands.append({"hypothesis_id": None, "source": "switches", "config_diff": _switch_to_diff(it["switch"]),
-                          "predicted_gain": "未预登记（素版）", "guard_slices": [s for s in a.guard.split(",") if s]})
+            tg = _switch_targets(it)
+            if scoped and (tg is None or a.target not in tg):
+                skipped.append(f"{it['switch']}（目标模型 {sorted(tg) if tg else '未声明'}"
+                               f" ≠ --target {a.target}）")
+                continue
+            # values = 该开关值得一试的取值（model_profile 的 ablation_switches 出）；
+            # 一个取值排一条候选。没给 values 才退回开关自带的 =值/布尔真。
+            vals = it.get("values")
+            vals = list(vals) if isinstance(vals, list) and vals else [None]
+            for v in vals:
+                diff = _switch_to_diff(it["switch"], v)
+                if diff is None:
+                    skipped.append(f"{it['switch']!r}（不是 CLI 开关字面量，"
+                                   f"component={it.get('component', '?')}）")
+                    break
+                cands.append({"hypothesis_id": None, "source": "switches",
+                              "config_diff": diff,
+                              "predicted_gain": "未预登记（素版）",
+                              "guard_slices": [s for s in a.guard.split(",") if s]})
+    # 空转候选：与当前冠军配置逐键相同的，训出来必然一样，不进本轮
+    noop = [c for c in cands if _is_noop(c["config_diff"], champ.get("config") or {})]
+    if noop:
+        cands = [c for c in cands if c not in noop]
+        skipped += [f"{json.dumps(c['config_diff'], ensure_ascii=False)}"
+                    f"（与冠军当前配置一致，空转）" for c in noop]
+    if skipped:
+        print("跳过的候选：")
+        for line in skipped:
+            print(f"  − {line}")
     seen = {json.dumps(r["config_diff"], sort_keys=True) for r in rows}
     fresh = []
     for c in cands:

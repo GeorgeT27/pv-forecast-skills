@@ -1,7 +1,8 @@
 """rolling-stability：日粒度 RMSE/bias 的滚动走势 + 二分分段变点检测 +
 日历（月/星期）分组——性能是否随时间漂移、从哪天开始。
 
-日指标 = 当日各行 row_rmse 的均值（行与行等权；与点级 pool 不同，量纲注意）。
+日指标 = 当日各行逐行指标的均值（行与行等权；与点级 pool 不同，量纲注意）。
+逐行口径由 --metric 决定（rmse 默认 / mse）——分析主口径不是逐行 RMSE 时必须跟着切。
 变点：对日 RMSE 序列做贪心二分分段（SSE 增益最大处切），仅保留
 |后段均值−前段均值| > min_shift_frac × 全序列 std 的切点，至多 max_cp 个。
 零随机、零外部依赖，确定性可回收。
@@ -65,16 +66,17 @@ def detect_changepoints(values: np.ndarray, dates: list[str],
 
 
 def compute(df: pd.DataFrame, roll_days: int = 7, max_cp: int = 3,
-            min_shift_frac: float = 0.3, min_seg: int = 5) -> dict:
-    rr = cc.row_rmse(df)
+            min_shift_frac: float = 0.3, min_seg: int = 5,
+            metric: str = "rmse") -> dict:
+    rr = cc.row_metric(df, metric)
     rr["date"] = pd.to_datetime(rr["window_ts"]).dt.strftime("%Y-%m-%d")
     bias = df.groupby(["model", df["window_ts"].dt.strftime("%Y-%m-%d")])[
         "err"].mean()
-    out = {"recipe": RECIPE_ID,
+    out = {"recipe": RECIPE_ID, "metric": metric,
            "params": {"roll_days": roll_days, "max_cp": max_cp,
                       "min_shift_frac": min_shift_frac, "min_seg": min_seg},
            "models": {},
-           "note": "日指标=当日各行 row_rmse 均值；变点=贪心二分分段+幅度阈值闸。"}
+           "note": f"日指标=当日各行逐行 {metric} 均值；变点=贪心二分分段+幅度阈值闸。"}
     for m, g in rr.groupby("model"):
         daily = g.groupby("date")["rmse"].mean().sort_index()
         rolling = daily.rolling(roll_days, min_periods=1).mean()
@@ -110,7 +112,7 @@ def render(stats: dict):
         ax.plot(xs, list(s["rolling_rmse"].values()), label=f"{m} rolling")
         for cp in s["changepoints"]:
             ax.axvline(pd.Timestamp(cp["date"]), color="red", ls=":", lw=1)
-    ax.set_ylabel("rolling daily-mean RMSE")
+    ax.set_ylabel(f"rolling daily-mean {cc.metric_label(stats.get('metric', 'rmse'))}")
     ax.set_title("rolling-stability (red dashed = changepoint)")
     ax.legend()
     fig.autofmt_xdate()
@@ -125,10 +127,12 @@ def main(argv=None):
     ap.add_argument("--max-cp", type=int, default=3)
     ap.add_argument("--min-shift-frac", type=float, default=0.3)
     ap.add_argument("--min-seg", type=int, default=5)
+    ap.add_argument("--metric", default="rmse", choices=("rmse", "mse"),
+                    help="逐行口径；分析主口径是逐行 MSE 时传 mse")
     a = ap.parse_args(argv)
     stats = compute(cc.load_predictions(a.pred), roll_days=a.roll_days,
                     max_cp=a.max_cp, min_shift_frac=a.min_shift_frac,
-                    min_seg=a.min_seg)
+                    min_seg=a.min_seg, metric=a.metric)
     cc.save_outputs(render(stats), a.out_dir, RECIPE_ID, stats)
 
 

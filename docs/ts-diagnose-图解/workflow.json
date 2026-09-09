@@ -1,0 +1,278 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "ts-diagnose 跑一次诊断",
+    "locale": "zh-CN",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    {
+      "id": "u",
+      "label": "用户"
+    },
+    {
+      "id": "m",
+      "label": "主 agent（Claude 本体）"
+    },
+    {
+      "id": "c",
+      "label": "代码把关（orient / 关卡）"
+    },
+    {
+      "id": "s",
+      "label": "子代理（按卡片干重活）"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p_prepare",
+      "label": "① 准备",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "p_facts",
+      "label": "② 看事实",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p_conclude",
+      "label": "③ 下结论",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "ask",
+    "route",
+    "intake",
+    "answer",
+    "orient",
+    "prep",
+    "compute",
+    "facts",
+    "pick",
+    "hypo",
+    "gate_end",
+    "conclude"
+  ],
+  "nodes": [
+    {
+      "id": "ask",
+      "lane": "u",
+      "col": 0,
+      "type": "external",
+      "label": "提出问题",
+      "sublabel": "例：为什么 A 比 B 好",
+      "width": 140
+    },
+    {
+      "id": "answer",
+      "lane": "u",
+      "col": 1,
+      "type": "external",
+      "label": "回答追问",
+      "sublabel": "口径、成功标准、用哪份文件",
+      "width": 140
+    },
+    {
+      "id": "pick",
+      "lane": "u",
+      "col": 4,
+      "type": "external",
+      "label": "点名深挖哪条",
+      "sublabel": "从现象清单里挑",
+      "width": 140
+    },
+    {
+      "id": "route",
+      "lane": "m",
+      "col": 0,
+      "type": "frontend",
+      "label": "认目标选剧本",
+      "sublabel": "查 SKILL.md 路由表",
+      "width": 140
+    },
+    {
+      "id": "intake",
+      "lane": "m",
+      "col": 1,
+      "type": "backend",
+      "label": "盘材料、问清楚",
+      "sublabel": "入口关：材料没齐不开工",
+      "tag": "不许猜",
+      "width": 140
+    },
+    {
+      "id": "facts",
+      "lane": "m",
+      "col": 3,
+      "type": "backend",
+      "label": "整理现象清单",
+      "sublabel": "只说看到什么，不说为什么",
+      "tag": "停下汇报",
+      "width": 140
+    },
+    {
+      "id": "hypo",
+      "lane": "m",
+      "col": 4,
+      "type": "backend",
+      "label": "提假设并验证",
+      "sublabel": "先登记假设再看数，必要时重训",
+      "width": 140
+    },
+    {
+      "id": "conclude",
+      "lane": "m",
+      "col": 5,
+      "type": "backend",
+      "label": "写结论并回顾",
+      "sublabel": "写 CONCLUSION.md，回顾改剧本",
+      "width": 140
+    },
+    {
+      "id": "orient",
+      "lane": "c",
+      "col": 2,
+      "type": "security",
+      "label": "每回合跑 orient",
+      "sublabel": "到哪了、该做什么、不许跳步",
+      "width": 140
+    },
+    {
+      "id": "gate_end",
+      "lane": "c",
+      "col": 5,
+      "type": "security",
+      "label": "结论关",
+      "sublabel": "三道门过了才发收据",
+      "tag": "conclusion_gate",
+      "width": 140
+    },
+    {
+      "id": "prep",
+      "lane": "s",
+      "col": 2,
+      "type": "database",
+      "label": "准备数据",
+      "sublabel": "原始预测/真值 → 规范长表",
+      "width": 140
+    },
+    {
+      "id": "compute",
+      "lane": "s",
+      "col": 3,
+      "type": "messagebus",
+      "label": "算指标、画图",
+      "sublabel": "调标准图库，回一份 JSON",
+      "width": 140
+    }
+  ],
+  "edges": [
+    {
+      "id": "ask-route",
+      "from": "ask",
+      "to": "route",
+      "label": "说出想知道什么"
+    },
+    {
+      "id": "route-intake",
+      "from": "route",
+      "to": "intake",
+      "label": "选定一本剧本",
+      "variant": "emphasis"
+    },
+    {
+      "id": "intake-answer",
+      "from": "intake",
+      "to": "answer",
+      "label": "材料、口径、成功标准一次问齐",
+      "role": "branch"
+    },
+    {
+      "id": "answer-orient",
+      "from": "answer",
+      "to": "orient",
+      "label": "答案记进 config，开工",
+      "role": "return",
+      "route": "up-channel"
+    },
+    {
+      "id": "orient-prep",
+      "from": "orient",
+      "to": "prep",
+      "label": "缺的前置数据先自动补"
+    },
+    {
+      "id": "prep-compute",
+      "from": "prep",
+      "to": "compute",
+      "label": "规范长表就绪"
+    },
+    {
+      "id": "compute-facts",
+      "from": "compute",
+      "to": "facts",
+      "label": "回 JSON：数字 + 现象",
+      "variant": "emphasis"
+    },
+    {
+      "id": "facts-pick",
+      "from": "facts",
+      "to": "pick",
+      "label": "停下汇报现象清单"
+    },
+    {
+      "id": "pick-hypo",
+      "from": "pick",
+      "to": "hypo",
+      "label": "点名要深挖的现象"
+    },
+    {
+      "id": "hypo-gate",
+      "from": "hypo",
+      "to": "gate_end",
+      "label": "三道门：稳不稳 / 假设先登记 / 反驳排除",
+      "variant": "security"
+    },
+    {
+      "id": "gate-conclude",
+      "from": "gate_end",
+      "to": "conclude",
+      "label": "拿到收据才能写",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "① 准备：问清楚再开工",
+      "items": [
+        "认目标选剧本；材料、口径、成功标准一次问齐",
+        "入口关：材料没齐只打印要问的，不开工"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "② 看事实：只说看到了什么",
+      "items": [
+        "每回合跑 orient：只给本阶段菜谱，不许跳步",
+        "子代理算数画图回 JSON；主 agent 只写「看到什么」，然后停下汇报",
+        "剧本的 Stage 0…N 也这么排：前几段看事实，最后一段下结论"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "③ 下结论：过了关才写",
+      "items": [
+        "用户点名后：先登记假设再验证，必要时重训做消融",
+        "三道门（稳不稳 / 假设先登记 / 反驳排除）过了拿收据，才写 CONCLUSION.md"
+      ]
+    }
+  ]
+}

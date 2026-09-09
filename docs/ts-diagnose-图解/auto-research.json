@@ -1,0 +1,313 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "ts-diagnose auto-research：两个圈",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "big-loop",
+        "label": "大圈：假设不成立就换一批",
+        "focus": [
+          "compare",
+          "ledger",
+          "plan",
+          "ablate",
+          "verdict",
+          "harvest"
+        ],
+        "note": "干预把假设判成确认/否证/未决；没解释完就回生成器换角度重提一批假设。"
+      },
+      {
+        "id": "small-loop",
+        "label": "小圈：改法有效就再换一批配置",
+        "focus": [
+          "queue",
+          "batch",
+          "decide",
+          "round"
+        ],
+        "note": "账本 F 条目排成候选，一轮批跑一轮裁决；没收敛就 new-round 再来一轮。"
+      },
+      {
+        "id": "who-decides",
+        "label": "谁说了算",
+        "focus": [
+          "verdict",
+          "harvest",
+          "decide",
+          "round",
+          "conclude"
+        ],
+        "note": "判定与收敛由脚本算，转不转下一圈由用户点名，结论只在出口过一次闸。"
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "m",
+      "label": "主 agent（提假设 · 判读 · 落笔）"
+    },
+    {
+      "id": "s",
+      "label": "子代理（重训工，一次一条任务）"
+    },
+    {
+      "id": "k",
+      "label": "代码把关（脚本判定 · 闸）"
+    },
+    {
+      "id": "u",
+      "label": "用户点名（agent 不许自己转圈）"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p_gen",
+      "label": "① 出假设",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "p_explain",
+      "label": "② 解释环：为什么",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p_improve",
+      "label": "③ 改进环：改了会不会好",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "compare",
+    "ledger",
+    "plan",
+    "ablate",
+    "verdict",
+    "harvest",
+    "queue",
+    "batch",
+    "decide",
+    "round",
+    "conclude"
+  ],
+  "semanticChecks": {
+    "allowedTerminals": [
+      "conclude"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "compare",
+      "lane": "m",
+      "col": 0,
+      "type": "frontend",
+      "label": "对比剧本出事实",
+      "sublabel": "切片分解，出现象清单",
+      "tag": "model-comparison",
+      "width": 150
+    },
+    {
+      "id": "ledger",
+      "lane": "m",
+      "col": 1,
+      "type": "database",
+      "label": "登记假设账本",
+      "sublabel": "H 讲为什么 · F 讲改哪儿",
+      "tag": "先登记再看数",
+      "width": 150
+    },
+    {
+      "id": "plan",
+      "lane": "m",
+      "col": 2,
+      "type": "backend",
+      "label": "设计判别干预",
+      "sublabel": "一次只动一个组件",
+      "width": 150
+    },
+    {
+      "id": "queue",
+      "lane": "m",
+      "col": 4,
+      "type": "backend",
+      "label": "排本轮候选",
+      "sublabel": "F 条目 → 配置差异",
+      "width": 150
+    },
+    {
+      "id": "conclude",
+      "lane": "m",
+      "col": 5,
+      "type": "backend",
+      "label": "开封终评写结论",
+      "sublabel": "测试集只评一次",
+      "tag": "conclusion_gate",
+      "width": 150
+    },
+    {
+      "id": "ablate",
+      "lane": "s",
+      "col": 3,
+      "type": "messagebus",
+      "label": "消融重训",
+      "sublabel": "一条干预一张卡，≥3 种子",
+      "width": 150
+    },
+    {
+      "id": "batch",
+      "lane": "s",
+      "col": 5,
+      "type": "messagebus",
+      "label": "按轮批跑",
+      "sublabel": "每条候选 ≥3 种子重训",
+      "width": 150
+    },
+    {
+      "id": "verdict",
+      "lane": "k",
+      "col": 3,
+      "type": "security",
+      "label": "判定与收成",
+      "sublabel": "按 receipt 判三态",
+      "tag": "harvest_check",
+      "width": 150
+    },
+    {
+      "id": "decide",
+      "lane": "k",
+      "col": 5,
+      "type": "security",
+      "label": "轮次裁决",
+      "sublabel": "按 receipt 留弃、换冠军",
+      "tag": "experiment_log",
+      "width": 150
+    },
+    {
+      "id": "harvest",
+      "lane": "u",
+      "col": 3,
+      "type": "external",
+      "label": "收成三选一",
+      "sublabel": "再取一轮 / 收口 / 停手",
+      "width": 150
+    },
+    {
+      "id": "round",
+      "lane": "u",
+      "col": 5,
+      "type": "external",
+      "label": "再来一轮？",
+      "sublabel": "new-round / 到此为止",
+      "width": 150
+    }
+  ],
+  "edges": [
+    {
+      "id": "compare-ledger",
+      "from": "compare",
+      "to": "ledger",
+      "label": "事实升级成可否证假设",
+      "variant": "emphasis"
+    },
+    {
+      "id": "ledger-plan",
+      "from": "ledger",
+      "to": "plan",
+      "label": "取判别力最高的一条"
+    },
+    {
+      "id": "plan-ablate",
+      "from": "plan",
+      "to": "ablate",
+      "label": "派 worker，一次一条"
+    },
+    {
+      "id": "ablate-verdict",
+      "from": "ablate",
+      "to": "verdict"
+    },
+    {
+      "id": "verdict-harvest",
+      "from": "verdict",
+      "to": "harvest"
+    },
+    {
+      "id": "harvest-compare",
+      "from": "harvest",
+      "to": "compare",
+      "label": "大圈：换一批假设",
+      "role": "return",
+      "variant": "security"
+    },
+    {
+      "id": "harvest-queue",
+      "from": "harvest",
+      "to": "queue",
+      "label": "收口：拿 F 条目试改法",
+      "variant": "emphasis"
+    },
+    {
+      "id": "queue-batch",
+      "from": "queue",
+      "to": "batch",
+      "label": "确认训练次数后开跑"
+    },
+    {
+      "id": "batch-decide",
+      "from": "batch",
+      "to": "decide"
+    },
+    {
+      "id": "decide-round",
+      "from": "decide",
+      "to": "round"
+    },
+    {
+      "id": "round-queue",
+      "from": "round",
+      "to": "queue",
+      "label": "小圈：换一批配置",
+      "role": "return",
+      "variant": "security"
+    },
+    {
+      "id": "round-conclude",
+      "from": "round",
+      "to": "conclude",
+      "label": "收敛或叫停"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "① 出假设：只出账本，不下结论",
+      "items": [
+        "H 条目讲「为什么」，F 条目讲「改哪儿能变好」",
+        "假设必须在看结果之前登记；事后补的标 post-hoc，要新干预才算数"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "② 解释环（大圈）：换一批假设",
+      "items": [
+        "一次只动一个组件，≥3 种子，delta 超噪声底才算数；判定只有三态",
+        "跑完先算还剩多少切片没解释；用户选「再取一轮」就回生成器重提假设"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "③ 改进环（小圈）：换一批配置",
+      "items": [
+        "超冠军、超噪声底 3σ、守护切片不退化，才留下当新冠军",
+        "预算 / 轮数 / 连续无 keep 由代码守；收敛后才开封测试集，只评一次"
+      ]
+    }
+  ]
+}

@@ -36,7 +36,7 @@ Claude Code 若不跟随 agents 目录下的 symlink（新会话里 Agent 工具
 | 事件 | 脚本 | 作用 |
 |---|---|---|
 | PostToolUse | `hooks/stage_probe.py` | 评测轨迹埋点；环境变量 `SKILL_EVOLVE_TRAJECTORY_AGENT` 未设时零行为 |
-| Stop | `hooks/gate_guard.py` | 结论闸守卫：cwd 下有诊断在跑且 receipt 不合法时打回；连续 3 次后放行 |
+| Stop | `hooks/gate_guard.py` | 结论闸守卫：某工作目录已落 CONCLUSION.md 而 receipt 不合法、或 `diagnose_state.json` 缺失/自称 done 却无 receipt 时打回；流水线中途（pause 停顿、等 subagent）放行；连续 3 次后放行 |
 | UserPromptSubmit | `hooks/orient_reminder.py` | 每回合注入「先跑 orient」提醒 |
 
 工程会话里不想被 Stop 钩子打回：`python3 hooks/install_hooks.py --uninstall`，用完 `bash install.sh` 装回。

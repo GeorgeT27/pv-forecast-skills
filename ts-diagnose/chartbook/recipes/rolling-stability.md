@@ -26,8 +26,11 @@ bridge_hooks: >
 ```bash
 python3 chartbook/scripts/chart_rolling_stability.py \
   --pred predictions.parquet --out-dir <workdir>/charts \
-  [--roll-days 7] [--max-cp 3] [--min-shift-frac 0.3] [--min-seg 5]
+  [--roll-days 7] [--max-cp 3] [--min-shift-frac 0.3] [--min-seg 5] \
+  [--metric rmse|mse]
 ```
+`--metric`：逐行口径，`rmse`（默认）或 `mse`。**分析主口径不是逐行 RMSE 时必须跟着切**——逐行 RMSE 与逐行 MSE 的模型排名可以相反，不切就等于用另一个口径的图去支撑本次结论。口径写进 JSON 的 `metric` 字段。
+
 
 ## JSON schema
 见 frontmatter。日指标 = 当日各行 row_rmse 的**均值**（行等权），与点级 pool
