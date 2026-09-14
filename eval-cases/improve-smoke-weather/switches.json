@@ -1,7 +1,0 @@
-{"ablation_switches": [
-  {"component": "train.batch_size", "switch": "--batch_size=64", "kind": "config-flag"},
-  {"component": "train.dropout", "switch": "--dropout=0.2", "kind": "config-flag"},
-  {"component": "train.learning_rate", "switch": "--learning_rate=0.0005", "kind": "config-flag"},
-  {"component": "tsmixer.channel_mix", "switch": "--tsmixer_no_channel_mix", "kind": "config-flag"},
-  {"component": "tsmixer.d_model", "switch": "--d_model=256", "kind": "config-flag"},
-  {"component": "tsmixer.e_layers", "switch": "--e_layers=3", "kind": "config-flag"}]}
