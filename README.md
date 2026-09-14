@@ -1,4 +1,4 @@
-# 光伏功率预测结果分析 —— Claude Code 技能包
+# 光伏功率预测结果分析skill —— Claude Code 技能包
 
 单一入口技能 —— 一个泛化时序诊断引擎，13 个可插拔 playbook，**两层结构**（生产者 playbook 产出持久化产物，分析 playbook 声明上游依赖消费之，orient 机器裁决先后）：
 
